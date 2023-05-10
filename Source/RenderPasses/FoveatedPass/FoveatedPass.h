@@ -27,6 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "RenderGraph/RenderPassHelpers.h"
 
 using namespace Falcor;
 
@@ -53,11 +54,17 @@ public:
     virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
+
+    void reset();
+
 private:
     FoveatedPass();
-    Scene::SharedPtr mpScene;
-    GraphicsProgram::SharedPtr mpProgram;
-    GraphicsState::SharedPtr mpGraphicsState;
-    RasterizerState::SharedPtr mpRasterState;
-    GraphicsVars::SharedPtr mpVars;
+    Scene::SharedPtr            mpScene;
+    ComputeProgram::SharedPtr   mpProgram;
+    ComputeState::SharedPtr     mpState;
+    ComputeVars::SharedPtr      mpVars;
+
+    uint2 mFrameDim;
+
+    ResourceFormat              mOutputFormat = ResourceFormat::R8Uint;
 };

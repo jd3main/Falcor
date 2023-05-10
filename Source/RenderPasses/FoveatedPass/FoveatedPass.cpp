@@ -38,8 +38,12 @@ const float TAU = PI*2;
 
 const RenderPass::Info FoveatedPass::kInfo { "FoveatedPass", "Generate texture representing number of samples required" };
 
-//const std::string kPrevSampleCount = "prevSampleCount";
-const std::string kOutputSampleCount = "sampleCount";
+namespace
+{
+    const std::string kShaderFile = "RenderPasses/FoveatedPass/FoveatedPass.cs.slang";
+    const std::string kShaderEntryPoint = "calculateSampleCount";
+    const std::string kOutputSampleCount = "sampleCount";
+}
 
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -67,47 +71,56 @@ Dictionary FoveatedPass::getScriptingDictionary()
 RenderPassReflection FoveatedPass::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
-    //reflector.addInput(kPrevSampleCount, "sample count of previous frame");
-    //reflector.addInternal(kPrevSampleCount, "sample count of previous frame");
-    reflector.addOutput(kOutputSampleCount, "sample count");
+    const uint2 sz = compileData.defaultTexDims;
+    
+    reflector.addOutput(kOutputSampleCount, "sample count")
+        .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource)
+        .format(mOutputFormat)
+        .texture2D(sz.x, sz.y);
+        
     return reflector;
 }
 
 void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     const auto& pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
-    //const auto& pPrevSampleCount = renderData.getTexture(kPrevSampleCount);
-    auto pTargetFbo = Fbo::create({renderData.getTexture(kOutputSampleCount)});
-    const float4 clearColor(0, 0, 0, 0);
-    pRenderContext->clearFbo(pTargetFbo.get(), clearColor, 1.0f, 0, FboAttachmentType::All);
-    mpGraphicsState->setFbo(pTargetFbo);
 
     auto current_time = steady_clock::now();
     float t = (float)duration_cast<milliseconds>(current_time.time_since_epoch()).count()/1000.0;
     float moveRadius = 300;
     float moveFrequency = 0.5;
 
+    uint2 resolution = renderData.getDefaultTextureDims();
+
+    // Reset accumulation when resolution changes.
+    if (resolution != mFrameDim)
+    {
+        mFrameDim = resolution;
+        reset();
+    }
+
+
     if (mpScene)
     {
         //float foveaDegree = 10.0f;
         //float foveaRadius = tan(foveaDegree * PI / 180.0f) * 0.5f;
-        uint2 frameDim = renderData.getDefaultTextureDims();
-        float2 foveatCenter = float2(frameDim)/2.0f + float2(sin(t*TAU*moveFrequency)* moveRadius, 0);
+        float2 foveatCenter = float2(resolution)/2.0f + float2(sin(t*TAU*moveFrequency)* moveRadius, 0);
+
         mpVars["PerFrameCB"]["gInnerTargetQuality"] = 32.0f;
         mpVars["PerFrameCB"]["gOuterTargetQuality"] = 1.0f;
         mpVars["PerFrameCB"]["gFoveaCenter"] = foveatCenter;
         mpVars["PerFrameCB"]["gFoveaRadius"] = 200.0f;
-        mpVars["PerFrameCB"]["gViewportSize"] = float2(frameDim);
-        //mpVars["gPrevSampleCount"] = renderData.getTexture(kPrevSampleCount);
-        std::clog << "width = " << frameDim.x << ", height = " << frameDim.y << std::endl;
-        std::clog << "foveatCenter = " << to_string(foveatCenter) << std::endl;
-        //pRenderContext->blit(pOutputSampleCount->getSRV(), pPrevSampleCount->getRTV());
-        mpScene->rasterize(pRenderContext, mpGraphicsState.get(), mpVars.get(), mpRasterState, mpRasterState);
+        mpVars["PerFrameCB"]["gResolution"] = resolution;
 
+        mpVars["gOutputSampleCount"] = pOutputSampleCount;
 
-        //uint3 numGroups = div_round_up(uint3(frameDim.xy, 1u), pProgram->getReflector()->getThreadGroupSize());
-        //mpState->setProgram(pProgram);
-        //pRenderContext->dispatch(mpState.get(), mpVars.get(), numGroups);
+        //std::clog << "width = " << resolution.x << ", height = " << resolution.y << std::endl;
+        //std::clog << "foveatCenter = " << to_string(foveatCenter) << std::endl;
+
+        uint3 numGroups = div_round_up(uint3(mFrameDim.x, mFrameDim.y, 1u), mpProgram->getReflector()->getThreadGroupSize());
+        
+        mpState->setProgram(mpProgram);
+        pRenderContext->dispatch(mpState.get(), mpVars.get(), numGroups);
     }
 }
 
@@ -120,20 +133,22 @@ void FoveatedPass::setScene(RenderContext* pRenderContext, const Scene::SharedPt
     mpScene = pScene;
     if (mpScene)
         mpProgram->addDefines(mpScene->getSceneDefines());
-    mpVars = GraphicsVars::create(mpProgram->getReflector());
 }
 
 FoveatedPass::FoveatedPass() : RenderPass(kInfo)
 {
-    mpProgram = GraphicsProgram::createFromFile("RenderPasses/FoveatedPass/FoveatedPass.3d.slang", "vsMain", "psMain");
-    
-    RasterizerState::Desc rasterDesc;
-    rasterDesc.setFillMode(RasterizerState::FillMode::Solid);
-    rasterDesc.setCullMode(RasterizerState::CullMode::Back);
-    mpRasterState = RasterizerState::create(rasterDesc);
+    Program::DefineList defines;
+    if (mOutputFormat == ResourceFormat::R32Float)
+        defines.add("_OUTPUT_COLOR");
+    mpProgram = ComputeProgram::createFromFile(kShaderFile, kShaderEntryPoint, defines, Shader::CompilerFlags::TreatWarningsAsErrors);
+
+    mpVars = ComputeVars::create(mpProgram->getReflector());
+
+    mpState = ComputeState::create();
+}
 
 
-    mpGraphicsState = GraphicsState::create();
-    mpGraphicsState->setProgram(mpProgram);
-    mpGraphicsState->setRasterizerState(mpRasterState);
+void FoveatedPass::reset()
+{
+    // TODO
 }
