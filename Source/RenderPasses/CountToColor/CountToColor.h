@@ -4,10 +4,10 @@
 
 using namespace Falcor;
 
-class FoveatedPass : public RenderPass
+class CountToColor : public RenderPass
 {
 public:
-    using SharedPtr = std::shared_ptr<FoveatedPass>;
+    using SharedPtr = std::shared_ptr<CountToColor>;
 
     static const Info kInfo;
 
@@ -23,21 +23,14 @@ public:
     virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override {}
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
-    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override;
+    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override {}
     virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
-
-    void reset();
-
 private:
-    FoveatedPass();
-    Scene::SharedPtr            mpScene;
-    ComputeProgram::SharedPtr   mpProgram;
-    ComputeState::SharedPtr     mpState;
-    ComputeVars::SharedPtr      mpVars;
+    CountToColor();
 
-    uint2 mFrameDim;
-
-    ResourceFormat              mOutputFormat = ResourceFormat::R8Uint;
+    ComputePass::SharedPtr      mpProgram;
+    uint2                       mFrameDim = { 0, 0 };
+    FormatType                  mSrcType;
 };
