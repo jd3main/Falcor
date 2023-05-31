@@ -1,10 +1,4 @@
-// #define _OUTPUT_COLOR
-
-#ifdef _OUTPUT_COLOR
-    #define PIXEL_T float
-#else
-    #define PIXEL_T uint
-#endif
+#define OUTPUT_T uint
 
 
 cbuffer PerFrameCB
@@ -16,8 +10,9 @@ cbuffer PerFrameCB
     float gFoveaRadius;
 };
 
-RWTexture2D<PIXEL_T> gPrevSampleCount;
-RWTexture2D<PIXEL_T> gOutputSampleCount;
+RWTexture2D<float> gHistorySampleWeight;
+RWTexture2D<OUTPUT_T> gOutputSampleCount;
+
 
 [numthreads(16, 16, 1)]
 void calculateSampleCount(uint3 dispatchThreadId : SV_DispatchThreadID)
@@ -26,8 +21,8 @@ void calculateSampleCount(uint3 dispatchThreadId : SV_DispatchThreadID)
     const uint2 pixelPos = dispatchThreadId.xy;
 
     float dist = length(pixelPos - gFoveaCenter);
-    PIXEL_T prevSampleCount = gPrevSampleCount[pixelPos];
-    PIXEL_T sampleCount = 0;
+    float historySampleWeight = gHistorySampleWeight[pixelPos];
+    OUTPUT_T sampleCount = 0;
 
     if (dist < gFoveaRadius)
     {
@@ -44,6 +39,5 @@ void calculateSampleCount(uint3 dispatchThreadId : SV_DispatchThreadID)
     sampleCount /= gInnerTargetQuality;
     #endif
 
-    gPrevSampleCount[pixelPos] = gOutputSampleCount[pixelPos];
     gOutputSampleCount[pixelPos] = sampleCount;
 }

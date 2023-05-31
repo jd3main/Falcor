@@ -2,6 +2,7 @@
 #include "RenderGraph/RenderPassLibrary.h"
 
  /*
+ (from original SVGF Pass)
  TODO:
  - clean up shaders
  - clean up UI: tooltips, etc.
@@ -15,7 +16,7 @@ namespace
 {
     // Shader source files
     const char kPackLinearZAndNormalShader[] = "RenderPasses/SVGFPass/SVGFPackLinearZAndNormal.ps.slang";
-    const char kReprojectShader[] = "RenderPasses/SVGFPass/SVGFReproject.ps.slang";
+    const char kReprojectShader[] = "RenderPasses/MySVGFPass/MySVGFReproject.ps.slang";
     const char kAtrousShader[] = "RenderPasses/SVGFPass/SVGFAtrous.ps.slang";
     const char kFilterMomentShader[] = "RenderPasses/SVGFPass/SVGFFilterMoments.ps.slang";
     const char kFinalModulateShader[] = "RenderPasses/SVGFPass/SVGFFinalModulate.ps.slang";
@@ -33,6 +34,7 @@ namespace
     // Input buffer names
     const char kInputBufferAlbedo[] = "Albedo";
     const char kInputBufferColor[] = "Color";
+    const char kInputBufferSampleCount[] = "SampleCount";
     const char kInputBufferEmission[] = "Emission";
     const char kInputBufferWorldPosition[] = "WorldPosition";
     const char kInputBufferWorldNormal[] = "WorldNormal";
@@ -44,10 +46,12 @@ namespace
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
     const char kInternalBufferPreviousLighting[] = "Previous Lighting";
     const char kInternalBufferPreviousMoments[] = "Previous Moments";
+    const char kInternalBufferPreviousTotalWeight[] = "Previous Total Weight";
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
-    const char kOutputAccumulatedSampleCount[] = "Sample Count";
+    const char kOutputHistoryLength[] = "History Length";
+    const char kOutputHistoryWeight[] = "History Weight";
 }
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -122,6 +126,7 @@ RenderPassReflection MySVGFPass::reflect(const CompileData& compileData)
 
     reflector.addInput(kInputBufferAlbedo, "Albedo");
     reflector.addInput(kInputBufferColor, "Color");
+    reflector.addInput(kInputBufferSampleCount, "Sample Count");
     reflector.addInput(kInputBufferEmission, "Emission");
     reflector.addInput(kInputBufferWorldPosition, "World Position");
     reflector.addInput(kInputBufferWorldNormal, "World Normal");
@@ -143,7 +148,8 @@ RenderPassReflection MySVGFPass::reflect(const CompileData& compileData)
         ;
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputAccumulatedSampleCount, "Temporally Accumulated Sample Count").format(ResourceFormat::R32Uint);
+    reflector.addOutput(kOutputHistoryLength, "History Sample Count").format(ResourceFormat::R32Uint);
+    reflector.addOutput(kOutputHistoryWeight, "History Sample Weight").format(ResourceFormat::R32Float);
 
     return reflector;
 }
@@ -158,6 +164,7 @@ void MySVGFPass::execute(RenderContext* pRenderContext, const RenderData& render
 {
     Texture::SharedPtr pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
     Texture::SharedPtr pColorTexture = renderData.getTexture(kInputBufferColor);
+    Texture::SharedPtr pSampleCountTexture = renderData.getTexture(kInputBufferSampleCount);
     Texture::SharedPtr pEmissionTexture = renderData.getTexture(kInputBufferEmission);
     Texture::SharedPtr pWorldPositionTexture = renderData.getTexture(kInputBufferWorldPosition);
     Texture::SharedPtr pWorldNormalTexture = renderData.getTexture(kInputBufferWorldNormal);
@@ -166,7 +173,8 @@ void MySVGFPass::execute(RenderContext* pRenderContext, const RenderData& render
     Texture::SharedPtr pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
 
     Texture::SharedPtr pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
-    Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputAccumulatedSampleCount);
+    Texture::SharedPtr pOutputHistoryLength = renderData.getTexture(kOutputHistoryLength);
+    Texture::SharedPtr pOutputHistoryWeight = renderData.getTexture(kOutputHistoryWeight);
 
     FALCOR_ASSERT(mpFilteredIlluminationFbo &&
         mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -190,7 +198,10 @@ void MySVGFPass::execute(RenderContext* pRenderContext, const RenderData& render
         // per-pixel history length in mpCurReprojFbo.
         Texture::SharedPtr pPrevLinearZAndNormalTexture =
             renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
-        computeReprojection(pRenderContext, pAlbedoTexture, pColorTexture, pEmissionTexture,
+        Texture::SharedPtr pPrevTotalWeightTexture =
+            renderData.getTexture(kInternalBufferPreviousTotalWeight);
+        computeReprojection(pRenderContext, pAlbedoTexture, pColorTexture, pSampleCountTexture,
+            pEmissionTexture,
             pMotionVectorTexture, pPosNormalFwidthTexture,
             pPrevLinearZAndNormalTexture);
 
@@ -214,7 +225,8 @@ void MySVGFPass::execute(RenderContext* pRenderContext, const RenderData& render
 
         // Blit into the output texture.
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
-        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(2)->getSRV(), pOutputSampleCount->getRTV());
+        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(2)->getSRV(), pOutputHistoryLength->getRTV());
+        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(3)->getSRV(), pOutputHistoryWeight->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
@@ -237,6 +249,7 @@ void MySVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float); // illumination
         desc.setColorTarget(1, Falcor::ResourceFormat::RG32Float);   // moments
         desc.setColorTarget(2, Falcor::ResourceFormat::R16Float);    // history length
+        desc.setColorTarget(3, Falcor::ResourceFormat::R32Float);    // history length
         mpCurReprojFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpPrevReprojFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
@@ -293,7 +306,9 @@ void MySVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, Texture:
 }
 
 void MySVGFPass::computeReprojection(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture,
-    Texture::SharedPtr pColorTexture, Texture::SharedPtr pEmissionTexture,
+    Texture::SharedPtr pColorTexture,
+    Texture::SharedPtr pSampleCountTexture,
+    Texture::SharedPtr pEmissionTexture,
     Texture::SharedPtr pMotionVectorTexture,
     Texture::SharedPtr pPositionNormalFwidthTexture,
     Texture::SharedPtr pPrevLinearZTexture)
@@ -303,6 +318,7 @@ void MySVGFPass::computeReprojection(RenderContext* pRenderContext, Texture::Sha
     // Setup textures for our reprojection shader pass
     perImageCB["gMotion"] = pMotionVectorTexture;
     perImageCB["gColor"] = pColorTexture;
+    perImageCB["gSampleCount"] = pSampleCountTexture;
     perImageCB["gEmission"] = pEmissionTexture;
     perImageCB["gAlbedo"] = pAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
@@ -311,6 +327,7 @@ void MySVGFPass::computeReprojection(RenderContext* pRenderContext, Texture::Sha
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = pPrevLinearZTexture;
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
+    perImageCB["gPrevHistoryWeight"] = mpPrevReprojFbo->getColorTexture(3);
 
     // Setup variables for our reprojection pass
     perImageCB["gAlpha"] = mAlpha;

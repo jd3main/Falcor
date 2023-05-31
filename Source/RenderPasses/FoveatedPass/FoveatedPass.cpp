@@ -15,6 +15,8 @@ namespace
 {
     const std::string kShaderFile = "RenderPasses/FoveatedPass/FoveatedPass.cs.slang";
     const std::string kShaderEntryPoint = "calculateSampleCount";
+
+    const std::string kInputHistorySampleWeight = "historySampleCount";
     const std::string kOutputSampleCount = "sampleCount";
 }
 
@@ -45,7 +47,13 @@ RenderPassReflection FoveatedPass::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
     const uint2 sz = compileData.defaultTexDims;
-    
+
+    reflector.addInput(kInputHistorySampleWeight, "history sample weight")
+        .bindFlags(ResourceBindFlags::ShaderResource)
+        .format(ResourceFormat::R32Float)
+        .flags(RenderPassReflection::Field::Flags::Optional)
+        .texture2D(sz.x, sz.y);
+
     reflector.addOutput(kOutputSampleCount, "sample count")
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource)
         .format(mOutputFormat)
@@ -79,12 +87,14 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
         //float foveaRadius = tan(foveaDegree * PI / 180.0f) * 0.5f;
         float2 foveatCenter = float2(resolution)/2.0f + float2(sin(t*TAU*moveFrequency)* moveRadius, 0);
 
-        mpVars["PerFrameCB"]["gInnerTargetQuality"] = 32.0f;
-        mpVars["PerFrameCB"]["gOuterTargetQuality"] = 1.0f;
-        mpVars["PerFrameCB"]["gFoveaCenter"] = foveatCenter;
-        mpVars["PerFrameCB"]["gFoveaRadius"] = 200.0f;
-        mpVars["PerFrameCB"]["gResolution"] = resolution;
+        auto CB = mpVars["PerFrameCB"];
+        CB["gInnerTargetQuality"] = 32.0f;
+        CB["gOuterTargetQuality"] = 1.0f;
+        CB["gFoveaCenter"] = foveatCenter;
+        CB["gFoveaRadius"] = 200.0f;
+        CB["gResolution"] = resolution;
 
+        mpVars["gHistorySampleWeight"] = renderData.getTexture(kInputHistorySampleWeight);
         mpVars["gOutputSampleCount"] = pOutputSampleCount;
 
         //std::clog << "width = " << resolution.x << ", height = " << resolution.y << std::endl;

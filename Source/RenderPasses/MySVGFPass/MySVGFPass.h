@@ -29,10 +29,12 @@ private:
     void computeLinearZAndNormal(RenderContext* pRenderContext, Texture::SharedPtr pLinearZTexture,
         Texture::SharedPtr pWorldNormalTexture);
     void computeReprojection(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture,
-        Texture::SharedPtr pColorTexture, Texture::SharedPtr pEmissionTexture,
+        Texture::SharedPtr pColorTexture,
+        Texture::SharedPtr pSampleCount,
+        Texture::SharedPtr pSampleTotalWeight,
+        Texture::SharedPtr pEmissionTexture,
         Texture::SharedPtr pMotionVectorTexture,
-        Texture::SharedPtr pPositionNormalFwidthTexture,
-        Texture::SharedPtr pPrevLinearZAndNormalTexture);
+        Texture::SharedPtr pPositionNormalFwidthTexture);
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture);
 
