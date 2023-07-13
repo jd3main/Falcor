@@ -1,11 +1,16 @@
 #define OUTPUT_T uint
 
+static const uint kMaxSamplesPerPixel = 16; ///< Maximum sample count supported by path tracer.
 
 cbuffer PerFrameCB
 {
+    bool gEnabled;
+    bool gUseHistory;
+    float gAlpha;
     uint2 gResolution;
     float gInnerTargetQuality;
     float gOuterTargetQuality;
+    float gSampleCountWhenDisabled;
     float2 gFoveaCenter;
     float gFoveaRadius;
 };
@@ -18,26 +23,37 @@ RWTexture2D<OUTPUT_T> gOutputSampleCount;
 void calculateSampleCount(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     if (any(dispatchThreadId.xy >= gResolution)) return;
-    const uint2 pixelPos = dispatchThreadId.xy;
 
+    const uint2 pixelPos = dispatchThreadId.xy;
     float dist = length(pixelPos - gFoveaCenter);
     float historySampleWeight = gHistorySampleWeight[pixelPos];
     OUTPUT_T sampleCount = 0;
 
-    if (dist < gFoveaRadius)
+    float alpha = gAlpha;
+    float beta = (1-alpha);
+    float stableWeight = beta / alpha; // sum to infinity of geometric series
+
+    if (gEnabled)
     {
-        // inside foveated region
-        sampleCount = gInnerTargetQuality;
+        if (dist < gFoveaRadius)
+        {
+            // inside foveated region
+            sampleCount = gUseHistory ? gInnerTargetQuality*stableWeight - historySampleWeight : gInnerTargetQuality;
+        }
+        else
+        {
+            // outside foveated region
+            sampleCount = gUseHistory ? gOuterTargetQuality*stableWeight - historySampleWeight : gOuterTargetQuality;
+        }
+        sampleCount = clamp(sampleCount, 1, kMaxSamplesPerPixel);
+        #ifdef _OUTPUT_COLOR
+        sampleCount /= kMaxSamplesPerPixel;
+        #endif
     }
     else
     {
-        // outside foveated region
-        sampleCount = gOuterTargetQuality;
+        sampleCount = gSampleCountWhenDisabled;
     }
-
-    #ifdef _OUTPUT_COLOR
-    sampleCount /= gInnerTargetQuality;
-    #endif
 
     gOutputSampleCount[pixelPos] = sampleCount;
 }

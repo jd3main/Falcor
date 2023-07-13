@@ -28,9 +28,12 @@ public:
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
-    CountToColor();
+    CountToColor(const Dictionary& dict);
 
     ComputePass::SharedPtr      mpProgram;
     uint2                       mFrameDim = { 0, 0 };
     FormatType                  mSrcType;
+
+    // parameters
+    uint mMaxValue = 256;
 };

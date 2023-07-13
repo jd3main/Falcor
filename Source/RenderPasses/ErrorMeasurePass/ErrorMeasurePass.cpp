@@ -357,6 +357,7 @@ bool ErrorMeasurePass::onKeyEvent(const KeyboardEvent& keyEvent)
 void ErrorMeasurePass::loadReference()
 {
     if (mReferenceImagePath.empty()) return;
+    if (mReferenceImagePath == ".") return;
 
     // TODO: it would be nice to also be able to take the reference image as an input.
     mpReferenceTexture = Texture::createFromFile(mReferenceImagePath, false /* no MIPs */, false /* linear color */);
@@ -378,6 +379,7 @@ Texture::SharedPtr ErrorMeasurePass::getReference(const RenderData& renderData) 
 void ErrorMeasurePass::openMeasurementsFile()
 {
     if (mMeasurementsFilePath.empty()) return;
+    if (mMeasurementsFilePath == ".") return;
 
     mMeasurementsFile = std::ofstream(mMeasurementsFilePath, std::ios::trunc);
     if (!mMeasurementsFile)

@@ -209,6 +209,9 @@ void RenderGraphEditor::onGuiRender(Gui* pGui)
 
     passWindow.columns(5);
     auto renderPasses = RenderPassLibrary::instance().enumerateClasses();
+    std::stable_sort(renderPasses.begin(), renderPasses.end(),
+        [&](const auto& a, const auto& b) { return a.info.type < b.info.type; });
+
     for (size_t i = 0; i < renderPasses.size(); i++)
     {
         const auto& pass = renderPasses[i];

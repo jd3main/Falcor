@@ -1,4 +1,5 @@
 #include "MySVGFPass.h"
+
 #include "RenderGraph/RenderPassLibrary.h"
 
  /*
@@ -30,6 +31,9 @@ namespace
     const char kPhiNormal[] = "PhiNormal";
     const char kAlpha[] = "Alpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
+    const char kUseAdaptiveAlpha[] = "UseAdaptiveAlpha";
+    const char kUseSampleCount[] = "UseSampleCount";
+    const char kBoost[] = "Boost";
 
     // Input buffer names
     const char kInputBufferAlbedo[] = "Albedo";
@@ -41,12 +45,14 @@ namespace
     const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
     const char kInputBufferLinearZ[] = "LinearZ";
     const char kInputBufferMotionVector[] = "MotionVec";
+    const char kInputBufferHistoryWeight[] = "HistoryWeight";
 
     // Internal buffer names
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
     const char kInternalBufferPreviousLighting[] = "Previous Lighting";
     const char kInternalBufferPreviousMoments[] = "Previous Moments";
     const char kInternalBufferPreviousTotalWeight[] = "Previous Total Weight";
+    const char kInternalBufferPreviousDelta[] = "Previous Delta";
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
@@ -83,6 +89,9 @@ MySVGFPass::MySVGFPass(const Dictionary& dict)
         else if (key == kPhiNormal) mPhiNormal = value;
         else if (key == kAlpha) mAlpha = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
+        else if (key == kUseAdaptiveAlpha) mUseAdaptiveAlpha = value;
+        else if (key == kUseSampleCount) mUseSampleCount = value;
+        else if (key == kBoost) mBoost = value;
         else logWarning("Unknown field '{}' in MySVGFPass dictionary.", key);
     }
 
@@ -105,6 +114,9 @@ Dictionary MySVGFPass::getScriptingDictionary()
     dict[kPhiNormal] = mPhiNormal;
     dict[kAlpha] = mAlpha;
     dict[kMomentsAlpha] = mMomentsAlpha;
+    dict[kUseAdaptiveAlpha] = mUseAdaptiveAlpha;
+    dict[kUseSampleCount] = mUseSampleCount;
+    dict[kBoost] = mBoost;
     return dict;
 }
 
@@ -133,6 +145,7 @@ RenderPassReflection MySVGFPass::reflect(const CompileData& compileData)
     reflector.addInput(kInputBufferPosNormalFwidth, "PositionNormalFwidth");
     reflector.addInput(kInputBufferLinearZ, "LinearZ");
     reflector.addInput(kInputBufferMotionVector, "Motion vectors");
+    reflector.addInput(kInputBufferHistoryWeight, "Buffer for storing history weight");
 
     reflector.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(ResourceFormat::RGBA32Float)
@@ -143,6 +156,10 @@ RenderPassReflection MySVGFPass::reflect(const CompileData& compileData)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
         ;
     reflector.addInternal(kInternalBufferPreviousMoments, "Previous Moments")
+        .format(ResourceFormat::RG32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
+        ;
+    reflector.addInternal(kInternalBufferPreviousDelta, "Previous Delta")
         .format(ResourceFormat::RG32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
         ;
@@ -175,6 +192,7 @@ void MySVGFPass::execute(RenderContext* pRenderContext, const RenderData& render
     Texture::SharedPtr pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
     Texture::SharedPtr pOutputHistoryLength = renderData.getTexture(kOutputHistoryLength);
     Texture::SharedPtr pOutputHistoryWeight = renderData.getTexture(kOutputHistoryWeight);
+    Texture::SharedPtr pInputBufferHistoryWeight = renderData.getTexture(kInputBufferHistoryWeight);
 
     FALCOR_ASSERT(mpFilteredIlluminationFbo &&
         mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -227,6 +245,7 @@ void MySVGFPass::execute(RenderContext* pRenderContext, const RenderData& render
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(2)->getSRV(), pOutputHistoryLength->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(3)->getSRV(), pOutputHistoryWeight->getRTV());
+        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(3)->getSRV(), pInputBufferHistoryWeight->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
@@ -249,7 +268,8 @@ void MySVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float); // illumination
         desc.setColorTarget(1, Falcor::ResourceFormat::RG32Float);   // moments
         desc.setColorTarget(2, Falcor::ResourceFormat::R16Float);    // history length
-        desc.setColorTarget(3, Falcor::ResourceFormat::R32Float);    // history length
+        desc.setColorTarget(3, Falcor::ResourceFormat::R32Float);    // history weight
+        desc.setColorTarget(4, Falcor::ResourceFormat::R32Float);    // delta
         mpCurReprojFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpPrevReprojFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
@@ -288,6 +308,9 @@ void MySVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& r
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLighting).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousMoments).get());
+    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousDelta).get());
+
+    pRenderContext->clearTexture(renderData.getTexture(kInputBufferHistoryWeight).get());
 }
 
 // Extracts linear z and its derivative from the linear Z texture and packs
@@ -329,9 +352,15 @@ void MySVGFPass::computeReprojection(RenderContext* pRenderContext, Texture::Sha
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
     perImageCB["gPrevHistoryWeight"] = mpPrevReprojFbo->getColorTexture(3);
 
+
     // Setup variables for our reprojection pass
     perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
+
+    perImageCB["gUseAdaptiveAlpha"] = mUseAdaptiveAlpha;
+    perImageCB["gUseSampleCount"] = mUseSampleCount;
+    perImageCB["gBoost"] = mBoost;
+
 
     mpReprojection->execute(pRenderContext, mpCurReprojFbo);
 }
@@ -407,6 +436,9 @@ void MySVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
     dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.checkbox("Use Adaptive Alpha", mUseAdaptiveAlpha);
+    dirty |= (int)widget.checkbox("Use Sample Count", mUseSampleCount);
+    dirty |= (int)widget.checkbox("Boost Alpha", mBoost);
 
     if (dirty) mBuffersNeedClear = true;
 }

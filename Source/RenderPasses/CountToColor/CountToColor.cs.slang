@@ -6,7 +6,7 @@
 
 cbuffer CB
 {
-    uint gMaxValue = 0;
+    uint gMaxValue = 1;
     uint2 gResolution;
 }
 

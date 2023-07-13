@@ -1,4 +1,6 @@
 #pragma once
+#include <chrono>
+
 #include "Falcor.h"
 #include "RenderGraph/RenderPassHelpers.h"
 
@@ -31,7 +33,7 @@ public:
     void reset();
 
 private:
-    FoveatedPass();
+    FoveatedPass(const Dictionary& dict);
     Scene::SharedPtr            mpScene;
     ComputeProgram::SharedPtr   mpProgram;
     ComputeState::SharedPtr     mpState;
@@ -40,4 +42,19 @@ private:
     uint2 mFrameDim;
 
     ResourceFormat              mOutputFormat = ResourceFormat::R8Uint;
+
+    bool mBuffersNeedClear = false;
+
+    // Foveated rendering parameters
+    bool mEnabled = true;
+    bool mUseHistory = true;
+    float mAlpha = 0.2f;
+    float mFoveaRadius = 200;
+    float mFoveaSampleCount = 8;
+    float mPeriphSampleCount = 2;
+    float mSampleCountWhenDisabled = 1;
+    float mFoveaMoveRadius = 300;
+    float mFoveaMoveFreq = 0.5;
+
+    Clock mClock;
 };

@@ -6,9 +6,12 @@ const RenderPass::Info CountToColor::kInfo { "CountToColor", "Vsualize Count" };
 
 namespace
 {
+    const char kShaderFile[] = "RenderPasses/CountToColor/CountToColor.cs.slang";
+
+    const char kMaxValue[] = "MaxValue";
+
     const char kInputCount[] = "Count";
     const char kOutputColor[] = "Color";
-    const char kShaderFile[] = "RenderPasses/CountToColor/CountToColor.cs.slang";
 }
 
 
@@ -23,19 +26,29 @@ extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
     lib.registerPass(CountToColor::kInfo, CountToColor::create);
 }
 
-CountToColor::CountToColor()
+CountToColor::CountToColor(const Dictionary& dict)
     : RenderPass(kInfo)
 {
+    for (const auto& [key, value] : dict)
+    {
+        if (key == kMaxValue) mMaxValue = value;
+        else
+        {
+            logWarning("Unknown field '{}' in ErrorMeasurePass dictionary.", key);
+        }
+    }
 }
 
 CountToColor::SharedPtr CountToColor::create(RenderContext* pRenderContext, const Dictionary& dict)
 {
-    return SharedPtr(new CountToColor());
+    return SharedPtr(new CountToColor(dict));
 }
 
 Dictionary CountToColor::getScriptingDictionary()
 {
-    return Dictionary();
+    Dictionary dict;
+    dict[kMaxValue] = mMaxValue;
+    return dict;
 }
 
 RenderPassReflection CountToColor::reflect(const CompileData& compileData)
@@ -83,7 +96,7 @@ void CountToColor::execute(RenderContext* pRenderContext, const RenderData& rend
 
     // Set shader parameters
     mpProgram["CB"]["gResolution"] = uint2(pInputCount->getWidth(), pInputCount->getHeight());
-    mpProgram["CB"]["gMaxValue"] = 255u;
+    mpProgram["CB"]["gMaxValue"] = mMaxValue;
     mpProgram["gInputCount"] = pInputCount;
     mpProgram["gOutputColor"] = pOutputColor;
 
@@ -92,4 +105,5 @@ void CountToColor::execute(RenderContext* pRenderContext, const RenderData& rend
 
 void CountToColor::renderUI(Gui::Widgets& widget)
 {
+    widget.var("Max Value", mMaxValue);
 }
