@@ -78,7 +78,7 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
     const auto& pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
 
     const auto currentTime = steady_clock::now();
-    float t = mClock.getTime();
+    float t = gpFramework->getGlobalClock().getTime();
     uint2 resolution = renderData.getDefaultTextureDims();
 
     // Reset accumulation when resolution changes.
@@ -143,8 +143,6 @@ FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
     }
 
     Program::DefineList defines;
-    if (mOutputFormat == ResourceFormat::R32Float)
-        defines.add("_OUTPUT_COLOR");
     mpProgram = ComputeProgram::createFromFile(kShaderFile, kShaderEntryPoint, defines, Shader::CompilerFlags::TreatWarningsAsErrors);
 
     mpVars = ComputeVars::create(mpProgram->getReflector());

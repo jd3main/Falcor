@@ -55,6 +55,4 @@ private:
     float mSampleCountWhenDisabled = 1;
     float mFoveaMoveRadius = 300;
     float mFoveaMoveFreq = 0.5;
-
-    Clock mClock;
 };

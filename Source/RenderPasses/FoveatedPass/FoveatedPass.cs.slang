@@ -1,5 +1,3 @@
-#define OUTPUT_T uint
-
 static const uint kMaxSamplesPerPixel = 16; ///< Maximum sample count supported by path tracer.
 
 cbuffer PerFrameCB
@@ -16,7 +14,7 @@ cbuffer PerFrameCB
 };
 
 RWTexture2D<float> gHistorySampleWeight;
-RWTexture2D<OUTPUT_T> gOutputSampleCount;
+RWTexture2D<uint> gOutputSampleCount;
 
 
 [numthreads(16, 16, 1)]
@@ -27,33 +25,34 @@ void calculateSampleCount(uint3 dispatchThreadId : SV_DispatchThreadID)
     const uint2 pixelPos = dispatchThreadId.xy;
     float dist = length(pixelPos - gFoveaCenter);
     float historySampleWeight = gHistorySampleWeight[pixelPos];
-    OUTPUT_T sampleCount = 0;
+    float sampleCount = 0;
 
     float alpha = gAlpha;
-    float beta = (1-alpha);
-    float stableWeight = beta / alpha; // sum to infinity of geometric series
+    float beta = (1.0f-alpha);
+    float stability = 1.0f / alpha; // sum to infinity of geometric series
 
     if (gEnabled)
     {
+        float baseSampleCount;
         if (dist < gFoveaRadius)
         {
             // inside foveated region
-            sampleCount = gUseHistory ? gInnerTargetQuality*stableWeight - historySampleWeight : gInnerTargetQuality;
+            baseSampleCount = gInnerTargetQuality;
         }
         else
         {
             // outside foveated region
-            sampleCount = gUseHistory ? gOuterTargetQuality*stableWeight - historySampleWeight : gOuterTargetQuality;
+            baseSampleCount = gOuterTargetQuality;
         }
-        sampleCount = clamp(sampleCount, 1, kMaxSamplesPerPixel);
-        #ifdef _OUTPUT_COLOR
-        sampleCount /= kMaxSamplesPerPixel;
-        #endif
+        sampleCount = gUseHistory
+                        ? min(baseSampleCount*stability - historySampleWeight*beta, baseSampleCount)
+                        : baseSampleCount;
+        sampleCount = clamp(sampleCount, 1.0f, kMaxSamplesPerPixel);
     }
     else
     {
         sampleCount = gSampleCountWhenDisabled;
     }
 
-    gOutputSampleCount[pixelPos] = sampleCount;
+    gOutputSampleCount[pixelPos] = (uint)round(sampleCount);
 }

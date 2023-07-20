@@ -32,7 +32,6 @@ private:
 
     ComputePass::SharedPtr      mpProgram;
     uint2                       mFrameDim = { 0, 0 };
-    FormatType                  mSrcType;
 
     // parameters
     uint mMaxValue = 256;

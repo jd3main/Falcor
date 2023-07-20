@@ -36,16 +36,6 @@ namespace
 }
 
 
-// Don't remove this. it's required for hot-reload to function properly
-extern "C" FALCOR_API_EXPORT const char* getProjDir()
-{
-    return PROJECT_DIR;
-}
-
-extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
-{
-    lib.registerPass(SharedBuffer::kInfo, SharedBuffer::create);
-}
 
 SharedBuffer::SharedPtr SharedBuffer::create(RenderContext* pRenderContext, const Dictionary& dict)
 {

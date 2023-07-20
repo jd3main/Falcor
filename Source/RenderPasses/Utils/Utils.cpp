@@ -28,6 +28,8 @@
 #include "Composite/Composite.h"
 #include "GaussianBlur/GaussianBlur.h"
 #include "RenderGraph/RenderPassLibrary.h"
+#include "SharedBuffer/SharedBuffer.h"
+#include "CountToColor/CountToColor.h"
 
 // Don't remove this. it's required for hot-reload to function properly
 extern "C" FALCOR_API_EXPORT const char* getProjDir()
@@ -42,4 +44,7 @@ extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
 
     lib.registerPass(GaussianBlur::kInfo, GaussianBlur::create);
     ScriptBindings::registerBinding(GaussianBlur::registerBindings);
+
+    lib.registerPass(SharedBuffer::kInfo, SharedBuffer::create);
+    lib.registerPass(CountToColor::kInfo, CountToColor::create);
 }

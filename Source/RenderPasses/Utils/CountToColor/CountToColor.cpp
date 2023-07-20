@@ -6,7 +6,7 @@ const RenderPass::Info CountToColor::kInfo { "CountToColor", "Vsualize Count" };
 
 namespace
 {
-    const char kShaderFile[] = "RenderPasses/CountToColor/CountToColor.cs.slang";
+    const char kShaderFile[] = "RenderPasses/Utils/CountToColor/CountToColor.cs.slang";
 
     const char kMaxValue[] = "MaxValue";
 
@@ -14,17 +14,6 @@ namespace
     const char kOutputColor[] = "Color";
 }
 
-
-// Don't remove this. it's required for hot-reload to function properly
-extern "C" FALCOR_API_EXPORT const char* getProjDir()
-{
-    return PROJECT_DIR;
-}
-
-extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
-{
-    lib.registerPass(CountToColor::kInfo, CountToColor::create);
-}
 
 CountToColor::CountToColor(const Dictionary& dict)
     : RenderPass(kInfo)
@@ -75,8 +64,6 @@ void CountToColor::execute(RenderContext* pRenderContext, const RenderData& rend
     FALCOR_ASSERT(pInputCount && pOutputColor);
 
     mFrameDim = { pInputCount->getWidth(), pInputCount->getHeight() };
-
-    //std::clog << "CountToColor::execute: " << mFrameDim.x << "x" << mFrameDim.y << std::endl;
 
     ResourceFormat format = pInputCount->getFormat();
 
