@@ -31,7 +31,6 @@ namespace
     const char kPhiNormal[] = "PhiNormal";
     const char kAlpha[] = "Alpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
-    const char kUseAdaptiveAlpha[] = "UseAdaptiveAlpha";
     const char kUseSampleCount[] = "UseSampleCount";
     const char kBoost[] = "Boost";
 
@@ -52,12 +51,12 @@ namespace
     const char kInternalBufferPreviousLighting[] = "Previous Lighting";
     const char kInternalBufferPreviousMoments[] = "Previous Moments";
     const char kInternalBufferPreviousTotalWeight[] = "Previous Total Weight";
-    const char kInternalBufferPreviousDelta[] = "Previous Delta";
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
     const char kOutputHistoryLength[] = "History Length";
     const char kOutputHistoryWeight[] = "History Weight";
+    const char kOutputVariance[] = "Variance";
 }
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -89,7 +88,6 @@ MySVGFPass::MySVGFPass(const Dictionary& dict)
         else if (key == kPhiNormal) mPhiNormal = value;
         else if (key == kAlpha) mAlpha = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
-        else if (key == kUseAdaptiveAlpha) mUseAdaptiveAlpha = value;
         else if (key == kUseSampleCount) mUseSampleCount = value;
         else if (key == kBoost) mBoost = value;
         else logWarning("Unknown field '{}' in MySVGFPass dictionary.", key);
@@ -114,7 +112,6 @@ Dictionary MySVGFPass::getScriptingDictionary()
     dict[kPhiNormal] = mPhiNormal;
     dict[kAlpha] = mAlpha;
     dict[kMomentsAlpha] = mMomentsAlpha;
-    dict[kUseAdaptiveAlpha] = mUseAdaptiveAlpha;
     dict[kUseSampleCount] = mUseSampleCount;
     dict[kBoost] = mBoost;
     return dict;
@@ -159,14 +156,11 @@ RenderPassReflection MySVGFPass::reflect(const CompileData& compileData)
         .format(ResourceFormat::RG32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
         ;
-    reflector.addInternal(kInternalBufferPreviousDelta, "Previous Delta")
-        .format(ResourceFormat::RG32Float)
-        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
-        ;
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputHistoryLength, "History Sample Count").format(ResourceFormat::R32Uint);
     reflector.addOutput(kOutputHistoryWeight, "History Sample Weight").format(ResourceFormat::R32Float);
+    reflector.addOutput(kOutputVariance, "Variance").format(ResourceFormat::R32Float);
 
     return reflector;
 }
@@ -193,6 +187,7 @@ void MySVGFPass::execute(RenderContext* pRenderContext, const RenderData& render
     Texture::SharedPtr pOutputHistoryLength = renderData.getTexture(kOutputHistoryLength);
     Texture::SharedPtr pOutputHistoryWeight = renderData.getTexture(kOutputHistoryWeight);
     Texture::SharedPtr pInputBufferHistoryWeight = renderData.getTexture(kInputBufferHistoryWeight);
+    Texture::SharedPtr pOutputVariance = renderData.getTexture(kOutputVariance);
 
     FALCOR_ASSERT(mpFilteredIlluminationFbo &&
         mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -246,6 +241,7 @@ void MySVGFPass::execute(RenderContext* pRenderContext, const RenderData& render
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(2)->getSRV(), pOutputHistoryLength->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(3)->getSRV(), pOutputHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(3)->getSRV(), pInputBufferHistoryWeight->getRTV());
+        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(1)->getSRV(), pOutputVariance->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
@@ -269,7 +265,7 @@ void MySVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(1, Falcor::ResourceFormat::RG32Float);   // moments
         desc.setColorTarget(2, Falcor::ResourceFormat::R16Float);    // history length
         desc.setColorTarget(3, Falcor::ResourceFormat::R32Float);    // history weight
-        desc.setColorTarget(4, Falcor::ResourceFormat::R32Float);    // delta
+        desc.setColorTarget(4, Falcor::ResourceFormat::R32Float);    // variance
         mpCurReprojFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpPrevReprojFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
@@ -308,8 +304,6 @@ void MySVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& r
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLighting).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousMoments).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousDelta).get());
-
     pRenderContext->clearTexture(renderData.getTexture(kInputBufferHistoryWeight).get());
 }
 
@@ -357,7 +351,6 @@ void MySVGFPass::computeReprojection(RenderContext* pRenderContext, Texture::Sha
     perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
 
-    perImageCB["gUseAdaptiveAlpha"] = mUseAdaptiveAlpha;
     perImageCB["gUseSampleCount"] = mUseSampleCount;
     perImageCB["gBoost"] = mBoost;
 
@@ -436,7 +429,6 @@ void MySVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
     dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.checkbox("Use Adaptive Alpha", mUseAdaptiveAlpha);
     dirty |= (int)widget.checkbox("Use Sample Count", mUseSampleCount);
     dirty |= (int)widget.checkbox("Boost Alpha", mBoost);
 

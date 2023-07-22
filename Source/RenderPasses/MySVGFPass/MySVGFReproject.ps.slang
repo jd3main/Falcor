@@ -49,14 +49,12 @@ cbuffer PerImageCB
     Texture2D   gLinearZAndNormal;
     Texture2D   gPrevLinearZAndNormal;
     Texture2D   gPrevHistoryLength;
-    Texture2D   gPrevDelta;
 
     Texture2D<int>  gSampleCount;
     Texture2D   gPrevHistoryWeight;
 
     float       gAlpha;
     float       gMomentsAlpha;
-    bool        gUseAdaptiveAlpha;
     bool        gUseSampleCount;
     bool        gBoost;
 };
@@ -83,8 +81,7 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
 }
 
 bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments,
-        out float historyLength, out float historyWeight,
-        out float prevDelta)
+        out float historyLength, out float historyWeight)
 {
     const int2 ipos = posH;
     const float2 imageDim = float2(getTextureDims(gColor, 0));
@@ -102,7 +99,6 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments,
     prevMoments = float2(0,0);
     historyLength = 0;
     historyWeight = 0;
-    prevDelta = 0;
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -144,7 +140,6 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments,
                 sumw        += w[sampleIdx];
                 historyLength += w[sampleIdx] * gPrevHistoryLength[loc].x;
                 historyWeight += w[sampleIdx] * gPrevHistoryWeight[loc].x;
-                prevDelta   += w[sampleIdx] * gPrevDelta[loc].x;
             }
         }
 
@@ -154,7 +149,6 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments,
         prevMoments = valid ? prevMoments / sumw : float2(0, 0);
         historyLength = valid ? historyLength / sumw : 0;
         historyWeight = valid ? historyWeight / sumw : 0;
-        prevDelta = valid ? prevDelta / sumw : 0;
     }
 
     if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
@@ -178,7 +172,6 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments,
                     nValid += 1.0;
                     historyLength += gPrevHistoryLength[p].x;
                     historyWeight += gPrevHistoryWeight[p].x;
-                    prevDelta += gPrevDelta[p].x;
                 }
             }
         }
@@ -204,7 +197,6 @@ bool loadPrevData(float2 posH, out float4 prevIllum, out float2 prevMoments,
         prevMoments = float2(0,0);
         historyLength = 0;
         historyWeight = 0;
-        prevDelta = 0;
     }
 
     return valid;
@@ -223,7 +215,7 @@ struct PS_OUT
     float2 OutMoments       : SV_TARGET1;
     float  OutHistoryLength : SV_TARGET2;
     float  OutHistoryWeight : SV_TARGET3;
-    float  OutDelta         : SV_TARGET4;
+    float  OutVaraince      : SV_TARGET4;
 };
 
 PS_OUT main(FullScreenPassVsOut vsOut)
@@ -243,9 +235,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float prevHistoryLength;
     float historyLength;
     float historyWeight;
-    float prevDelta = 0;
     int sampleCount = gSampleCount[ipos];
-    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, prevHistoryLength, historyWeight, prevDelta);
+    bool success = loadPrevData(posH.xy, prevIllumination, prevMoments, prevHistoryLength, historyWeight);
     historyLength = min(32.0f, success ? prevHistoryLength + sampleCount : sampleCount);
     historyWeight = success ? historyWeight : 0.0f;
     float curLuminance = luminance(illumination);
@@ -255,26 +246,10 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float alphaMoments = gMomentsAlpha;
 
     // take sample count into account
-    if (gUseSampleCount && success)
+    if (gUseSampleCount)
     {
         alpha = sampleCount/(sampleCount+(1.0-alpha)*historyWeight);
         alphaMoments = sampleCount/(sampleCount+(1.0-alphaMoments)*historyWeight);
-    }
-
-    // calculate next delta
-    float delta = curLuminance - prevLuminance;
-    float deltaWeight = (prevHistoryLength * sampleCount);
-    if (historyLength < 8)
-        delta = lerp(prevDelta, delta, 1.0/historyLength);
-    else
-        delta = lerp(prevDelta, delta, 0.5);
-
-    if (gUseAdaptiveAlpha)
-    {
-        float scale = max(max(abs(curLuminance), abs(prevLuminance)), 0.001);
-        float lambda = min(1, abs(prevDelta)/scale);
-        alpha = lerp(alpha, 1, lambda);
-        alphaMoments = lerp(alphaMoments, 1, lambda);
     }
 
     // Use simple average when history is short
@@ -307,7 +282,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutMoments = moments;
     psOut.OutHistoryLength = historyLength;
     psOut.OutHistoryWeight = sampleCount + (1.0-alpha) * historyWeight;
-    psOut.OutDelta = success ? delta : 0;
+    psOut.OutVaraince = variance;
 
     return psOut;
 }

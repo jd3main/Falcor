@@ -76,6 +76,12 @@ void CountToColor::execute(RenderContext* pRenderContext, const RenderData& rend
             defines.add("_INPUT_FORMAT", "INPUT_FORMAT_R16UINT");
         else if (format == ResourceFormat::R32Uint)
             defines.add("_INPUT_FORMAT", "INPUT_FORMAT_R32UINT");
+        else if (format == ResourceFormat::R16Float)
+            defines.add("_INPUT_FORMAT", "INPUT_FORMAT_R16FLOAT");
+        else if (format == ResourceFormat::R32Float)
+            defines.add("_INPUT_FORMAT", "INPUT_FORMAT_R32FLOAT");
+        else
+            logError("Unsupported input format");
 
         mpProgram = ComputePass::create(kShaderFile, "main", defines);
     }

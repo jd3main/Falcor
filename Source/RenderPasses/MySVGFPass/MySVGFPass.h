@@ -49,7 +49,6 @@ private:
     float   mPhiNormal = 128.0f;
     float   mAlpha = 0.05f;
     float   mMomentsAlpha = 0.2f;
-    bool    mUseAdaptiveAlpha = false;
     bool    mUseSampleCount = true;
     bool    mBoost = true;
 
