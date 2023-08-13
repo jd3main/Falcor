@@ -1,5 +1,6 @@
 #include "FoveatedPass.h"
 
+#include "Enums.h"
 #include "RenderGraph/RenderPassLibrary.h"
 //#include "RenderGraph/RenderPassHelpers.h"
 //#include "Utils/Math/FalcorMath.h"
@@ -19,7 +20,8 @@ namespace
     const std::string kShaderEntryPoint = "calculateSampleCount";
 
     // Dictionary keys
-    const std::string kEnabled = "enabled";
+    const std::string kShape = "shape";
+    const std::string kFoveaInputType = "foveaInputType";
     const std::string kUseHistory = "useHistory";
     const std::string kAlpha = "alpha";
     const std::string kFoveaRadius = "foveaRadius";
@@ -34,6 +36,21 @@ namespace
 
     // Output channels
     const std::string kOutputSampleCount = "sampleCount";
+
+
+    // UI
+    Gui::DropdownList kShapeList = {
+        { (uint32_t)Shape::Uniform, "Uniform" },
+        { (uint32_t)Shape::Circle, "Circle" },
+        { (uint32_t)Shape::SplitHorizontally, "SplitHorizontally" },
+        { (uint32_t)Shape::SplitVertically, "SplitVertically" },
+    };
+
+    Gui::DropdownList kFoveaInputTypeList = {
+        { (uint32_t)FoveaInputType::None, "None" },
+        { (uint32_t)FoveaInputType::SHM, "SMH" },
+        { (uint32_t)FoveaInputType::Mouse, "Mouse" },
+    };
 }
 
 
@@ -69,7 +86,7 @@ RenderPassReflection FoveatedPass::reflect(const CompileData& compileData)
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource)
         .format(mOutputFormat)
         .texture2D(sz.x, sz.y);
-        
+
     return reflector;
 }
 
@@ -91,18 +108,27 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
 
     if (mpScene)
     {
-        //float foveaDegree = 10.0f;
-        //float foveaRadius = tan(foveaDegree * PI / 180.0f) * 0.5f;
-        float2 foveatCenter = float2(resolution)/2.0f + float2(sin(t*TAU* mFoveaMoveFreq)* mFoveaMoveRadius, 0);
+        float2 foveaCenter;
+        switch (mFoveaInputType) {
+        case None:
+            foveaCenter = float2(resolution) / 2.0f;
+            break;
+        case SHM:
+            foveaCenter = float2(resolution) / 2.0f + float2(sin(t*TAU* mFoveaMoveFreq)* mFoveaMoveRadius, 0);
+            break;
+        case Mouse:
+            foveaCenter = mMousePos * (float2)resolution;
+            break;
+        }
 
         auto CB = mpVars["PerFrameCB"];
-        CB["gEnabled"] = mEnabled;
+        CB["gShape"] = (int)mShape;
         CB["gUseHistory"] = mUseHistory;
         CB["gAlpha"] = mAlpha;
         CB["gInnerTargetQuality"] = mFoveaSampleCount;
         CB["gOuterTargetQuality"] = mPeriphSampleCount;
         CB["gSampleCountWhenDisabled"] = mSampleCountWhenDisabled;
-        CB["gFoveaCenter"] = foveatCenter;
+        CB["gFoveaCenter"] = foveaCenter;
         CB["gFoveaRadius"] = mFoveaRadius;
         CB["gResolution"] = resolution;
 
@@ -113,7 +139,7 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
         //std::clog << "foveatCenter = " << to_string(foveatCenter) << std::endl;
 
         uint3 numGroups = div_round_up(uint3(mFrameDim.x, mFrameDim.y, 1u), mpProgram->getReflector()->getThreadGroupSize());
-        
+
         mpState->setProgram(mpProgram);
         pRenderContext->dispatch(mpState.get(), mpVars.get(), numGroups);
     }
@@ -126,11 +152,25 @@ void FoveatedPass::setScene(RenderContext* pRenderContext, const Scene::SharedPt
         mpProgram->addDefines(mpScene->getSceneDefines());
 }
 
+bool FoveatedPass::onMouseEvent(const MouseEvent& mouseEvent)
+{
+    if (mFoveaInputType == FoveaInputType::Mouse)
+    {
+        if (mouseEvent.type == MouseEvent::Type::Move)
+        {
+            mMousePos = mouseEvent.pos;
+            return true;
+        }
+    }
+    return false;
+}
+
 FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
 {
     for (const auto& [key, value] : dict)
     {
-        if (key == kEnabled) mEnabled = value;
+        if (key == kShape) mShape = (Shape)(int)value;
+        else if (key == kFoveaInputType) mFoveaInputType = (FoveaInputType)(int)value;
         else if (key == kUseHistory) mUseHistory = value;
         else if (key == kAlpha) mAlpha = value;
         else if (key == kFoveaRadius) mFoveaRadius = value;
@@ -153,7 +193,8 @@ FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
 Dictionary FoveatedPass::getScriptingDictionary()
 {
     Dictionary d;
-    d[kEnabled] = mEnabled;
+    d[kShape] = (int)mShape;
+    d[kFoveaInputType] = (int)mFoveaInputType;
     d[kUseHistory] = mUseHistory;
     d[kAlpha] = mAlpha;
     d[kFoveaRadius] = mFoveaRadius;
@@ -169,12 +210,20 @@ void FoveatedPass::renderUI(Gui::Widgets& widget)
 {
     int dirty = 0;
 
-    dirty |= (int)widget.checkbox("Enable", mEnabled);
+    uint32_t selected = (uint32_t)mShape;
+    dirty |= (int)widget.dropdown("Fovea Shape", kShapeList, selected);
+    mShape = (Shape)selected;
+
+    selected = (uint32_t)mFoveaInputType;
+    dirty |= (int)widget.dropdown("Fovea Input Type", kFoveaInputTypeList, selected);
+    mFoveaInputType = (FoveaInputType)selected;
+
+
     dirty |= (int)widget.checkbox("Use History", mUseHistory);
     dirty |= (int)widget.var("Alpha", mAlpha);
-    dirty |= (int)widget.var("Fovea Radius", mFoveaRadius);
-    if (mEnabled)
+    if (mShape == Shape::Circle || mShape == Shape::SplitHorizontally || mShape == Shape::SplitVertically)
     {
+        dirty |= (int)widget.var("Fovea Radius", mFoveaRadius);
         dirty |= (int)widget.var("Fovea Sample Count", mFoveaSampleCount, 0.0f, 128.0f, 1.0f);
         dirty |= (int)widget.var("Periph Sample Count", mPeriphSampleCount, 0.0f, 128.0f, 1.0f);
     }
@@ -182,8 +231,12 @@ void FoveatedPass::renderUI(Gui::Widgets& widget)
     {
         dirty |= (int)widget.var("Sample Count", mSampleCountWhenDisabled, 0.0f, 128.0f, 1.0f);
     }
-    dirty |= (int)widget.var("Move Frequency", mFoveaMoveFreq);
-    dirty |= (int)widget.var("Move Radius", mFoveaMoveRadius);
+
+    if (mFoveaInputType == FoveaInputType::SHM)
+    {
+        dirty |= (int)widget.var("Move Frequency", mFoveaMoveFreq);
+        dirty |= (int)widget.var("Move Radius", mFoveaMoveRadius);
+    }
 
     if (dirty) mBuffersNeedClear = true;
 }

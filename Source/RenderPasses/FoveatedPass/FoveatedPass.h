@@ -3,6 +3,7 @@
 
 #include "Falcor.h"
 #include "RenderGraph/RenderPassHelpers.h"
+#include "Enums.h"
 
 using namespace Falcor;
 
@@ -26,7 +27,7 @@ public:
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
     virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override;
-    virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
+    virtual bool onMouseEvent(const MouseEvent& mouseEvent);
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 
@@ -46,7 +47,8 @@ private:
     bool mBuffersNeedClear = false;
 
     // Foveated rendering parameters
-    bool mEnabled = true;
+    Shape mShape = Shape::Circle;
+    FoveaInputType mFoveaInputType = FoveaInputType::SHM;
     bool mUseHistory = true;
     float mAlpha = 0.2f;
     float mFoveaRadius = 200;
@@ -55,4 +57,6 @@ private:
     float mSampleCountWhenDisabled = 1;
     float mFoveaMoveRadius = 300;
     float mFoveaMoveFreq = 0.5;
+
+    float2 mMousePos;
 };

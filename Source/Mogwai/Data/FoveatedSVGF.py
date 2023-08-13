@@ -36,7 +36,7 @@ def render_graph_g():
     loadRenderPassLibrary('TestPasses.dll')
     loadRenderPassLibrary('ToneMapper.dll')
     loadRenderPassLibrary('Utils.dll')
-    FoveatedPass = createPass('FoveatedPass', {'enabled': True, 'useHistory': True, 'alpha': 0.05000000074505806, 'foveaRadius': 200.0, 'foveaSampleCount': 8.0, 'periphSampleCount': 2.0, 'uniformSampleCount': 1.0, 'foveaMoveRadius': 300.0, 'foveaMoveFreq': 0.5})
+    FoveatedPass = createPass('FoveatedPass', {'shape': 2, 'foveaInputType': 0, 'useHistory': False, 'alpha': 0.05000000074505806, 'foveaRadius': 200.0, 'foveaSampleCount': 8.0, 'periphSampleCount': 2.0, 'uniformSampleCount': 1.0, 'foveaMoveRadius': 300.0, 'foveaMoveFreq': 0.5})
     g.addPass(FoveatedPass, 'FoveatedPass')
     CountToColor0 = createPass('CountToColor', {'MaxValue': 16})
     g.addPass(CountToColor0, 'CountToColor0')

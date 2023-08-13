@@ -1,8 +1,11 @@
+#include "Enums.h"
+
 static const uint kMaxSamplesPerPixel = 16; ///< Maximum sample count supported by path tracer.
+
 
 cbuffer PerFrameCB
 {
-    bool gEnabled;
+    Shape gShape;
     bool gUseHistory;
     float gAlpha;
     uint2 gResolution;
@@ -31,28 +34,30 @@ void calculateSampleCount(uint3 dispatchThreadId : SV_DispatchThreadID)
     float beta = (1.0f-alpha);
     float stability = 1.0f / alpha; // sum to infinity of geometric series
 
-    if (gEnabled)
+
+    float baseSampleCount;
+
+    switch (gShape)
     {
-        float baseSampleCount;
-        if (dist < gFoveaRadius)
-        {
-            // inside foveated region
-            baseSampleCount = gInnerTargetQuality;
-        }
-        else
-        {
-            // outside foveated region
-            baseSampleCount = gOuterTargetQuality;
-        }
-        sampleCount = gUseHistory
-                        ? min(baseSampleCount*stability - historySampleWeight*beta, baseSampleCount)
-                        : baseSampleCount;
-        sampleCount = clamp(sampleCount, 1.0f, kMaxSamplesPerPixel);
+    case Shape::Uniform:
+        baseSampleCount = gSampleCountWhenDisabled;
+        break;
+    case Shape::Circle:
+        baseSampleCount = (dist < gFoveaRadius) ? gInnerTargetQuality : gSampleCountWhenDisabled;
+        break;
+    case Shape::SplitHorizontally:
+        baseSampleCount = (pixelPos.y < gFoveaCenter.y) ? gInnerTargetQuality : gSampleCountWhenDisabled;
+        break;
+    case Shape::SplitVertically:
+        baseSampleCount = (pixelPos.x < gFoveaCenter.x) ? gInnerTargetQuality : gSampleCountWhenDisabled;
+        break;
     }
-    else
-    {
-        sampleCount = gSampleCountWhenDisabled;
-    }
+
+    sampleCount = gUseHistory
+                    ? min(baseSampleCount*stability - historySampleWeight*beta, baseSampleCount)
+                    : baseSampleCount;
+    sampleCount = clamp(sampleCount, 1.0f, kMaxSamplesPerPixel);
+
 
     gOutputSampleCount[pixelPos] = (uint)round(sampleCount);
 }
