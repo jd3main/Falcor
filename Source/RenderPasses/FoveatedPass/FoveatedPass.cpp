@@ -30,6 +30,7 @@ namespace
     const std::string kUniformSampleCount = "uniformSampleCount";
     const std::string kFoveaMoveRadius = "foveaMoveRadius";
     const std::string kFoveaMoveFreq = "foveaMoveFreq";
+    const std::string kFoveaMoveDirection = "foveaMoveDirection";
 
     // Input channels
     const std::string kInputHistorySampleWeight = "historySampleCount";
@@ -50,6 +51,12 @@ namespace
         { (uint32_t)FoveaInputType::None, "None" },
         { (uint32_t)FoveaInputType::SHM, "SMH" },
         { (uint32_t)FoveaInputType::Mouse, "Mouse" },
+    };
+
+    Gui::DropdownList kFoveaMoveDirectionList = {
+        { (uint32_t)FoveatedPass::FoveaMoveDirection::Horizontal, "Horizontal" },
+        { (uint32_t)FoveatedPass::FoveaMoveDirection::Vertical, "Vertical" },
+        { (uint32_t)FoveatedPass::FoveaMoveDirection::Both, "Both" },
     };
 }
 
@@ -114,8 +121,22 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
             foveaCenter = float2(resolution) / 2.0f;
             break;
         case SHM:
-            foveaCenter = float2(resolution) / 2.0f + float2(sin(t*TAU* mFoveaMoveFreq)* mFoveaMoveRadius, 0);
+            {
+            float dx = sin(t * TAU * mFoveaMoveFreq) * mFoveaMoveRadius;
+            float dy = cos(t * TAU * mFoveaMoveFreq) * mFoveaMoveRadius;
+            switch (mFoveaMoveDirection) {
+            case FoveaMoveDirection::Horizontal:
+                foveaCenter = float2(resolution) / 2.0f + float2(dx, 0);
+                break;
+            case FoveaMoveDirection::Vertical:
+                foveaCenter = float2(resolution) / 2.0f + float2(0,dy);
+                break;
+            case FoveaMoveDirection::Both:
+                foveaCenter = float2(resolution) / 2.0f + float2(dx,dy);
+                break;
+            }
             break;
+            }
         case Mouse:
             foveaCenter = mMousePos * (float2)resolution;
             break;
@@ -169,8 +190,8 @@ FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
 {
     for (const auto& [key, value] : dict)
     {
-        if (key == kShape) mShape = (Shape)(int)value;
-        else if (key == kFoveaInputType) mFoveaInputType = (FoveaInputType)(int)value;
+        if (key == kShape) mShape = value;
+        else if (key == kFoveaInputType) mFoveaInputType = value;
         else if (key == kUseHistory) mUseHistory = value;
         else if (key == kAlpha) mAlpha = value;
         else if (key == kFoveaRadius) mFoveaRadius = value;
@@ -179,6 +200,7 @@ FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
         else if (key == kUniformSampleCount) mSampleCountWhenDisabled = value;
         else if (key == kFoveaMoveRadius) mFoveaMoveRadius = value;
         else if (key == kFoveaMoveFreq) mFoveaMoveFreq = value;
+        else if (key == kFoveaMoveDirection) mFoveaMoveDirection = value;
         else logWarning("Unknown field '" + key + "' in a FoveatedPass dictionary");
     }
 
@@ -193,8 +215,8 @@ FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
 Dictionary FoveatedPass::getScriptingDictionary()
 {
     Dictionary d;
-    d[kShape] = (int)mShape;
-    d[kFoveaInputType] = (int)mFoveaInputType;
+    d[kShape] = mShape;
+    d[kFoveaInputType] = mFoveaInputType;
     d[kUseHistory] = mUseHistory;
     d[kAlpha] = mAlpha;
     d[kFoveaRadius] = mFoveaRadius;
@@ -203,6 +225,7 @@ Dictionary FoveatedPass::getScriptingDictionary()
     d[kUniformSampleCount] = mSampleCountWhenDisabled;
     d[kFoveaMoveRadius] = mFoveaMoveRadius;
     d[kFoveaMoveFreq] = mFoveaMoveFreq;
+    d[kFoveaMoveDirection] = mFoveaMoveDirection;
     return d;
 }
 
@@ -210,14 +233,8 @@ void FoveatedPass::renderUI(Gui::Widgets& widget)
 {
     int dirty = 0;
 
-    uint32_t selected = (uint32_t)mShape;
-    dirty |= (int)widget.dropdown("Fovea Shape", kShapeList, selected);
-    mShape = (Shape)selected;
-
-    selected = (uint32_t)mFoveaInputType;
-    dirty |= (int)widget.dropdown("Fovea Input Type", kFoveaInputTypeList, selected);
-    mFoveaInputType = (FoveaInputType)selected;
-
+    dirty |= (int)widget.dropdown("Fovea Shape", kShapeList, mShape);
+    dirty |= (int)widget.dropdown("Fovea Input Type", kFoveaInputTypeList, mFoveaInputType);
 
     dirty |= (int)widget.checkbox("Use History", mUseHistory);
     dirty |= (int)widget.var("Alpha", mAlpha);
@@ -236,6 +253,7 @@ void FoveatedPass::renderUI(Gui::Widgets& widget)
     {
         dirty |= (int)widget.var("Move Frequency", mFoveaMoveFreq);
         dirty |= (int)widget.var("Move Radius", mFoveaMoveRadius);
+        dirty |= (int)widget.dropdown("Move Direction", kFoveaMoveDirectionList, mFoveaMoveDirection);
     }
 
     if (dirty) mBuffersNeedClear = true;
