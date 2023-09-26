@@ -55,7 +55,6 @@ namespace
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
-    const char kOutputHistoryLength[] = "History Length";
     const char kOutputHistoryWeight[] = "History Weight";
     const char kOutputShortHistoryWeight[] = "wShort";
     const char kOutputLongHistoryWeight[] = "wLong";
@@ -65,11 +64,12 @@ namespace
     {
         Illumination,
         Moments,
-        HistoryLength,
         HistoryWeight,
         Varaince,
         ShortHistoryWeight,
         LongHistoryWeight,
+        ShortHistoryIllumination,
+        LongHistoryIllumination,
     };
 }
 
@@ -172,7 +172,6 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
         ;
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputHistoryLength, "History Sample Count").format(ResourceFormat::R32Uint);
     reflector.addOutput(kOutputHistoryWeight, "History Sample Weight").format(ResourceFormat::R32Float);
     reflector.addOutput(kOutputShortHistoryWeight, "Weight of short history").format(ResourceFormat::R32Float);
     reflector.addOutput(kOutputLongHistoryWeight, "Weight of long history").format(ResourceFormat::R32Float);
@@ -200,7 +199,6 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
     Texture::SharedPtr pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
 
     Texture::SharedPtr pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
-    Texture::SharedPtr pOutputHistoryLength = renderData.getTexture(kOutputHistoryLength);
     Texture::SharedPtr pOutputHistoryWeight = renderData.getTexture(kOutputHistoryWeight);
     Texture::SharedPtr pOutputShortHistoryWeight = renderData.getTexture(kOutputShortHistoryWeight);
     Texture::SharedPtr pOutputLongHistoryWeight = renderData.getTexture(kOutputLongHistoryWeight);
@@ -256,7 +254,6 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
 
         // Blit into the output texture.
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
-        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryLength)->getSRV(), pOutputHistoryLength->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight)->getSRV(), pOutputHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryWeight)->getSRV(), pOutputShortHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight)->getSRV(), pOutputLongHistoryWeight->getRTV());
@@ -284,11 +281,12 @@ void TwoHistorySVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setSampleCount(0);
         desc.setColorTarget(ReprojectOutFields::Illumination, Falcor::ResourceFormat::RGBA32Float);
         desc.setColorTarget(ReprojectOutFields::Moments, Falcor::ResourceFormat::RG32Float);
-        desc.setColorTarget(ReprojectOutFields::HistoryLength, Falcor::ResourceFormat::R16Float);
         desc.setColorTarget(ReprojectOutFields::HistoryWeight, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(ReprojectOutFields::Varaince, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(ReprojectOutFields::ShortHistoryWeight, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(ReprojectOutFields::LongHistoryWeight, Falcor::ResourceFormat::R32Float);
+        desc.setColorTarget(ReprojectOutFields::ShortHistoryIllumination, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(ReprojectOutFields::LongHistoryIllumination, Falcor::ResourceFormat::RGBA32Float);
         mpCurReprojFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpPrevReprojFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
@@ -304,9 +302,14 @@ void TwoHistorySVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         // Screen-size FBOs with 1 RGBA32F buffer
         Fbo::Desc desc;
         desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
-        mpPingPongFbo[0] = Fbo::create2D(dim.x, dim.y, desc);
-        mpPingPongFbo[1] = Fbo::create2D(dim.x, dim.y, desc);
-        mpFilteredPastFbo = Fbo::create2D(dim.x, dim.y, desc);
+        for (int i=0; i<6; i++)
+        {
+            mpPingPongFbo[i] = Fbo::create2D(dim.x, dim.y, desc);
+        }
+        for (int i=0; i<3; i++)
+        {
+            mpFilteredPastFbo[i] = Fbo::create2D(dim.x, dim.y, desc);
+        }
         mpFilteredIlluminationFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpFinalFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
@@ -316,10 +319,11 @@ void TwoHistorySVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 
 void TwoHistorySVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    pRenderContext->clearFbo(mpPingPongFbo[0].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    pRenderContext->clearFbo(mpPingPongFbo[1].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    for (int i=0; i<6; i++)
+        pRenderContext->clearFbo(mpPingPongFbo[i].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpLinearZAndNormalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    pRenderContext->clearFbo(mpFilteredPastFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    for (int i=0; i<3; i++)
+        pRenderContext->clearFbo(mpFilteredPastFbo[i].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpCurReprojFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpPrevReprojFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpFilteredIlluminationFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
@@ -364,13 +368,14 @@ void TwoHistorySVGFPass::computeReprojection(RenderContext* pRenderContext, Text
     perImageCB["gEmission"] = pEmissionTexture;
     perImageCB["gAlbedo"] = pAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
-    perImageCB["gPrevIllum"] = mpFilteredPastFbo->getColorTexture(0);
-    perImageCB["gPrevMoments"] = mpPrevReprojFbo->getColorTexture(1);
+    perImageCB["gPrevIllum"] = mpFilteredPastFbo[0]->getColorTexture(0);
+    perImageCB["gPrevMoments"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::Moments);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = pPrevLinearZTexture;
-    perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
     perImageCB["gPrevShortHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryWeight);
     perImageCB["gPrevLongHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight);
+    perImageCB["gPrevShortIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
+    perImageCB["gPrevLongIllum"] = mpFilteredPastFbo[2]->getColorTexture(0);
 
     // Setup variables for our reprojection pass
     perImageCB["gAlpha"] = mAlpha;
@@ -386,15 +391,24 @@ void TwoHistorySVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
 {
     auto perImageCB = mpFilterMoments["PerImageCB"];
 
-    perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(0);
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
+    perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::Illumination);
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
-    perImageCB["gMoments"] = mpCurReprojFbo->getColorTexture(1);
+    perImageCB["gMoments"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::Moments);
 
     perImageCB["gPhiColor"] = mPhiColor;
     perImageCB["gPhiNormal"] = mPhiNormal;
 
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
+
+
+    // Short History
+    perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryIllumination);
+    mpFilterMoments->execute(pRenderContext, mpPingPongFbo[2]);
+
+    // Long History
+    perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryIllumination);
+    mpFilterMoments->execute(pRenderContext, mpPingPongFbo[4]);
 }
 
 void TwoHistorySVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture)
@@ -402,7 +416,7 @@ void TwoHistorySVGFPass::computeAtrousDecomposition(RenderContext* pRenderContex
     auto perImageCB = mpAtrous["PerImageCB"];
 
     perImageCB["gAlbedo"] = pAlbedoTexture;
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(2);
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
 
     perImageCB["gPhiColor"] = mPhiColor;
@@ -410,25 +424,30 @@ void TwoHistorySVGFPass::computeAtrousDecomposition(RenderContext* pRenderContex
 
     for (int i = 0; i < mFilterIterations; i++)
     {
-        Fbo::SharedPtr curTargetFbo = mpPingPongFbo[1];
-
-        perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
         perImageCB["gStepSize"] = 1 << i;
 
-        mpAtrous->execute(pRenderContext, curTargetFbo);
-
-        // store the filtered color for the feedback path
-        if (i == std::min(mFeedbackTap, mFilterIterations - 1))
+        for (int srcId = 0; srcId < 6; srcId+=2)
         {
-            pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
-        }
+            const int targetId = srcId + 1;
+            Fbo::SharedPtr curTargetFbo = mpPingPongFbo[targetId];
+            perImageCB["gIllumination"] = mpPingPongFbo[srcId]->getColorTexture(0);
+            mpAtrous->execute(pRenderContext, curTargetFbo);
 
-        std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
+            // store the filtered color for the feedback path
+            if (i == std::min(mFeedbackTap, mFilterIterations - 1))
+            {
+                pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo[srcId/2]->getRenderTargetView(0));
+            }
+
+            std::swap(mpPingPongFbo[srcId], mpPingPongFbo[targetId]);
+        }
     }
 
     if (mFeedbackTap < 0)
     {
-        pRenderContext->blit(mpCurReprojFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo->getRenderTargetView(0));
+        pRenderContext->blit(mpCurReprojFbo->getColorTexture(ReprojectOutFields::Illumination)->getSRV(), mpFilteredPastFbo[0]->getRenderTargetView(0));
+        pRenderContext->blit(mpCurReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryIllumination)->getSRV(), mpFilteredPastFbo[1]->getRenderTargetView(0));
+        pRenderContext->blit(mpCurReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryIllumination)->getSRV(), mpFilteredPastFbo[2]->getRenderTargetView(0));
     }
 }
 
