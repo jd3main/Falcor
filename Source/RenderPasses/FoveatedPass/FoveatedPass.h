@@ -10,6 +10,14 @@ using namespace Falcor;
 class FoveatedPass : public RenderPass
 {
 public:
+
+    enum FoveaMoveDirection
+    {
+        Vertical,
+        Horizontal,
+        Both,
+    };
+
     using SharedPtr = std::shared_ptr<FoveatedPass>;
 
     static const Info kInfo;
@@ -47,8 +55,8 @@ private:
     bool mBuffersNeedClear = false;
 
     // Foveated rendering parameters
-    Shape mShape = Shape::Circle;
-    FoveaInputType mFoveaInputType = FoveaInputType::SHM;
+    uint32_t mShape = Shape::Circle;
+    uint32_t mFoveaInputType = FoveaInputType::SHM;
     bool mUseHistory = true;
     float mAlpha = 0.2f;
     float mFoveaRadius = 200;
@@ -57,6 +65,7 @@ private:
     float mSampleCountWhenDisabled = 1;
     float mFoveaMoveRadius = 300;
     float mFoveaMoveFreq = 0.5;
+    uint32_t mFoveaMoveDirection = FoveaMoveDirection::Both;
 
     float2 mMousePos;
 };
