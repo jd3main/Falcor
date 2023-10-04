@@ -1,6 +1,7 @@
 #include "TwoHistorySVGFPass.h"
 
 #include "RenderGraph/RenderPassLibrary.h"
+#include "RenderGraph/BasePasses/FullScreenPass.h"
 
  /*
  (from original SVGF Pass)
@@ -29,9 +30,10 @@ namespace
     const char kVarianceEpsilon[] = "VarianceEpsilon";
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
-    const char kAlpha[] = "Alpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
     const char kMaxHistoryWeight[] = "MaxHistoryWeight";
+    const char kShortHistoryMaxWeight[] = "ShortHistoryMaxWeight";
+    const char kLongHistoryMaxWeight[] = "LongHistoryMaxWeight";
 
     // Input buffer names
     const char kInputBufferAlbedo[] = "Albedo";
@@ -59,6 +61,10 @@ namespace
     const char kOutputShortHistoryWeight[] = "wShort";
     const char kOutputLongHistoryWeight[] = "wLong";
     const char kOutputVariance[] = "Variance";
+    const char kOutputShortHistoryIllumination[] = "Illumination (short)";
+    const char kOutputLongHistoryIllumination[] = "Illumination (long)";
+    const char kOutputShortHistoryFilteredImage[] = "Filtered (short)";
+    const char kOutputLongHistoryFilteredImage[] = "Filtered (long)";
 
     enum ReprojectOutFields
     {
@@ -100,9 +106,10 @@ TwoHistorySVGFPass::TwoHistorySVGFPass(const Dictionary& dict)
         else if (key == kVarianceEpsilon) mVarainceEpsilon = value;
         else if (key == kPhiColor) mPhiColor = value;
         else if (key == kPhiNormal) mPhiNormal = value;
-        else if (key == kAlpha) mAlpha = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
         else if (key == kMaxHistoryWeight) mMaxHistoryWeight = value;
+        else if (key == kShortHistoryMaxWeight) mShortHistoryMaxWeight = value;
+        else if (key == kLongHistoryMaxWeight) mLongHistoryMaxWeight = value;
         else logWarning("Unknown field '{}' in TwoHistorySVGFPass dictionary.", key);
     }
 
@@ -123,9 +130,10 @@ Dictionary TwoHistorySVGFPass::getScriptingDictionary()
     dict[kVarianceEpsilon] = mVarainceEpsilon;
     dict[kPhiColor] = mPhiColor;
     dict[kPhiNormal] = mPhiNormal;
-    dict[kAlpha] = mAlpha;
     dict[kMomentsAlpha] = mMomentsAlpha;
     dict[kMaxHistoryWeight] = mMaxHistoryWeight;
+    dict[kShortHistoryMaxWeight] = mShortHistoryMaxWeight;
+    dict[kLongHistoryMaxWeight] = mLongHistoryMaxWeight;
     return dict;
 }
 
@@ -176,6 +184,10 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
     reflector.addOutput(kOutputShortHistoryWeight, "Weight of short history").format(ResourceFormat::R32Float);
     reflector.addOutput(kOutputLongHistoryWeight, "Weight of long history").format(ResourceFormat::R32Float);
     reflector.addOutput(kOutputVariance, "Variance").format(ResourceFormat::R32Float);
+    reflector.addOutput(kOutputShortHistoryIllumination, "Short History Illumination").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputLongHistoryIllumination, "Long History Illumination").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputShortHistoryFilteredImage, "Filtered image with short history").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputLongHistoryFilteredImage, "Filtered image with long history ").format(ResourceFormat::RGBA16Float);
 
     return reflector;
 }
@@ -204,6 +216,10 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
     Texture::SharedPtr pOutputLongHistoryWeight = renderData.getTexture(kOutputLongHistoryWeight);
     Texture::SharedPtr pInputBufferHistoryWeight = renderData.getTexture(kInputBufferHistoryWeight);
     Texture::SharedPtr pOutputVariance = renderData.getTexture(kOutputVariance);
+    Texture::SharedPtr pOutputShortHistoryIllumination = renderData.getTexture(kOutputShortHistoryIllumination);
+    Texture::SharedPtr pOutputLongHistoryIllumination = renderData.getTexture(kOutputLongHistoryIllumination);
+    Texture::SharedPtr pOutputShortHistoryFilteredImage = renderData.getTexture(kOutputShortHistoryFilteredImage);
+    Texture::SharedPtr pOutputLongHistoryFilteredImage = renderData.getTexture(kOutputLongHistoryFilteredImage);
 
     FALCOR_ASSERT(mpFilteredIlluminationFbo &&
         mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -245,21 +261,22 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
         // next time into mpFilteredPastFbo.
         computeAtrousDecomposition(pRenderContext, pAlbedoTexture);
 
+
         // Compute albedo * filtered illumination and add emission back in.
-        auto perImageCB = mpFinalModulate["PerImageCB"];
-        perImageCB["gAlbedo"] = pAlbedoTexture;
-        perImageCB["gEmission"] = pEmissionTexture;
-        perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
-        mpFinalModulate->execute(pRenderContext, mpFinalFbo);
+        // Read from mpPingPongFbo and write to mpFinalFbo.
+        computeFinalModulate(pRenderContext, pAlbedoTexture, pEmissionTexture);
 
         // Blit into the output texture.
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
+        pRenderContext->blit(mpPingPongFbo[2]->getColorTexture(0)->getSRV(), pOutputShortHistoryIllumination->getRTV());
+        pRenderContext->blit(mpPingPongFbo[4]->getColorTexture(0)->getSRV(), pOutputLongHistoryIllumination->getRTV());
+        pRenderContext->blit(mpFinalFboShort->getColorTexture(0)->getSRV(), pOutputShortHistoryFilteredImage->getRTV());
+        pRenderContext->blit(mpFinalFboLong->getColorTexture(0)->getSRV(), pOutputLongHistoryFilteredImage->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight)->getSRV(), pOutputHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryWeight)->getSRV(), pOutputShortHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight)->getSRV(), pOutputLongHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight)->getSRV(), pInputBufferHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::Varaince)->getSRV(), pOutputVariance->getRTV());
-
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
@@ -310,8 +327,10 @@ void TwoHistorySVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         {
             mpFilteredPastFbo[i] = Fbo::create2D(dim.x, dim.y, desc);
         }
-        mpFilteredIlluminationFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpFinalFbo = Fbo::create2D(dim.x, dim.y, desc);
+        mpFinalFboShort = Fbo::create2D(dim.x, dim.y, desc);
+        mpFinalFboLong = Fbo::create2D(dim.x, dim.y, desc);
+        mpFilteredIlluminationFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
 
     mBuffersNeedClear = true;
@@ -327,7 +346,9 @@ void TwoHistorySVGFPass::clearBuffers(RenderContext* pRenderContext, const Rende
     pRenderContext->clearFbo(mpCurReprojFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpPrevReprojFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpFilteredIlluminationFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-
+    pRenderContext->clearFbo(mpFinalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpFinalFboShort.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpFinalFboLong.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLighting).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousMoments).get());
@@ -378,11 +399,10 @@ void TwoHistorySVGFPass::computeReprojection(RenderContext* pRenderContext, Text
     perImageCB["gPrevLongIllum"] = mpFilteredPastFbo[2]->getColorTexture(0);
 
     // Setup variables for our reprojection pass
-    perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
     perImageCB["gMaxHistoryWeight"] = mMaxHistoryWeight;
-    perImageCB["gShortHistoryMaxWeight"] = 16.0f;
-    perImageCB["gLongHistoryMaxWeight"] = 32.0f;
+    perImageCB["gShortHistoryMaxWeight"] = mShortHistoryMaxWeight;
+    perImageCB["gLongHistoryMaxWeight"] = mLongHistoryMaxWeight;
 
     mpReprojection->execute(pRenderContext, mpCurReprojFbo);
 }
@@ -391,22 +411,24 @@ void TwoHistorySVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
 {
     auto perImageCB = mpFilterMoments["PerImageCB"];
 
-    perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::Illumination);
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::Moments);
 
     perImageCB["gPhiColor"] = mPhiColor;
     perImageCB["gPhiNormal"] = mPhiNormal;
 
+    // Main illumination
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
+    perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::Illumination);
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
 
-
     // Short History
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryWeight);
     perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryIllumination);
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[2]);
 
     // Long History
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight);
     perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryIllumination);
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[4]);
 }
@@ -416,21 +438,26 @@ void TwoHistorySVGFPass::computeAtrousDecomposition(RenderContext* pRenderContex
     auto perImageCB = mpAtrous["PerImageCB"];
 
     perImageCB["gAlbedo"] = pAlbedoTexture;
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
 
     perImageCB["gPhiColor"] = mPhiColor;
     perImageCB["gPhiNormal"] = mPhiNormal;
 
-    for (int i = 0; i < mFilterIterations; i++)
-    {
-        perImageCB["gStepSize"] = 1 << i;
+    int weightTextureIds[] = {
+        ReprojectOutFields::HistoryWeight,
+        ReprojectOutFields::ShortHistoryWeight,
+        ReprojectOutFields::LongHistoryWeight,
+    };
 
-        for (int srcId = 0; srcId < 6; srcId+=2)
+    for (int srcId = 0; srcId < 6; srcId += 2)
+    {
+        int dstId = srcId + 1;
+        perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(weightTextureIds[srcId/2]);
+        for (int i = 0; i < mFilterIterations; i++)
         {
-            const int targetId = srcId + 1;
-            Fbo::SharedPtr curTargetFbo = mpPingPongFbo[targetId];
+            perImageCB["gStepSize"] = 1 << i;
             perImageCB["gIllumination"] = mpPingPongFbo[srcId]->getColorTexture(0);
+            Fbo::SharedPtr curTargetFbo = mpPingPongFbo[dstId];
             mpAtrous->execute(pRenderContext, curTargetFbo);
 
             // store the filtered color for the feedback path
@@ -439,7 +466,7 @@ void TwoHistorySVGFPass::computeAtrousDecomposition(RenderContext* pRenderContex
                 pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo[srcId/2]->getRenderTargetView(0));
             }
 
-            std::swap(mpPingPongFbo[srcId], mpPingPongFbo[targetId]);
+            std::swap(mpPingPongFbo[srcId], mpPingPongFbo[dstId]);
         }
     }
 
@@ -449,6 +476,25 @@ void TwoHistorySVGFPass::computeAtrousDecomposition(RenderContext* pRenderContex
         pRenderContext->blit(mpCurReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryIllumination)->getSRV(), mpFilteredPastFbo[1]->getRenderTargetView(0));
         pRenderContext->blit(mpCurReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryIllumination)->getSRV(), mpFilteredPastFbo[2]->getRenderTargetView(0));
     }
+}
+
+void TwoHistorySVGFPass::computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture)
+{
+    auto perImageCB = mpFinalModulate["PerImageCB"];
+    perImageCB["gAlbedo"] = pAlbedoTexture;
+    perImageCB["gEmission"] = pEmissionTexture;
+
+    perImageCB["gIllumination"] = Texture::SharedPtr();     // Force trigger update (probably). I don't know why this is necessary.
+    perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
+    mpFinalModulate->execute(pRenderContext, mpFinalFbo);
+
+    perImageCB["gIllumination"] = Texture::SharedPtr();
+    perImageCB["gIllumination"] = mpPingPongFbo[2]->getColorTexture(0);
+    mpFinalModulate->execute(pRenderContext, mpFinalFboShort);
+
+    perImageCB["gIllumination"] = Texture::SharedPtr();
+    perImageCB["gIllumination"] = mpPingPongFbo[4]->getColorTexture(0);
+    mpFinalModulate->execute(pRenderContext, mpFinalFboLong);
 }
 
 void TwoHistorySVGFPass::renderUI(Gui::Widgets& widget)
@@ -470,9 +516,10 @@ void TwoHistorySVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Max History Weight", mMaxHistoryWeight, 0.0f, 128.0f, 0.1f);
+    dirty |= (int)widget.var("Short History Max Weight", mShortHistoryMaxWeight, 0.0f, 128.0f, 0.1f);
+    dirty |= (int)widget.var("Long History Max Weight", mLongHistoryMaxWeight, 0.0f, 128.0f, 0.1f);
 
     if (dirty) mBuffersNeedClear = true;
 }

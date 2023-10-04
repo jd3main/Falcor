@@ -37,6 +37,7 @@ private:
         Texture::SharedPtr pPositionNormalFwidthTexture);
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture);
+    void computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture);
 
     bool mBuffersNeedClear = false;
 
@@ -47,9 +48,10 @@ private:
     float   mVarainceEpsilon = 1e-4f;
     float   mPhiColor = 10.0f;
     float   mPhiNormal = 128.0f;
-    float   mAlpha = 0.05f;
     float   mMomentsAlpha = 0.2f;
     float   mMaxHistoryWeight = 32.0f;
+    float   mShortHistoryMaxWeight = 8;
+    float   mLongHistoryMaxWeight = 32;
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;
@@ -64,6 +66,8 @@ private:
     Fbo::SharedPtr mpFilteredPastFbo[3];
     Fbo::SharedPtr mpCurReprojFbo;
     Fbo::SharedPtr mpPrevReprojFbo;
-    Fbo::SharedPtr mpFilteredIlluminationFbo;
+    Fbo::SharedPtr mpFilteredIlluminationFbo;   // is this unused?
     Fbo::SharedPtr mpFinalFbo;
+    Fbo::SharedPtr mpFinalFboShort;
+    Fbo::SharedPtr mpFinalFboLong;
 };
