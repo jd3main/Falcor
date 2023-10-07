@@ -88,9 +88,9 @@ struct History
     float2 moments;
     float weight;
     float shortWeight;
-    float4 shortIllumination;
     float longWeight;
-    float4 longIllumination;
+    float3 shortIllumination;
+    float3 longIllumination;
 };
 
 bool loadHistory(float2 posH, out History history)
@@ -112,8 +112,8 @@ bool loadHistory(float2 posH, out History history)
     float historyWeight = 0;
     float shortHistoryWeight = 0;
     float longHistoryWeight = 0;
-    float4 shortHistoryIllum = float4(0,0,0,0);
-    float4 longHistoryIllum = float4(0,0,0,0);
+    float3 shortHistoryIllum = float3(0, 0, 0);
+    float3 longHistoryIllum = float3(0, 0, 0);
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -155,8 +155,8 @@ bool loadHistory(float2 posH, out History history)
                 historyWeight += w[sampleIdx] * gPrevHistoryWeight[loc].x;
                 shortHistoryWeight += w[sampleIdx] * gPrevShortHistoryWeight[loc].x;
                 longHistoryWeight += w[sampleIdx] * gPrevLongHistoryWeight[loc].x;
-                shortHistoryIllum += w[sampleIdx] * gPrevShortIllum[loc];
-                longHistoryIllum += w[sampleIdx] * gPrevLongIllum[loc];
+                shortHistoryIllum += w[sampleIdx] * gPrevShortIllum[loc].xyz;
+                longHistoryIllum += w[sampleIdx] * gPrevLongIllum[loc].xyz;
             }
         }
 
@@ -166,8 +166,8 @@ bool loadHistory(float2 posH, out History history)
         historyWeight = valid ? historyWeight / sumw : 0;
         shortHistoryWeight = valid ? shortHistoryWeight / sumw : 0;
         longHistoryWeight = valid ? longHistoryWeight / sumw : 0;
-        shortHistoryIllum = valid ? shortHistoryIllum / sumw : float4(0, 0, 0, 0);
-        longHistoryIllum = valid ? longHistoryIllum / sumw : float4(0, 0, 0, 0);
+        shortHistoryIllum = valid ? shortHistoryIllum / sumw : float3(0, 0, 0);
+        longHistoryIllum = valid ? longHistoryIllum / sumw : float3(0, 0, 0);
     }
 
     if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
@@ -191,8 +191,8 @@ bool loadHistory(float2 posH, out History history)
                     historyWeight += gPrevHistoryWeight[p].x;
                     shortHistoryWeight += gPrevShortHistoryWeight[p].x;
                     longHistoryWeight += gPrevLongHistoryWeight[p].x;
-                    shortHistoryIllum += gPrevShortIllum[p];
-                    longHistoryIllum += gPrevLongIllum[p];
+                    shortHistoryIllum += gPrevShortIllum[p].xyz;
+                    longHistoryIllum += gPrevLongIllum[p].xyz;
                 }
             }
         }
@@ -260,16 +260,9 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     // float alpha = sampleCount / (sampleCount + history.weight);
     float alpha = 0;
     float3 curOutIllumination = float3(0, 0, 0);
-    if (history.longWeight <= history.shortWeight)
-    {
-        alpha = sampleCount / (sampleCount + history.shortWeight);
-        curOutIllumination = illumination * alpha + history.shortIllumination.xyz * (1.0f-alpha);
-    }
-    else
-    {
-        alpha = sampleCount / (sampleCount + history.longWeight);
-        curOutIllumination = illumination * alpha + history.longIllumination.xyz * (1.0f-alpha);
-    }
+
+    alpha = sampleCount / (sampleCount + history.longWeight);
+    curOutIllumination = lerp(history.longIllumination, illumination, alpha);
 
     // Calculate alpha for moments in simpler way
     const float curWeight = success ? min(history.weight + sampleCount, gMaxHistoryWeight * sampleCount) : sampleCount;
@@ -290,7 +283,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
     PS_OUT psOut;
     // temporal integration of illumination
-    psOut.OutIllumination.xyz = curOutIllumination;
+    psOut.OutIllumination.rgb = curOutIllumination;
     // variance is propagated through the alpha channel
     psOut.OutIllumination.a = variance;
     psOut.OutMoments = moments;
@@ -298,13 +291,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutVaraince = variance;
     psOut.OutShortHistoryWeight = min(history.shortWeight + sampleCount, gShortHistoryMaxWeight);
     psOut.OutLongHistoryWeight = min(history.longWeight + sampleCount, gLongHistoryMaxWeight);
-    psOut.OutShortHistoryIllumination.xyz =
-        (history.shortIllumination.xyz * history.shortWeight + illumination * sampleCount)
-        / (history.shortWeight + sampleCount);
-    psOut.OutLongHistoryIllumination.xyz =
-        (history.longIllumination.xyz * history.longWeight + illumination * sampleCount)
-        / (history.longWeight + sampleCount);
-
+    psOut.OutShortHistoryIllumination.rgb = lerp(history.shortIllumination, illumination, sampleCount / (history.shortWeight + sampleCount));
+    psOut.OutLongHistoryIllumination.rgb = lerp(history.longIllumination, illumination, sampleCount / (history.longWeight + sampleCount));
     psOut.OutShortHistoryIllumination.a = variance;
     psOut.OutLongHistoryIllumination.a = variance;
 
