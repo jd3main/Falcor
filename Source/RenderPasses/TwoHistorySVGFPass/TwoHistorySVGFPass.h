@@ -34,7 +34,11 @@ private:
         Texture::SharedPtr pSampleTotalWeight,
         Texture::SharedPtr pEmissionTexture,
         Texture::SharedPtr pMotionVectorTexture,
-        Texture::SharedPtr pPositionNormalFwidthTexture);
+        Texture::SharedPtr pPositionNormalFwidthTexture,
+        Texture::SharedPtr pShortHistoryCentroidTexture,
+        Texture::SharedPtr pLongHistoryCentroidTexture,
+        Texture::SharedPtr pPrevShortHistoryCentroidTexture,
+        Texture::SharedPtr pPrevLongHistoryCentroidTexture);
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture);
     void computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture);

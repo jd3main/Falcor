@@ -56,6 +56,11 @@ cbuffer PerImageCB
     Texture2D gPrevShortHistoryWeight;
     Texture2D gPrevLongHistoryWeight;
 
+    RWTexture2D gShortHistoryCentroid;
+    RWTexture2D gLongHistoryCentroid;
+    Texture2D gPrevShortHistoryCentroid;
+    Texture2D gPrevLongHistoryCentroid;
+
     float gAlpha;
     float gMomentsAlpha;
     float gMaxHistoryWeight;
@@ -92,6 +97,8 @@ struct History
     float longWeight;
     float3 shortIllumination;
     float3 longIllumination;
+    float shortCentroid;
+    float longCentroid;
 };
 
 bool loadHistory(float2 posH, out History history)
@@ -115,6 +122,8 @@ bool loadHistory(float2 posH, out History history)
     float longHistoryWeight = 0;
     float3 shortHistoryIllum = float3(0, 0, 0);
     float3 longHistoryIllum = float3(0, 0, 0);
+    float shortHistoryCentroid = 0;
+    float longHistoryCentroid = 0;
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -158,6 +167,8 @@ bool loadHistory(float2 posH, out History history)
                 longHistoryWeight += w[sampleIdx] * gPrevLongHistoryWeight[loc].x;
                 shortHistoryIllum += w[sampleIdx] * gPrevShortIllum[loc].xyz;
                 longHistoryIllum += w[sampleIdx] * gPrevLongIllum[loc].xyz;
+                shortHistoryCentroid += w[sampleIdx] * gPrevShortHistoryCentroid[loc].x;
+                longHistoryCentroid += w[sampleIdx] * gPrevLongHistoryCentroid[loc].x;
             }
         }
 
@@ -169,6 +180,8 @@ bool loadHistory(float2 posH, out History history)
         longHistoryWeight = valid ? longHistoryWeight / sumw : 0;
         shortHistoryIllum = valid ? shortHistoryIllum / sumw : float3(0, 0, 0);
         longHistoryIllum = valid ? longHistoryIllum / sumw : float3(0, 0, 0);
+        shortHistoryCentroid = valid ? shortHistoryCentroid / sumw : 0;
+        longHistoryCentroid = valid ? longHistoryCentroid / sumw : 0;
     }
 
     if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
@@ -194,6 +207,8 @@ bool loadHistory(float2 posH, out History history)
                     longHistoryWeight += gPrevLongHistoryWeight[p].x;
                     shortHistoryIllum += gPrevShortIllum[p].xyz;
                     longHistoryIllum += gPrevLongIllum[p].xyz;
+                    shortHistoryCentroid += gPrevShortHistoryCentroid[p].x;
+                    longHistoryCentroid += gPrevLongHistoryCentroid[p].x;
                 }
             }
         }
@@ -206,6 +221,7 @@ bool loadHistory(float2 posH, out History history)
             longHistoryWeight /= nValid;
             shortHistoryIllum /= nValid;
             longHistoryIllum /= nValid;
+            shortHistoryCentroid /= nValid;
         }
     }
 
@@ -215,6 +231,8 @@ bool loadHistory(float2 posH, out History history)
     history.longWeight = longHistoryWeight;
     history.shortIllumination = shortHistoryIllum;
     history.longIllumination = longHistoryIllum;
+    history.shortCentroid = shortHistoryCentroid;
+    history.longCentroid = longHistoryCentroid;
 
     return valid;
 }
@@ -264,6 +282,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     {
         alpha = sampleCount / (sampleCount + history.longWeight);
         curOutIllumination = lerp(history.longIllumination, illumination, alpha);
+
     }
     else
     {
@@ -329,6 +348,12 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutLongHistoryIllumination.rgb = lerp(history.longIllumination, illumination, sampleCount / (history.longWeight + sampleCount));
     psOut.OutShortHistoryIllumination.a = variance;
     psOut.OutLongHistoryIllumination.a = variance;
+
+    // Calculate Centroid
+    const float shortCentroid = success ? (history.shortCentroid - 1) * history.shortWeight/(history.shortWeight+sampleCount) : 0;
+    const float longCentroid = success ? (history.longCentroid - 1) * history.longWeight/(history.longWeight+sampleCount) : 0;
+    gShortHistoryCentroid[ipos] = shortCentroid;
+    gLongHistoryCentroid[ipos] = longCentroid;
 
     return psOut;
 }

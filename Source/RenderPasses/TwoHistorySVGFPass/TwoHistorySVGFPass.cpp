@@ -52,6 +52,10 @@ namespace
 
     // Internal buffer names
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
+    const char kInternalBufferShortHistoryCentroid[] = "Cenroid (short)";
+    const char kInternalBufferLongHistoryCentroid[] = "Cenroid (long)";
+    const char kInternalBufferPreviousShortHistoryCentroid[] = "Previous Cenroid (short)";
+    const char kInternalBufferPreviousLongHistoryCentroid[] = "Previous Cenroid (long)";
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
@@ -64,6 +68,10 @@ namespace
     const char kOutputShortHistoryFilteredImage[] = "Filtered (short)";
     const char kOutputLongHistoryFilteredImage[] = "Filtered (long)";
     const char kOutputSampleCount[] = "Sample Count";
+
+    // TODO: Remove debug output
+    const char kOutputShortHistoryCentroid[] = "Centroid (short)";
+    const char kOutputLongHistoryCentroid[] = "Centroid (long)";
 
     enum ReprojectOutFields
     {
@@ -169,8 +177,25 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
 
     reflector.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(ResourceFormat::RGBA32Float)
-        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
-        ;
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
+
+
+    reflector.addInternal(kInternalBufferShortHistoryCentroid, "Centroid (short)")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
+
+    reflector.addInternal(kInternalBufferLongHistoryCentroid, "Centroid (long)")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
+
+    reflector.addInternal(kInternalBufferPreviousShortHistoryCentroid, "Previous Centroid (short)")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
+
+    reflector.addInternal(kInternalBufferPreviousLongHistoryCentroid, "Previous Centroid (long)")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
+
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputHistoryWeight, "History Sample Weight").format(ResourceFormat::R32Float);
@@ -182,6 +207,10 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
     reflector.addOutput(kOutputShortHistoryFilteredImage, "Filtered image with short history").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputLongHistoryFilteredImage, "Filtered image with long history ").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputSampleCount, "Sample Count").format(ResourceFormat::R8Uint);
+
+    // TODO: Remove debug output
+    reflector.addOutput(kOutputShortHistoryCentroid, "Centroid (short)").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputLongHistoryCentroid, "Centroid (long)").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }
@@ -236,12 +265,17 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
         // reprojected filtered illumination from the previous frame.
         // Stores the result as well as initial moments and an updated
         // per-pixel history length in mpCurReprojFbo.
-        Texture::SharedPtr pPrevLinearZAndNormalTexture =
-            renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
+        Texture::SharedPtr pPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
+        Texture::SharedPtr pShortHistoryCentroidTexture = renderData.getTexture(kInternalBufferShortHistoryCentroid);
+        Texture::SharedPtr pLongHistoryCentroidTexture = renderData.getTexture(kInternalBufferLongHistoryCentroid);
+        Texture::SharedPtr pPrevShortHistoryCentroidTexture = renderData.getTexture(kInternalBufferPreviousShortHistoryCentroid);
+        Texture::SharedPtr pPrevLongHistoryCentroidTexture = renderData.getTexture(kInternalBufferPreviousLongHistoryCentroid);
         computeReprojection(pRenderContext, pAlbedoTexture, pColorTexture, pSampleCountTexture,
             pEmissionTexture,
             pMotionVectorTexture, pPosNormalFwidthTexture,
-            pPrevLinearZAndNormalTexture);
+            pPrevLinearZAndNormalTexture,
+            pShortHistoryCentroidTexture, pLongHistoryCentroidTexture,
+            pPrevShortHistoryCentroidTexture, pPrevLongHistoryCentroidTexture);
 
         // Do a first cross-bilateral filtering of the illumination and
         // estimate its variance, storing the result into a float4 in
@@ -274,8 +308,13 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
-        pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(),
-            pPrevLinearZAndNormalTexture->getRTV());
+        pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), pPrevLinearZAndNormalTexture->getRTV());
+        pRenderContext->blit(pShortHistoryCentroidTexture->getSRV(), pPrevShortHistoryCentroidTexture->getRTV());
+        pRenderContext->blit(pLongHistoryCentroidTexture->getSRV(), pPrevLongHistoryCentroidTexture->getRTV());
+
+        // TODO: Remove debug output
+        pRenderContext->blit(pShortHistoryCentroidTexture->getSRV(), renderData.getTexture(kOutputShortHistoryCentroid)->getRTV());
+        pRenderContext->blit(pLongHistoryCentroidTexture->getSRV(), renderData.getTexture(kOutputLongHistoryCentroid)->getRTV());
     }
     else
     {
@@ -370,7 +409,11 @@ void TwoHistorySVGFPass::computeReprojection(RenderContext* pRenderContext, Text
     Texture::SharedPtr pEmissionTexture,
     Texture::SharedPtr pMotionVectorTexture,
     Texture::SharedPtr pPositionNormalFwidthTexture,
-    Texture::SharedPtr pPrevLinearZTexture)
+    Texture::SharedPtr pPrevLinearZTexture,
+    Texture::SharedPtr pShortHistoryCentroidTexture,
+    Texture::SharedPtr pLongHistoryCentroidTexture,
+    Texture::SharedPtr pPrevShortHistoryCentroidTexture,
+    Texture::SharedPtr pPrevLongHistoryCentroidTexture)
 {
     auto perImageCB = mpReprojection["PerImageCB"];
 
@@ -390,6 +433,10 @@ void TwoHistorySVGFPass::computeReprojection(RenderContext* pRenderContext, Text
     perImageCB["gPrevLongHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight);
     perImageCB["gPrevShortIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
     perImageCB["gPrevLongIllum"] = mpFilteredPastFbo[2]->getColorTexture(0);
+    perImageCB["gShortHistoryCentroid"] = pShortHistoryCentroidTexture;
+    perImageCB["gLongHistoryCentroid"] = pLongHistoryCentroidTexture;
+    perImageCB["gPrevShortHistoryCentroid"] = pPrevShortHistoryCentroidTexture;
+    perImageCB["gPrevLongHistoryCentroid"] = pPrevLongHistoryCentroidTexture;
 
     // Setup variables for our reprojection pass
     perImageCB["gAlpha"] = mAlpha;
