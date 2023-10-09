@@ -30,6 +30,7 @@ namespace
     const char kVarianceEpsilon[] = "VarianceEpsilon";
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
+    const char kAlpha[] = "Alpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
     const char kMaxHistoryWeight[] = "MaxHistoryWeight";
     const char kShortHistoryMaxWeight[] = "ShortHistoryMaxWeight";
@@ -51,9 +52,6 @@ namespace
 
     // Internal buffer names
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
-    const char kInternalBufferPreviousLighting[] = "Previous Lighting";
-    const char kInternalBufferPreviousMoments[] = "Previous Moments";
-    const char kInternalBufferPreviousTotalWeight[] = "Previous Total Weight";
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
@@ -65,6 +63,7 @@ namespace
     const char kOutputLongHistoryIllumination[] = "Illumination (long)";
     const char kOutputShortHistoryFilteredImage[] = "Filtered (short)";
     const char kOutputLongHistoryFilteredImage[] = "Filtered (long)";
+    const char kOutputSampleCount[] = "Sample Count";
 
     enum ReprojectOutFields
     {
@@ -106,6 +105,7 @@ TwoHistorySVGFPass::TwoHistorySVGFPass(const Dictionary& dict)
         else if (key == kVarianceEpsilon) mVarainceEpsilon = value;
         else if (key == kPhiColor) mPhiColor = value;
         else if (key == kPhiNormal) mPhiNormal = value;
+        else if (key == kAlpha) mAlpha = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
         else if (key == kMaxHistoryWeight) mMaxHistoryWeight = value;
         else if (key == kShortHistoryMaxWeight) mShortHistoryMaxWeight = value;
@@ -130,6 +130,7 @@ Dictionary TwoHistorySVGFPass::getScriptingDictionary()
     dict[kVarianceEpsilon] = mVarainceEpsilon;
     dict[kPhiColor] = mPhiColor;
     dict[kPhiNormal] = mPhiNormal;
+    dict[kAlpha] = mAlpha;
     dict[kMomentsAlpha] = mMomentsAlpha;
     dict[kMaxHistoryWeight] = mMaxHistoryWeight;
     dict[kShortHistoryMaxWeight] = mShortHistoryMaxWeight;
@@ -155,7 +156,7 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
 
     reflector.addInput(kInputBufferAlbedo, "Albedo");
     reflector.addInput(kInputBufferColor, "Color");
-    reflector.addInput(kInputBufferSampleCount, "Sample Count");
+    reflector.addInput(kInputBufferSampleCount, "Sample Count").format(ResourceFormat::R8Uint).bindFlags(Resource::BindFlags::ShaderResource);
     reflector.addInput(kInputBufferEmission, "Emission");
     reflector.addInput(kInputBufferWorldPosition, "World Position");
     reflector.addInput(kInputBufferWorldNormal, "World Normal");
@@ -170,14 +171,6 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
         ;
-    reflector.addInternal(kInternalBufferPreviousLighting, "Previous Filtered Lighting")
-        .format(ResourceFormat::RGBA32Float)
-        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
-        ;
-    reflector.addInternal(kInternalBufferPreviousMoments, "Previous Moments")
-        .format(ResourceFormat::RG32Float)
-        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource)
-        ;
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputHistoryWeight, "History Sample Weight").format(ResourceFormat::R32Float);
@@ -188,6 +181,7 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
     reflector.addOutput(kOutputLongHistoryIllumination, "Long History Illumination").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputShortHistoryFilteredImage, "Filtered image with short history").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputLongHistoryFilteredImage, "Filtered image with long history ").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputSampleCount, "Sample Count").format(ResourceFormat::R8Uint);
 
     return reflector;
 }
@@ -220,6 +214,7 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
     Texture::SharedPtr pOutputLongHistoryIllumination = renderData.getTexture(kOutputLongHistoryIllumination);
     Texture::SharedPtr pOutputShortHistoryFilteredImage = renderData.getTexture(kOutputShortHistoryFilteredImage);
     Texture::SharedPtr pOutputLongHistoryFilteredImage = renderData.getTexture(kOutputLongHistoryFilteredImage);
+    Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
 
     FALCOR_ASSERT(mpFilteredIlluminationFbo &&
         mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -243,8 +238,6 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
         // per-pixel history length in mpCurReprojFbo.
         Texture::SharedPtr pPrevLinearZAndNormalTexture =
             renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
-        Texture::SharedPtr pPrevTotalWeightTexture =
-            renderData.getTexture(kInternalBufferPreviousTotalWeight);
         computeReprojection(pRenderContext, pAlbedoTexture, pColorTexture, pSampleCountTexture,
             pEmissionTexture,
             pMotionVectorTexture, pPosNormalFwidthTexture,
@@ -277,6 +270,7 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight)->getSRV(), pOutputLongHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight)->getSRV(), pInputBufferHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::Varaince)->getSRV(), pOutputVariance->getRTV());
+        pRenderContext->blit(pSampleCountTexture->getSRV(), pOutputSampleCount->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
@@ -350,8 +344,6 @@ void TwoHistorySVGFPass::clearBuffers(RenderContext* pRenderContext, const Rende
     pRenderContext->clearFbo(mpFinalFboShort.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpFinalFboLong.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLighting).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousMoments).get());
     pRenderContext->clearTexture(renderData.getTexture(kInputBufferHistoryWeight).get());
     pRenderContext->clearTexture(renderData.getTexture(kInputBufferShortHistoryWeight).get());
     pRenderContext->clearTexture(renderData.getTexture(kInputBufferLongHistoryWeight).get());
@@ -393,12 +385,14 @@ void TwoHistorySVGFPass::computeReprojection(RenderContext* pRenderContext, Text
     perImageCB["gPrevMoments"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::Moments);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = pPrevLinearZTexture;
+    perImageCB["gPrevHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
     perImageCB["gPrevShortHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryWeight);
     perImageCB["gPrevLongHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight);
     perImageCB["gPrevShortIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
     perImageCB["gPrevLongIllum"] = mpFilteredPastFbo[2]->getColorTexture(0);
 
     // Setup variables for our reprojection pass
+    perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
     perImageCB["gMaxHistoryWeight"] = mMaxHistoryWeight;
     perImageCB["gShortHistoryMaxWeight"] = mShortHistoryMaxWeight;
@@ -516,10 +510,11 @@ void TwoHistorySVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
+    dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Max History Weight", mMaxHistoryWeight, 0.0f, 128.0f, 0.1f);
-    dirty |= (int)widget.var("Short History Max Weight", mShortHistoryMaxWeight, 0.0f, 128.0f, 0.1f);
-    dirty |= (int)widget.var("Long History Max Weight", mLongHistoryMaxWeight, 0.0f, 128.0f, 0.1f);
+    dirty |= (int)widget.var("Max History Weight", mMaxHistoryWeight, 0.0f, 1024.0f, 0.1f);
+    dirty |= (int)widget.var("Short History Max Weight", mShortHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
+    dirty |= (int)widget.var("Long History Max Weight", mLongHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
 
     if (dirty) mBuffersNeedClear = true;
 }

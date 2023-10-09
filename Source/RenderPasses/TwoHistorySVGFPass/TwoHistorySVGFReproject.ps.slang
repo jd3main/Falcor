@@ -51,11 +51,12 @@ cbuffer PerImageCB
     Texture2D gLinearZAndNormal;
     Texture2D gPrevLinearZAndNormal;
 
-    Texture2D<int> gSampleCount;
+    Texture2D<uint> gSampleCount;
     Texture2D gPrevHistoryWeight;
     Texture2D gPrevShortHistoryWeight;
     Texture2D gPrevLongHistoryWeight;
 
+    float gAlpha;
     float gMomentsAlpha;
     float gMaxHistoryWeight;
     float gShortHistoryMaxWeight;
@@ -248,21 +249,54 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     {
         illumination = float3(0, 0, 0);
     }
+    const float curLuminance = luminance(illumination);
 
     // Load history
     History history;
-    // const int sampleCount = gSampleCount[ipos];
-    const int sampleCount = 1;
+    const int sampleCount = gSampleCount[ipos];
     const bool success = loadHistory(posH.xy, history);
-    const float curLuminance = luminance(illumination);
 
     // Compute alpha
-    // float alpha = sampleCount / (sampleCount + history.weight);
     float alpha = 0;
     float3 curOutIllumination = float3(0, 0, 0);
 
-    alpha = sampleCount / (sampleCount + history.longWeight);
-    curOutIllumination = lerp(history.longIllumination, illumination, alpha);
+    if (history.longWeight <= gShortHistoryMaxWeight)
+    {
+        alpha = sampleCount / (sampleCount + history.longWeight);
+        curOutIllumination = lerp(history.longIllumination, illumination, alpha);
+    }
+    else
+    {
+        /*
+             mixedHistoryWeight = longWeight * beta + shortWeight * (1-beta)
+
+                 gAlpha = sampleCount / (sampleCount + mixedHistoryWeight)
+             => mixedHistoryWeight = sampleCount / gAlpha - sampleCount
+             => longWeight * beta + shortWeight * (1-beta) = sampleCount / gAlpha - sampleCount
+             => beta = (sampleCount / gAlpha - sampleCount - shortWeight) / (longWeight - shortWeight)
+        */
+        const float beta = clamp((sampleCount / gAlpha - sampleCount - history.shortWeight) / (history.longWeight - history.shortWeight), 0.0f, 1.0f);
+
+        // Debugging
+        /*
+        if (ipos.x < 100)
+        {
+            if (beta <= 0)
+                curOutIllumination = float3(0, 0, 1);
+            else if (beta >= 1)
+                curOutIllumination = float3(1, 0, 0);
+            else
+                curOutIllumination = float3(0, beta, 0);
+        }
+        else
+        */
+        {
+            float mixedHistoryWeight = history.longWeight * beta + history.shortWeight * (1.0f - beta);
+            float3 mixedHistoryIllumination = history.longIllumination * beta + history.shortIllumination.xyz * (1.0f - beta);
+            alpha = sampleCount / (sampleCount + mixedHistoryWeight);
+            curOutIllumination = illumination * alpha + mixedHistoryIllumination * (1.0f - alpha);
+        }
+    }
 
     // Calculate alpha for moments in simpler way
     const float curWeight = success ? min(history.weight + sampleCount, gMaxHistoryWeight * sampleCount) : sampleCount;
