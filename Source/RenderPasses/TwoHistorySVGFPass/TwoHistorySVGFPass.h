@@ -52,11 +52,12 @@ private:
     float   mVarainceEpsilon = 1e-4f;
     float   mPhiColor = 10.0f;
     float   mPhiNormal = 128.0f;
-    float   mAlpha = 0.05f;
     float   mMomentsAlpha = 0.2f;
+    float   mExpectedDelay = -10;
     float   mMaxHistoryWeight = 32.0f;
     float   mShortHistoryMaxWeight = 8;
     float   mLongHistoryMaxWeight = 32;
+
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;

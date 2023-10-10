@@ -30,8 +30,8 @@ namespace
     const char kVarianceEpsilon[] = "VarianceEpsilon";
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
-    const char kAlpha[] = "Alpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
+    const char kExpectedDelay[] = "ExpectedDelay";
     const char kMaxHistoryWeight[] = "MaxHistoryWeight";
     const char kShortHistoryMaxWeight[] = "ShortHistoryMaxWeight";
     const char kLongHistoryMaxWeight[] = "LongHistoryMaxWeight";
@@ -113,8 +113,8 @@ TwoHistorySVGFPass::TwoHistorySVGFPass(const Dictionary& dict)
         else if (key == kVarianceEpsilon) mVarainceEpsilon = value;
         else if (key == kPhiColor) mPhiColor = value;
         else if (key == kPhiNormal) mPhiNormal = value;
-        else if (key == kAlpha) mAlpha = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
+        else if (key == kExpectedDelay) mExpectedDelay = value;
         else if (key == kMaxHistoryWeight) mMaxHistoryWeight = value;
         else if (key == kShortHistoryMaxWeight) mShortHistoryMaxWeight = value;
         else if (key == kLongHistoryMaxWeight) mLongHistoryMaxWeight = value;
@@ -138,8 +138,8 @@ Dictionary TwoHistorySVGFPass::getScriptingDictionary()
     dict[kVarianceEpsilon] = mVarainceEpsilon;
     dict[kPhiColor] = mPhiColor;
     dict[kPhiNormal] = mPhiNormal;
-    dict[kAlpha] = mAlpha;
     dict[kMomentsAlpha] = mMomentsAlpha;
+    dict[kExpectedDelay] = mExpectedDelay;
     dict[kMaxHistoryWeight] = mMaxHistoryWeight;
     dict[kShortHistoryMaxWeight] = mShortHistoryMaxWeight;
     dict[kLongHistoryMaxWeight] = mLongHistoryMaxWeight;
@@ -439,8 +439,8 @@ void TwoHistorySVGFPass::computeReprojection(RenderContext* pRenderContext, Text
     perImageCB["gPrevLongHistoryCentroid"] = pPrevLongHistoryCentroidTexture;
 
     // Setup variables for our reprojection pass
-    perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
+    perImageCB["gDelay"] = mExpectedDelay;
     perImageCB["gMaxHistoryWeight"] = mMaxHistoryWeight;
     perImageCB["gShortHistoryMaxWeight"] = mShortHistoryMaxWeight;
     perImageCB["gLongHistoryMaxWeight"] = mLongHistoryMaxWeight;
@@ -557,8 +557,8 @@ void TwoHistorySVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Expected Delay", mExpectedDelay, -1024.0f, 0.0f, 0.05f);
     dirty |= (int)widget.var("Max History Weight", mMaxHistoryWeight, 0.0f, 1024.0f, 0.1f);
     dirty |= (int)widget.var("Short History Max Weight", mShortHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
     dirty |= (int)widget.var("Long History Max Weight", mLongHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);

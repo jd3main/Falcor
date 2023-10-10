@@ -28,6 +28,7 @@
 import Scene.ShadingData;
 import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
+import Utils.Color.ColorMap;
 import RenderPasses.SVGFPass.SVGFCommon;
 
 // Workaround for isnan() not working in slang.
@@ -61,7 +62,7 @@ cbuffer PerImageCB
     Texture2D gPrevShortHistoryCentroid;
     Texture2D gPrevLongHistoryCentroid;
 
-    float gAlpha;
+    float gDelay;
     float gMomentsAlpha;
     float gMaxHistoryWeight;
     float gShortHistoryMaxWeight;
@@ -287,17 +288,22 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     else
     {
         /*
-             mixedHistoryWeight = longWeight * beta + shortWeight * (1-beta)
-
-                 gAlpha = sampleCount / (sampleCount + mixedHistoryWeight)
-             => mixedHistoryWeight = sampleCount / gAlpha - sampleCount
-             => longWeight * beta + shortWeight * (1-beta) = sampleCount / gAlpha - sampleCount
-             => beta = (sampleCount / gAlpha - sampleCount - shortWeight) / (longWeight - shortWeight)
+            C_m = lerp(C_s, C_l, beta)
+            W_m = lerp(W_s, W_l, beta)
+            gDelay = lerp((C_m - 1), 0, n / (W_m + n))
         */
-        const float beta = clamp((sampleCount / gAlpha - sampleCount - history.shortWeight) / (history.longWeight - history.shortWeight), 0.0f, 1.0f);
 
-        // Debugging
-        /*
+        const float diffCentroid = history.shortCentroid - history.longCentroid;
+        const float diffWeight = history.shortWeight - history.longWeight;
+        const float shortCentroid_sub_D__sub_1 = history.shortCentroid - gDelay - 1;
+
+        float a = diffCentroid * diffWeight;
+        float b = diffCentroid * history.shortWeight + diffWeight * shortCentroid_sub_D__sub_1;
+        float c = shortCentroid_sub_D__sub_1 * history.shortWeight - sampleCount * gDelay;
+
+        float beta = (-b - sqrt(b * b - 4 * a * c)) / (2 * a);
+        float betaClamped = clamp(beta, 0, 1);
+
         if (ipos.x < 100)
         {
             if (beta <= 0)
@@ -305,15 +311,13 @@ PS_OUT main(FullScreenPassVsOut vsOut)
             else if (beta >= 1)
                 curOutIllumination = float3(1, 0, 0);
             else
-                curOutIllumination = float3(0, beta, 0);
+                curOutIllumination = colormapViridis(beta);
         }
         else
-        */
         {
-            float mixedHistoryWeight = history.longWeight * beta + history.shortWeight * (1.0f - beta);
-            float3 mixedHistoryIllumination = history.longIllumination * beta + history.shortIllumination.xyz * (1.0f - beta);
-            alpha = sampleCount / (sampleCount + mixedHistoryWeight);
-            curOutIllumination = illumination * alpha + mixedHistoryIllumination * (1.0f - alpha);
+            float3 blendedIllumination = lerp(history.shortIllumination, history.longIllumination, betaClamped);
+            float blendedWeight = lerp(history.shortWeight, history.longWeight, betaClamped);
+            curOutIllumination = lerp(blendedIllumination.xyz, illumination, sampleCount / (blendedWeight + sampleCount));
         }
     }
 

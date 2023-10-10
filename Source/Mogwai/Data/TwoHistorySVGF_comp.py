@@ -57,7 +57,7 @@ def render_graph_g():
     g.addPass(Composite0, 'Composite0')
     AccumulatePass = createPass('AccumulatePass', {'enabled': False, 'outputSize': IOSize.Default, 'autoReset': True, 'precisionMode': AccumulatePrecision.Single, 'subFrameCount': 0, 'maxAccumulatedFrames': 0})
     g.addPass(AccumulatePass, 'AccumulatePass')
-    TwoHistorySVGFPass = createPass('TwoHistorySVGFPass', {'Enabled': True, 'Iterations': 4, 'FeedbackTap': 1, 'VarianceEpsilon': 9.999999747378752e-05, 'PhiColor': 10.0, 'PhiNormal': 128.0, 'Alpha': 0.05000000074505806, 'MomentsAlpha': 0.20000000298023224, 'MaxHistoryWeight': 10.0, 'ShortHistoryMaxWeight': 8.0, 'LongHistoryMaxWeight': 40.0})
+    TwoHistorySVGFPass = createPass('TwoHistorySVGFPass', {'Enabled': True, 'Iterations': 4, 'FeedbackTap': 1, 'VarianceEpsilon': 9.999999747378752e-05, 'PhiColor': 10.0, 'PhiNormal': 128.0, 'MomentsAlpha': 0.20000000298023224, 'ExpectedDelay': -20.0, 'MaxHistoryWeight': 10.0, 'ShortHistoryMaxWeight': 8.0, 'LongHistoryMaxWeight': 80.0})
     g.addPass(TwoHistorySVGFPass, 'TwoHistorySVGFPass')
     SplitScreenPass = createPass('SplitScreenPass', {'splitLocation': 0.5, 'showTextLabels': False, 'leftLabel': 'Left side', 'rightLabel': 'Right side'})
     g.addPass(SplitScreenPass, 'SplitScreenPass')
