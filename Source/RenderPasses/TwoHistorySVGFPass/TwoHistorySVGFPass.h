@@ -53,8 +53,8 @@ private:
     float   mPhiColor = 10.0f;
     float   mPhiNormal = 128.0f;
     float   mMomentsAlpha = 0.2f;
+    float   mMaxHistoryLength = 8.0f;
     float   mExpectedDelay = -10;
-    float   mMaxHistoryWeight = 32.0f;
     float   mShortHistoryMaxWeight = 8;
     float   mLongHistoryMaxWeight = 32;
 

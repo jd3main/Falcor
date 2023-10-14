@@ -53,18 +53,18 @@ cbuffer PerImageCB
     Texture2D gPrevLinearZAndNormal;
 
     Texture2D<uint> gSampleCount;
-    Texture2D gPrevHistoryWeight;
+    Texture2D gPrevHistoryLength;
     Texture2D gPrevShortHistoryWeight;
     Texture2D gPrevLongHistoryWeight;
 
-    RWTexture2D gShortHistoryCentroid;
-    RWTexture2D gLongHistoryCentroid;
+    RWTexture2D gOutShortHistoryCentroid;
+    RWTexture2D gOutLongHistoryCentroid;
     Texture2D gPrevShortHistoryCentroid;
     Texture2D gPrevLongHistoryCentroid;
 
     float gDelay;
     float gMomentsAlpha;
-    float gMaxHistoryWeight;
+    float gMaxHistoryLength;
     float gShortHistoryMaxWeight;
     float gLongHistoryMaxWeight;
 };
@@ -93,7 +93,7 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
 struct History
 {
     float2 moments;
-    float weight;
+    float length;
     float shortWeight;
     float longWeight;
     float3 shortIllumination;
@@ -118,7 +118,6 @@ bool loadHistory(float2 posH, out History history)
 
     float2 prevMoments = float2(0, 0);
     float historyLength = 0;
-    float historyWeight = 0;
     float shortHistoryWeight = 0;
     float longHistoryWeight = 0;
     float3 shortHistoryIllum = float3(0, 0, 0);
@@ -163,7 +162,7 @@ bool loadHistory(float2 posH, out History history)
             {
                 prevMoments += w[sampleIdx] * gPrevMoments[loc].xy;
                 sumw += w[sampleIdx];
-                historyWeight += w[sampleIdx] * gPrevHistoryWeight[loc].x;
+                historyLength += w[sampleIdx] * gPrevHistoryLength[loc].x;
                 shortHistoryWeight += w[sampleIdx] * gPrevShortHistoryWeight[loc].x;
                 longHistoryWeight += w[sampleIdx] * gPrevLongHistoryWeight[loc].x;
                 shortHistoryIllum += w[sampleIdx] * gPrevShortIllum[loc].xyz;
@@ -176,7 +175,7 @@ bool loadHistory(float2 posH, out History history)
         // redistribute weights in case not all taps were used
         valid = (sumw >= 0.01);
         prevMoments = valid ? prevMoments / sumw : float2(0, 0);
-        historyWeight = valid ? historyWeight / sumw : 0;
+        historyLength = valid ? historyLength / sumw : 0;
         shortHistoryWeight = valid ? shortHistoryWeight / sumw : 0;
         longHistoryWeight = valid ? longHistoryWeight / sumw : 0;
         shortHistoryIllum = valid ? shortHistoryIllum / sumw : float3(0, 0, 0);
@@ -203,7 +202,7 @@ bool loadHistory(float2 posH, out History history)
                 {
                     prevMoments += gPrevMoments[p].xy;
                     nValid += 1.0;
-                    historyWeight += gPrevHistoryWeight[p].x;
+                    historyLength += gPrevHistoryLength[p].x;
                     shortHistoryWeight += gPrevShortHistoryWeight[p].x;
                     longHistoryWeight += gPrevLongHistoryWeight[p].x;
                     shortHistoryIllum += gPrevShortIllum[p].xyz;
@@ -217,7 +216,7 @@ bool loadHistory(float2 posH, out History history)
         {
             valid = true;
             prevMoments /= nValid;
-            historyWeight /= nValid;
+            historyLength /= nValid;
             shortHistoryWeight /= nValid;
             longHistoryWeight /= nValid;
             shortHistoryIllum /= nValid;
@@ -227,7 +226,7 @@ bool loadHistory(float2 posH, out History history)
     }
 
     history.moments = prevMoments;
-    history.weight = historyWeight;
+    history.length = historyLength;
     history.shortWeight = shortHistoryWeight;
     history.longWeight = longHistoryWeight;
     history.shortIllumination = shortHistoryIllum;
@@ -249,12 +248,11 @@ struct PS_OUT
 {
     float4 OutIllumination  : SV_TARGET0;
     float2 OutMoments       : SV_TARGET1;
-    float OutHistoryWeight  : SV_TARGET2;
-    float OutVaraince       : SV_TARGET3;
-    float OutShortHistoryWeight : SV_TARGET4;
-    float OutLongHistoryWeight : SV_TARGET5;
-    float4 OutShortHistoryIllumination : SV_TARGET6;
-    float4 OutLongHistoryIllumination : SV_TARGET7;
+    float OutHistoryLength  : SV_TARGET2;
+    float OutShortHistoryWeight : SV_TARGET3;
+    float OutLongHistoryWeight  : SV_TARGET4;
+    float4 OutShortHistoryIllumination  : SV_TARGET5;
+    float4 OutLongHistoryIllumination   : SV_TARGET6;
 };
 
 PS_OUT main(FullScreenPassVsOut vsOut)
@@ -297,12 +295,12 @@ PS_OUT main(FullScreenPassVsOut vsOut)
         const float diffWeight = history.shortWeight - history.longWeight;
         const float shortCentroid_sub_D__sub_1 = history.shortCentroid - gDelay - 1;
 
-        float a = diffCentroid * diffWeight;
-        float b = diffCentroid * history.shortWeight + diffWeight * shortCentroid_sub_D__sub_1;
-        float c = shortCentroid_sub_D__sub_1 * history.shortWeight - sampleCount * gDelay;
+        const float a = diffCentroid * diffWeight;
+        const float b = diffCentroid * history.shortWeight + diffWeight * shortCentroid_sub_D__sub_1;
+        const float c = shortCentroid_sub_D__sub_1 * history.shortWeight - sampleCount * gDelay;
 
-        float beta = (-b - sqrt(b * b - 4 * a * c)) / (2 * a);
-        float betaClamped = clamp(beta, 0, 1);
+        const float beta = (-b - sqrt(b * b - 4 * a * c)) / (2 * a);
+        const float betaClamped = clamp(beta, 0, 1);
 
         if (ipos.x < 100)
         {
@@ -311,7 +309,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
             else if (beta >= 1)
                 curOutIllumination = float3(1, 0, 0);
             else
-                curOutIllumination = colormapViridis(beta);
+                curOutIllumination = colormapInferno(beta);
         }
         else
         {
@@ -322,9 +320,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     }
 
     // Calculate alpha for moments in simpler way
-    const float curWeight = success ? min(history.weight + sampleCount, gMaxHistoryWeight * sampleCount) : sampleCount;
-    float alphaMoments = max(gMomentsAlpha, sampleCount / curWeight);
-    alphaMoments = success ? alphaMoments : 1.0f;
+    const float curWeight = success ? min(history.length + 1, gMaxHistoryLength) : 1;
+    float alphaMoments = success ? max(gMomentsAlpha, 1 / curWeight) : 1.0f;
 
     // compute first two moments of luminance
     float2 moments;
@@ -344,8 +341,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     // variance is propagated through the alpha channel
     psOut.OutIllumination.a = variance;
     psOut.OutMoments = moments;
-    psOut.OutHistoryWeight = curWeight;
-    psOut.OutVaraince = variance;
+    psOut.OutHistoryLength = curWeight;
     psOut.OutShortHistoryWeight = min(history.shortWeight + sampleCount, gShortHistoryMaxWeight);
     psOut.OutLongHistoryWeight = min(history.longWeight + sampleCount, gLongHistoryMaxWeight);
     psOut.OutShortHistoryIllumination.rgb = lerp(history.shortIllumination, illumination, sampleCount / (history.shortWeight + sampleCount));
@@ -354,10 +350,10 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutLongHistoryIllumination.a = variance;
 
     // Calculate Centroid
-    const float shortCentroid = success ? (history.shortCentroid - 1) * history.shortWeight/(history.shortWeight+sampleCount) : 0;
-    const float longCentroid = success ? (history.longCentroid - 1) * history.longWeight/(history.longWeight+sampleCount) : 0;
-    gShortHistoryCentroid[ipos] = shortCentroid;
-    gLongHistoryCentroid[ipos] = longCentroid;
+    const float newShortCentroid = success ? (history.shortCentroid - 1) * history.shortWeight/(history.shortWeight+sampleCount) : 0;
+    const float newLongCentroid = success ? (history.longCentroid - 1) * history.longWeight / (history.longWeight + sampleCount) : 0;
+    gOutShortHistoryCentroid[ipos] = newShortCentroid;
+    gOutLongHistoryCentroid[ipos] = newLongCentroid;
 
     return psOut;
 }

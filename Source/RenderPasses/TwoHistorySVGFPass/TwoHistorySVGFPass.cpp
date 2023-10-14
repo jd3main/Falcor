@@ -31,8 +31,8 @@ namespace
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
     const char kMomentsAlpha[] = "MomentsAlpha";
+    const char kMaxHistoryLength[] = "MaxHistoryLength";
     const char kExpectedDelay[] = "ExpectedDelay";
-    const char kMaxHistoryWeight[] = "MaxHistoryWeight";
     const char kShortHistoryMaxWeight[] = "ShortHistoryMaxWeight";
     const char kLongHistoryMaxWeight[] = "LongHistoryMaxWeight";
 
@@ -46,12 +46,11 @@ namespace
     const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
     const char kInputBufferLinearZ[] = "LinearZ";
     const char kInputBufferMotionVector[] = "MotionVec";
-    const char kInputBufferHistoryWeight[] = "HistoryWeight";
-    const char kInputBufferShortHistoryWeight[] = "wShort";
-    const char kInputBufferLongHistoryWeight[] = "wLong";
 
     // Internal buffer names
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
+    const char kInternalBufferPreviousShortHistoryWeight[] = "Previous Weight (short)";
+    const char kInternalBufferPreviousLongHistoryWeight[] = "Previous Weight (long)";
     const char kInternalBufferShortHistoryCentroid[] = "Cenroid (short)";
     const char kInternalBufferLongHistoryCentroid[] = "Cenroid (long)";
     const char kInternalBufferPreviousShortHistoryCentroid[] = "Previous Cenroid (short)";
@@ -59,10 +58,9 @@ namespace
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
-    const char kOutputHistoryWeight[] = "History Weight";
+    const char kOutputHistoryLength[] = "History Length";
     const char kOutputShortHistoryWeight[] = "wShort";
     const char kOutputLongHistoryWeight[] = "wLong";
-    const char kOutputVariance[] = "Variance";
     const char kOutputShortHistoryIllumination[] = "Illumination (short)";
     const char kOutputLongHistoryIllumination[] = "Illumination (long)";
     const char kOutputShortHistoryFilteredImage[] = "Filtered (short)";
@@ -77,8 +75,7 @@ namespace
     {
         Illumination,
         Moments,
-        HistoryWeight,
-        Varaince,
+        HistoryLength,
         ShortHistoryWeight,
         LongHistoryWeight,
         ShortHistoryIllumination,
@@ -114,8 +111,8 @@ TwoHistorySVGFPass::TwoHistorySVGFPass(const Dictionary& dict)
         else if (key == kPhiColor) mPhiColor = value;
         else if (key == kPhiNormal) mPhiNormal = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
+        else if (key == kMaxHistoryLength) mMaxHistoryLength = value;
         else if (key == kExpectedDelay) mExpectedDelay = value;
-        else if (key == kMaxHistoryWeight) mMaxHistoryWeight = value;
         else if (key == kShortHistoryMaxWeight) mShortHistoryMaxWeight = value;
         else if (key == kLongHistoryMaxWeight) mLongHistoryMaxWeight = value;
         else logWarning("Unknown field '{}' in TwoHistorySVGFPass dictionary.", key);
@@ -139,8 +136,8 @@ Dictionary TwoHistorySVGFPass::getScriptingDictionary()
     dict[kPhiColor] = mPhiColor;
     dict[kPhiNormal] = mPhiNormal;
     dict[kMomentsAlpha] = mMomentsAlpha;
+    dict[kMaxHistoryLength] = mMaxHistoryLength;
     dict[kExpectedDelay] = mExpectedDelay;
-    dict[kMaxHistoryWeight] = mMaxHistoryWeight;
     dict[kShortHistoryMaxWeight] = mShortHistoryMaxWeight;
     dict[kLongHistoryMaxWeight] = mLongHistoryMaxWeight;
     return dict;
@@ -171,9 +168,6 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
     reflector.addInput(kInputBufferPosNormalFwidth, "PositionNormalFwidth");
     reflector.addInput(kInputBufferLinearZ, "LinearZ");
     reflector.addInput(kInputBufferMotionVector, "Motion vectors");
-    reflector.addInput(kInputBufferHistoryWeight, "Buffer for storing history weight");
-    reflector.addInput(kInputBufferShortHistoryWeight, "Weight of short history");
-    reflector.addInput(kInputBufferLongHistoryWeight, "Weight of long history");
 
     reflector.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(ResourceFormat::RGBA32Float)
@@ -197,11 +191,13 @@ RenderPassReflection TwoHistorySVGFPass::reflect(const CompileData& compileData)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
 
 
+    reflector.addInternal(kInternalBufferPreviousShortHistoryWeight, "Previous weight of short history");
+    reflector.addInternal(kInternalBufferPreviousLongHistoryWeight, "Previous weight of long history");
+
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputHistoryWeight, "History Sample Weight").format(ResourceFormat::R32Float);
+    reflector.addOutput(kOutputHistoryLength, "History Sample Length").format(ResourceFormat::R32Float);
     reflector.addOutput(kOutputShortHistoryWeight, "Weight of short history").format(ResourceFormat::R32Float);
     reflector.addOutput(kOutputLongHistoryWeight, "Weight of long history").format(ResourceFormat::R32Float);
-    reflector.addOutput(kOutputVariance, "Variance").format(ResourceFormat::R32Float);
     reflector.addOutput(kOutputShortHistoryIllumination, "Short History Illumination").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputLongHistoryIllumination, "Long History Illumination").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputShortHistoryFilteredImage, "Filtered image with short history").format(ResourceFormat::RGBA16Float);
@@ -223,6 +219,7 @@ void TwoHistorySVGFPass::compile(RenderContext* pRenderContext, const CompileDat
 
 void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    // Input textures
     Texture::SharedPtr pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
     Texture::SharedPtr pColorTexture = renderData.getTexture(kInputBufferColor);
     Texture::SharedPtr pSampleCountTexture = renderData.getTexture(kInputBufferSampleCount);
@@ -233,12 +230,11 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
     Texture::SharedPtr pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
     Texture::SharedPtr pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
 
+    // Output Textures
     Texture::SharedPtr pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
-    Texture::SharedPtr pOutputHistoryWeight = renderData.getTexture(kOutputHistoryWeight);
+    Texture::SharedPtr pOutputHistoryLength = renderData.getTexture(kOutputHistoryLength);
     Texture::SharedPtr pOutputShortHistoryWeight = renderData.getTexture(kOutputShortHistoryWeight);
     Texture::SharedPtr pOutputLongHistoryWeight = renderData.getTexture(kOutputLongHistoryWeight);
-    Texture::SharedPtr pInputBufferHistoryWeight = renderData.getTexture(kInputBufferHistoryWeight);
-    Texture::SharedPtr pOutputVariance = renderData.getTexture(kOutputVariance);
     Texture::SharedPtr pOutputShortHistoryIllumination = renderData.getTexture(kOutputShortHistoryIllumination);
     Texture::SharedPtr pOutputLongHistoryIllumination = renderData.getTexture(kOutputLongHistoryIllumination);
     Texture::SharedPtr pOutputShortHistoryFilteredImage = renderData.getTexture(kOutputShortHistoryFilteredImage);
@@ -299,11 +295,9 @@ void TwoHistorySVGFPass::execute(RenderContext* pRenderContext, const RenderData
         pRenderContext->blit(mpPingPongFbo[4]->getColorTexture(0)->getSRV(), pOutputLongHistoryIllumination->getRTV());
         pRenderContext->blit(mpFinalFboShort->getColorTexture(0)->getSRV(), pOutputShortHistoryFilteredImage->getRTV());
         pRenderContext->blit(mpFinalFboLong->getColorTexture(0)->getSRV(), pOutputLongHistoryFilteredImage->getRTV());
-        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight)->getSRV(), pOutputHistoryWeight->getRTV());
+        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryLength)->getSRV(), pOutputHistoryLength->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryWeight)->getSRV(), pOutputShortHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight)->getSRV(), pOutputLongHistoryWeight->getRTV());
-        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight)->getSRV(), pInputBufferHistoryWeight->getRTV());
-        pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::Varaince)->getSRV(), pOutputVariance->getRTV());
         pRenderContext->blit(pSampleCountTexture->getSRV(), pOutputSampleCount->getRTV());
 
         // Swap resources so we're ready for next frame.
@@ -331,8 +325,7 @@ void TwoHistorySVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setSampleCount(0);
         desc.setColorTarget(ReprojectOutFields::Illumination, Falcor::ResourceFormat::RGBA32Float);
         desc.setColorTarget(ReprojectOutFields::Moments, Falcor::ResourceFormat::RG32Float);
-        desc.setColorTarget(ReprojectOutFields::HistoryWeight, Falcor::ResourceFormat::R32Float);
-        desc.setColorTarget(ReprojectOutFields::Varaince, Falcor::ResourceFormat::R32Float);
+        desc.setColorTarget(ReprojectOutFields::HistoryLength, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(ReprojectOutFields::ShortHistoryWeight, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(ReprojectOutFields::LongHistoryWeight, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(ReprojectOutFields::ShortHistoryIllumination, Falcor::ResourceFormat::RGBA32Float);
@@ -383,9 +376,10 @@ void TwoHistorySVGFPass::clearBuffers(RenderContext* pRenderContext, const Rende
     pRenderContext->clearFbo(mpFinalFboShort.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpFinalFboLong.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInputBufferHistoryWeight).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInputBufferShortHistoryWeight).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInputBufferLongHistoryWeight).get());
+    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousShortHistoryWeight).get());
+    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLongHistoryWeight).get());
+    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousShortHistoryCentroid).get());
+    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLongHistoryCentroid).get());
 }
 
 // Extracts linear z and its derivative from the linear Z texture and packs
@@ -428,20 +422,20 @@ void TwoHistorySVGFPass::computeReprojection(RenderContext* pRenderContext, Text
     perImageCB["gPrevMoments"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::Moments);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = pPrevLinearZTexture;
-    perImageCB["gPrevHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
+    perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryLength);
     perImageCB["gPrevShortHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::ShortHistoryWeight);
     perImageCB["gPrevLongHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::LongHistoryWeight);
     perImageCB["gPrevShortIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
     perImageCB["gPrevLongIllum"] = mpFilteredPastFbo[2]->getColorTexture(0);
-    perImageCB["gShortHistoryCentroid"] = pShortHistoryCentroidTexture;
-    perImageCB["gLongHistoryCentroid"] = pLongHistoryCentroidTexture;
+    perImageCB["gOutShortHistoryCentroid"] = pShortHistoryCentroidTexture;
+    perImageCB["gOutLongHistoryCentroid"] = pLongHistoryCentroidTexture;
     perImageCB["gPrevShortHistoryCentroid"] = pPrevShortHistoryCentroidTexture;
     perImageCB["gPrevLongHistoryCentroid"] = pPrevLongHistoryCentroidTexture;
 
     // Setup variables for our reprojection pass
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
+    perImageCB["gMaxHistoryLength"] = mMaxHistoryLength;
     perImageCB["gDelay"] = mExpectedDelay;
-    perImageCB["gMaxHistoryWeight"] = mMaxHistoryWeight;
     perImageCB["gShortHistoryMaxWeight"] = mShortHistoryMaxWeight;
     perImageCB["gLongHistoryMaxWeight"] = mLongHistoryMaxWeight;
 
@@ -459,7 +453,7 @@ void TwoHistorySVGFPass::computeFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gPhiNormal"] = mPhiNormal;
 
     // Main illumination
-    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::HistoryWeight);
+    perImageCB["gHistoryLength"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::HistoryLength);
     perImageCB["gIllumination"] = mpCurReprojFbo->getColorTexture(ReprojectOutFields::Illumination);
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
 
@@ -485,7 +479,7 @@ void TwoHistorySVGFPass::computeAtrousDecomposition(RenderContext* pRenderContex
     perImageCB["gPhiNormal"] = mPhiNormal;
 
     int weightTextureIds[] = {
-        ReprojectOutFields::HistoryWeight,
+        ReprojectOutFields::HistoryLength,
         ReprojectOutFields::ShortHistoryWeight,
         ReprojectOutFields::LongHistoryWeight,
     };
@@ -558,8 +552,8 @@ void TwoHistorySVGFPass::renderUI(Gui::Widgets& widget)
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
     dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Max History Length", mMaxHistoryLength, 0.0f, 1024.0f, 0.1f);
     dirty |= (int)widget.var("Expected Delay", mExpectedDelay, -1024.0f, 0.0f, 0.05f);
-    dirty |= (int)widget.var("Max History Weight", mMaxHistoryWeight, 0.0f, 1024.0f, 0.1f);
     dirty |= (int)widget.var("Short History Max Weight", mShortHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
     dirty |= (int)widget.var("Long History Max Weight", mLongHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
 
