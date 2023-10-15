@@ -293,15 +293,16 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
         const float diffCentroid = history.shortCentroid - history.longCentroid;
         const float diffWeight = history.shortWeight - history.longWeight;
-        const float shortCentroid_sub_D__sub_1 = history.shortCentroid - gDelay - 1;
+        const float shortCentroid_sub_D_sub_1 = history.shortCentroid - gDelay - 1;
 
         const float a = diffCentroid * diffWeight;
-        const float b = diffCentroid * history.shortWeight + diffWeight * shortCentroid_sub_D__sub_1;
-        const float c = shortCentroid_sub_D__sub_1 * history.shortWeight - sampleCount * gDelay;
+        const float b = diffCentroid * history.shortWeight + diffWeight * shortCentroid_sub_D_sub_1;
+        const float c = shortCentroid_sub_D_sub_1 * history.shortWeight - sampleCount * gDelay;
 
         const float beta = (-b - sqrt(b * b - 4 * a * c)) / (2 * a);
         const float betaClamped = clamp(beta, 0, 1);
 
+        /*
         if (ipos.x < 100)
         {
             if (beta <= 0)
@@ -311,7 +312,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
             else
                 curOutIllumination = colormapInferno(beta);
         }
-        else
+        else*/
         {
             float3 blendedIllumination = lerp(history.shortIllumination, history.longIllumination, betaClamped);
             float blendedWeight = lerp(history.shortWeight, history.longWeight, betaClamped);
@@ -342,16 +343,19 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutIllumination.a = variance;
     psOut.OutMoments = moments;
     psOut.OutHistoryLength = curWeight;
-    psOut.OutShortHistoryWeight = min(history.shortWeight + sampleCount, gShortHistoryMaxWeight);
-    psOut.OutLongHistoryWeight = min(history.longWeight + sampleCount, gLongHistoryMaxWeight);
-    psOut.OutShortHistoryIllumination.rgb = lerp(history.shortIllumination, illumination, sampleCount / (history.shortWeight + sampleCount));
-    psOut.OutLongHistoryIllumination.rgb = lerp(history.longIllumination, illumination, sampleCount / (history.longWeight + sampleCount));
+
+    // float n = sampleCount;
+    float n = 1;
+    psOut.OutShortHistoryWeight = min(history.shortWeight + n, gShortHistoryMaxWeight);
+    psOut.OutLongHistoryWeight = min(history.longWeight + n, gLongHistoryMaxWeight);
+    psOut.OutShortHistoryIllumination.rgb = lerp(history.shortIllumination, illumination, n / (history.shortWeight + n));
+    psOut.OutLongHistoryIllumination.rgb = lerp(history.longIllumination, illumination, n / (history.longWeight + n));
     psOut.OutShortHistoryIllumination.a = variance;
     psOut.OutLongHistoryIllumination.a = variance;
 
     // Calculate Centroid
-    const float newShortCentroid = success ? (history.shortCentroid - 1) * history.shortWeight/(history.shortWeight+sampleCount) : 0;
-    const float newLongCentroid = success ? (history.longCentroid - 1) * history.longWeight / (history.longWeight + sampleCount) : 0;
+    const float newShortCentroid = success ? (history.shortCentroid - 1) * history.shortWeight / (history.shortWeight + n) : 0;
+    const float newLongCentroid = success ? (history.longCentroid - 1) * history.longWeight / (history.longWeight + n) : 0;
     gOutShortHistoryCentroid[ipos] = newShortCentroid;
     gOutLongHistoryCentroid[ipos] = newLongCentroid;
 
