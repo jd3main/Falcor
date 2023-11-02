@@ -28,10 +28,11 @@ private:
 
     void computeLinearZAndNormal(RenderContext* pRenderContext, Texture::SharedPtr pLinearZTexture,
         Texture::SharedPtr pWorldNormalTexture);
-    void computeReprojection(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture,
+    void computeReprojection(RenderContext* pRenderContext,
+        const RenderData& renderData,
+        Texture::SharedPtr pAlbedoTexture,
         Texture::SharedPtr pColorTexture,
         Texture::SharedPtr pSampleCount,
-        Texture::SharedPtr pSampleTotalWeight,
         Texture::SharedPtr pEmissionTexture,
         Texture::SharedPtr pMotionVectorTexture,
         Texture::SharedPtr pPositionNormalFwidthTexture);
@@ -48,12 +49,13 @@ private:
     float   mVarainceEpsilon = 1e-4f;
     float   mPhiColor = 10.0f;
     float   mPhiNormal = 128.0f;
+    float   mAlpha = 0.05f;
     float   mMomentsAlpha = 0.2f;
     float   mMaxHistoryLength = 8.0f;
     float   mExpectedDelay = -10;
-    float   mUnweightedHistoryMaxWeight = 8;
-    float   mWeightedHistoryMaxWeight = 32;
-
+    float mGammaRatio = 1;
+    // float   mUnweightedHistoryMaxWeight = 8;
+    // float   mWeightedHistoryMaxWeight = 32;
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;
@@ -72,4 +74,11 @@ private:
     Fbo::SharedPtr mpFinalFbo;
     Fbo::SharedPtr mpFinalFboUnweighted;
     Fbo::SharedPtr mpFinalFboWeighted;
+
+    // Intermediate textures
+    Texture::SharedPtr mpPrevLinearZAndNormalTexture;
+    Texture::SharedPtr mpPrevColorTexture;
+    Texture::SharedPtr mpPrevGradientTexture;
+    Texture::SharedPtr mpGradientTexture;
+    Texture::SharedPtr mpGammaTexture;
 };

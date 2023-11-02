@@ -30,9 +30,10 @@ namespace
     const char kVarianceEpsilon[] = "VarianceEpsilon";
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
+    const char kAlpha[] = "Alpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
+    const char kGammaRatio[] = "GammaRatio";
     const char kMaxHistoryLength[] = "MaxHistoryLength";
-    const char kExpectedDelay[] = "ExpectedDelay";
     const char kUnweightedHistoryMaxWeight[] = "UnweightedHistoryMaxWeight";
     const char kWeightedHistoryMaxWeight[] = "WeightedHistoryMaxWeight";
 
@@ -51,6 +52,11 @@ namespace
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
     const char kInternalBufferPreviousUnweightedHistoryWeight[] = "Previous Weight (Unweighted)";
     const char kInternalBufferPreviousWeightedHistoryWeight[] = "Previous Weight (Weighted)";
+    const char kInternalBufferPreviousColor[] = "Previous Color";
+    const char kInternalBufferRawIllumination[] = "Raw Illumination";
+    const char kInternalBufferPreviousGradient[] = "Previous Gradient";
+    const char kInternalBufferGradient[] = "Gradient";
+    const char kInternalBufferGamma[] = "Gamma";
 
     // Output buffer name
     const char kOutputBufferFilteredImage[] = "Filtered image";
@@ -62,6 +68,8 @@ namespace
     const char kOutputUnweightedHistoryFilteredImage[] = "Filtered_U";
     const char kOutputWeightedHistoryFilteredImage[] = "Filtered_W";
     const char kOutputSampleCount[] = "SampleCount";
+    const char kOutputGradient[] = "OutGradient";
+    const char kOutputGamma[] = "OutGamma";
 
     enum ReprojectOutFields
     {
@@ -71,7 +79,7 @@ namespace
         UnweightedHistoryWeight,
         WeightedHistoryWeight,
         UnweightedHistoryIllumination,
-        WeightedHistoryIllumination,
+        WeightedHistoryIllumination
     };
 }
 
@@ -102,11 +110,12 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kVarianceEpsilon) mVarainceEpsilon = value;
         else if (key == kPhiColor) mPhiColor = value;
         else if (key == kPhiNormal) mPhiNormal = value;
+        else if (key == kAlpha) mAlpha = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
+        else if (key == kGammaRatio) mGammaRatio = value;
         else if (key == kMaxHistoryLength) mMaxHistoryLength = value;
-        else if (key == kExpectedDelay) mExpectedDelay = value;
-        else if (key == kUnweightedHistoryMaxWeight) mUnweightedHistoryMaxWeight = value;
-        else if (key == kWeightedHistoryMaxWeight) mWeightedHistoryMaxWeight = value;
+        // else if (key == kUnweightedHistoryMaxWeight) mUnweightedHistoryMaxWeight = value;
+        // else if (key == kWeightedHistoryMaxWeight) mWeightedHistoryMaxWeight = value;
         else logWarning("Unknown field '{}' in DynamicWeightingSVGF dictionary.", key);
     }
 
@@ -127,11 +136,12 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kVarianceEpsilon] = mVarainceEpsilon;
     dict[kPhiColor] = mPhiColor;
     dict[kPhiNormal] = mPhiNormal;
+    dict[kAlpha] = mAlpha;
     dict[kMomentsAlpha] = mMomentsAlpha;
     dict[kMaxHistoryLength] = mMaxHistoryLength;
-    dict[kExpectedDelay] = mExpectedDelay;
-    dict[kUnweightedHistoryMaxWeight] = mUnweightedHistoryMaxWeight;
-    dict[kWeightedHistoryMaxWeight] = mWeightedHistoryMaxWeight;
+    dict[kGammaRatio] = mGammaRatio;
+    // dict[kUnweightedHistoryMaxWeight] = mUnweightedHistoryMaxWeight;
+    // dict[kWeightedHistoryMaxWeight] = mWeightedHistoryMaxWeight;
     return dict;
 }
 
@@ -167,6 +177,21 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
 
     reflector.addInternal(kInternalBufferPreviousUnweightedHistoryWeight, "Previous weight of unweighted history");
     reflector.addInternal(kInternalBufferPreviousWeightedHistoryWeight, "Previous weight of weighted history");
+    reflector.addInternal(kInternalBufferPreviousColor, "Previous input color")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
+    reflector.addInternal(kInternalBufferRawIllumination, "Raw illumination")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
+    reflector.addInternal(kInternalBufferPreviousGradient, "Previous gradient")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
+    reflector.addInternal(kInternalBufferGradient, "Gradient")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
+    reflector.addInternal(kInternalBufferGamma, "Gamma")
+        .format(ResourceFormat::RGBA32Float)
+        .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
 
     reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputHistoryLength, "History Sample Length").format(ResourceFormat::R32Float);
@@ -177,6 +202,9 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
     reflector.addOutput(kOutputUnweightedHistoryFilteredImage, "Filtered image with unweighted history").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputWeightedHistoryFilteredImage, "Filtered image with long history ").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputSampleCount, "Sample Count").format(ResourceFormat::R8Uint);
+
+    reflector.addOutput(kOutputGradient, "Gradient").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputGamma, "Gamma").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }
@@ -210,6 +238,8 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pOutputUnweightedHistoryFilteredImage = renderData.getTexture(kOutputUnweightedHistoryFilteredImage);
     Texture::SharedPtr pOutputWeightedHistoryFilteredImage = renderData.getTexture(kOutputWeightedHistoryFilteredImage);
     Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
+    Texture::SharedPtr pOutputGradient = renderData.getTexture(kOutputGradient);
+    Texture::SharedPtr pOutputGamma = renderData.getTexture(kOutputGamma);
 
     FALCOR_ASSERT(mpFilteredIlluminationFbo &&
         mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
@@ -231,11 +261,13 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         // reprojected filtered illumination from the previous frame.
         // Stores the result as well as initial moments and an updated
         // per-pixel history length in mpCurReprojFbo.
-        Texture::SharedPtr pPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
-        computeReprojection(pRenderContext, pAlbedoTexture, pColorTexture, pSampleCountTexture,
+        computeReprojection(pRenderContext, renderData,
+            pAlbedoTexture,
+            pColorTexture,
+            pSampleCountTexture,
             pEmissionTexture,
-            pMotionVectorTexture, pPosNormalFwidthTexture,
-            pPrevLinearZAndNormalTexture);
+            pMotionVectorTexture,
+            pPosNormalFwidthTexture);
 
         // Do a first cross-bilateral filtering of the illumination and
         // estimate its variance, storing the result into a float4 in
@@ -263,10 +295,14 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::UnweightedHistoryWeight)->getSRV(), pOutputUnweightedHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevReprojFbo->getColorTexture(ReprojectOutFields::WeightedHistoryWeight)->getSRV(), pOutputWeightedHistoryWeight->getRTV());
         pRenderContext->blit(pSampleCountTexture->getSRV(), pOutputSampleCount->getRTV());
+        pRenderContext->blit(mpGradientTexture->getSRV(), pOutputGradient->getRTV());
+        pRenderContext->blit(mpGammaTexture->getSRV(), pOutputGamma->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
-        pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), pPrevLinearZAndNormalTexture->getRTV());
+        pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), mpPrevLinearZAndNormalTexture->getRTV());
+        pRenderContext->blit(pColorTexture->getSRV(), mpPrevColorTexture->getRTV());
+        pRenderContext->blit(mpGradientTexture->getSRV(), mpPrevGradientTexture->getRTV());
     }
     else
     {
@@ -353,14 +389,21 @@ void DynamicWeightingSVGF::computeLinearZAndNormal(RenderContext* pRenderContext
     mpPackLinearZAndNormal->execute(pRenderContext, mpLinearZAndNormalFbo);
 }
 
-void DynamicWeightingSVGF::computeReprojection(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture,
+void DynamicWeightingSVGF::computeReprojection(RenderContext* pRenderContext,
+    const RenderData& renderData,
+    Texture::SharedPtr pAlbedoTexture,
     Texture::SharedPtr pColorTexture,
     Texture::SharedPtr pSampleCountTexture,
     Texture::SharedPtr pEmissionTexture,
     Texture::SharedPtr pMotionVectorTexture,
-    Texture::SharedPtr pPositionNormalFwidthTexture,
-    Texture::SharedPtr pPrevLinearZTexture)
+    Texture::SharedPtr pPositionNormalFwidthTexture)
 {
+    mpPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
+    mpPrevColorTexture = renderData.getTexture(kInternalBufferPreviousColor);
+    mpPrevGradientTexture = renderData.getTexture(kInternalBufferPreviousGradient);
+    mpGradientTexture = renderData.getTexture(kInternalBufferGradient);
+    mpGammaTexture = renderData.getTexture(kInternalBufferGamma);
+
     auto perImageCB = mpReprojection["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -373,19 +416,24 @@ void DynamicWeightingSVGF::computeReprojection(RenderContext* pRenderContext, Te
     perImageCB["gPrevIllum"] = mpFilteredPastFbo[0]->getColorTexture(0);
     perImageCB["gPrevMoments"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::Moments);
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
-    perImageCB["gPrevLinearZAndNormal"] = pPrevLinearZTexture;
+    perImageCB["gPrevLinearZAndNormal"] = mpPrevLinearZAndNormalTexture;
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::HistoryLength);
     perImageCB["gPrevUnweightedHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::UnweightedHistoryWeight);
     perImageCB["gPrevWeightedHistoryWeight"] = mpPrevReprojFbo->getColorTexture(ReprojectOutFields::WeightedHistoryWeight);
     perImageCB["gPrevUnweightedIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
     perImageCB["gPrevWeightedIllum"] = mpFilteredPastFbo[2]->getColorTexture(0);
+    perImageCB["gPrevGradient"] =  mpPrevGradientTexture;
+    perImageCB["gGradient"] = mpGradientTexture;
+    perImageCB["gPrevColor"] = mpPrevColorTexture;
+    perImageCB["gOutGamma"] = mpGammaTexture;
 
     // Setup variables for our reprojection pass
+    perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
     perImageCB["gMaxHistoryLength"] = mMaxHistoryLength;
-    perImageCB["gDelay"] = mExpectedDelay;
-    perImageCB["gUnweightedHistoryMaxWeight"] = mUnweightedHistoryMaxWeight;
-    perImageCB["gWeightedHistoryMaxWeight"] = mWeightedHistoryMaxWeight;
+    perImageCB["gGammaRatio"] = mGammaRatio;
+    // perImageCB["gUnweightedHistoryMaxWeight"] = mUnweightedHistoryMaxWeight;
+    // perImageCB["gWeightedHistoryMaxWeight"] = mWeightedHistoryMaxWeight;
 
     mpReprojection->execute(pRenderContext, mpCurReprojFbo);
 }
@@ -499,11 +547,12 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
+    dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Max History Length", mMaxHistoryLength, 0.0f, 1024.0f, 0.1f);
-    dirty |= (int)widget.var("Expected Delay", mExpectedDelay, -1024.0f, 0.0f, 0.05f);
-    dirty |= (int)widget.var("Unweighted History Max Weight", mUnweightedHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
-    dirty |= (int)widget.var("Weighted History Max Weight", mWeightedHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
+    dirty |= (int)widget.var("Gamma Ratio", mGammaRatio, 0.0f, 1e6f, 0.1f);
+    // dirty |= (int)widget.var("Max History Length", mMaxHistoryLength, 0.0f, 1024.0f, 0.1f);
+    // dirty |= (int)widget.var("Unweighted History Max Weight", mUnweightedHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
+    // dirty |= (int)widget.var("Weighted History Max Weight", mWeightedHistoryMaxWeight, 0.0f, 1024.0f, 0.1f);
 
     if (dirty) mBuffersNeedClear = true;
 }
