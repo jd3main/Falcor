@@ -31,6 +31,8 @@ import Utils.Color.ColorHelpers;
 import Utils.Color.ColorMap;
 import RenderPasses.SVGFPass.SVGFCommon;
 
+#define MAX_HISTORY_LENGTH 32
+
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
 {
@@ -45,11 +47,11 @@ cbuffer PerImageCB
     Texture2D gColor;
     Texture2D gAlbedo;
     Texture2D gEmission;
-    Texture2D gPrevIllum;
+    Texture2D gLinearZAndNormal;
+
     Texture2D gPrevUnweightedIllum;
     Texture2D gPrevWeightedIllum;
     Texture2D gPrevMoments;
-    Texture2D gLinearZAndNormal;
     Texture2D gPrevLinearZAndNormal;
 
     Texture2D<uint> gSampleCount;
@@ -57,19 +59,10 @@ cbuffer PerImageCB
     Texture2D gPrevUnweightedHistoryWeight;
     Texture2D gPrevWeightedHistoryWeight;
 
-    Texture2D gPrevGradient;
-    RWTexture2D gGradient;
-    Texture2D gPrevColor;
-    RWTexture2D gRawIllum;
-
-    RWTexture2D gOutGamma;
+    RWTexture2D<float> gVariance;
 
     float gAlpha;
     float gMomentsAlpha;
-    float gMaxHistoryLength;
-    float gGammaRatio;
-    // float gUnweightedHistoryMaxWeight;
-    // float gWeightedHistoryMaxWeight;
 };
 
 float3 demodulate(float3 c, float3 albedo)
@@ -102,7 +95,6 @@ struct History
     float3 unweightedIllumination;
     float3 weightedIllumination;
     float3 gradient;
-    float3 rawIllumination;
 };
 
 bool loadHistory(float2 posH, out History history)
@@ -126,7 +118,6 @@ bool loadHistory(float2 posH, out History history)
     float3 unweightedHistoryIllum = float3(0, 0, 0);
     float3 weightedHistoryIllum = float3(0, 0, 0);
     float3 gradient = float3(0, 0, 0);
-    float3 rawIllumination = float3(0, 0, 0);
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -170,8 +161,6 @@ bool loadHistory(float2 posH, out History history)
                 weightedHistoryWeight += w[sampleIdx] * gPrevWeightedHistoryWeight[loc].x;
                 unweightedHistoryIllum += w[sampleIdx] * gPrevUnweightedIllum[loc].xyz;
                 weightedHistoryIllum += w[sampleIdx] * gPrevWeightedIllum[loc].xyz;
-                gradient += w[sampleIdx] * gPrevGradient[loc].xyz;
-                rawIllumination += w[sampleIdx] * gPrevColor[loc].xyz;
             }
         }
 
@@ -184,7 +173,6 @@ bool loadHistory(float2 posH, out History history)
         unweightedHistoryIllum = valid ? unweightedHistoryIllum / sumw : float3(0, 0, 0);
         weightedHistoryIllum = valid ? weightedHistoryIllum / sumw : float3(0, 0, 0);
         gradient = valid ? gradient / sumw : float3(0, 0, 0);
-        rawIllumination = valid ? rawIllumination / sumw : float3(0, 0, 0);
     }
 
     if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
@@ -210,8 +198,6 @@ bool loadHistory(float2 posH, out History history)
                     weightedHistoryWeight += gPrevWeightedHistoryWeight[p].x;
                     unweightedHistoryIllum += gPrevUnweightedIllum[p].xyz;
                     weightedHistoryIllum += gPrevWeightedIllum[p].xyz;
-                    gradient += gPrevGradient[p].xyz;
-                    rawIllumination += gPrevColor[p].xyz;
                 }
             }
         }
@@ -225,7 +211,6 @@ bool loadHistory(float2 posH, out History history)
             unweightedHistoryIllum /= nValid;
             weightedHistoryIllum /= nValid;
             gradient /= nValid;
-            rawIllumination /= nValid;
         }
     }
 
@@ -236,11 +221,9 @@ bool loadHistory(float2 posH, out History history)
     history.unweightedIllumination = unweightedHistoryIllum;
     history.weightedIllumination = weightedHistoryIllum;
     history.gradient = gradient;
-    history.rawIllumination = rawIllumination;
 
     return valid;
 }
-
 // not used currently
 float computeVarianceScale(float numSamples, float loopLength, float alpha)
 {
@@ -248,17 +231,18 @@ float computeVarianceScale(float numSamples, float loopLength, float alpha)
     return (1.0 - pow(aa, min(loopLength, numSamples))) / (1.0 - aa);
 }
 
+
 struct PS_OUT
 {
-    float4 OutIllumination  : SV_TARGET0;
-    float2 OutMoments       : SV_TARGET1;
-    float OutHistoryLength  : SV_TARGET2;
-    float OutUnweightedHistoryWeight : SV_TARGET3;
-    float OutWeightedHistoryWeight  : SV_TARGET4;
-    float4 OutUnweightedHistoryIllumination  : SV_TARGET5;
-    float4 OutWeightedHistoryIllumination : SV_TARGET6;
+    float4 OutUnweightedHistoryIllumination : SV_TARGET0;
+    float4 OutWeightedHistoryIllumination   : SV_TARGET1;
+    float2 OutMoments                       : SV_TARGET2;
+    float OutHistoryLength                  : SV_TARGET3;
+    float OutUnweightedHistoryWeight        : SV_TARGET4;
+    float OutWeightedHistoryWeight          : SV_TARGET5;
 };
 
+// PS_OUT main(FullScreenPassVsOut vsOut)
 PS_OUT main(FullScreenPassVsOut vsOut)
 {
     const float4 posH = vsOut.posH;
@@ -278,8 +262,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     const bool success = loadHistory(posH.xy, h);
 
     // Calculate alpha for moments
-    const float curWeight = success ? min(h.length + 1, gMaxHistoryLength) : 1;
-    float alphaMoments = success ? max(gMomentsAlpha, 1 / curWeight) : 1.0f;
+    const float curLength = success ? min(h.length + 1, MAX_HISTORY_LENGTH) : 1;
+    float alphaMoments = success ? max(gMomentsAlpha, 1 / curLength) : 1.0f;
 
     // compute first two moments of luminance
     float2 moments;
@@ -290,8 +274,9 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float variance = max(0.f, moments.g - moments.r * moments.r);
     // variance *= computeVarianceScale(16, 16, alpha);
 
-    float decay0 = (1 - gAlpha);
-    float decay = success ? ((h.unweightedWeight > 8) ? decay0 : 1.0f) : 0.0f;
+    float decay = success ? (1 - gAlpha) : 0.0f;
+    if (curLength < 8)
+        decay = 1;
     float unweightedAlpha = 1.0f / (decay * h.unweightedWeight + 1);
     float weightedAlpha = sampleCount / (decay * h.weightedWeight + sampleCount);
     float unweightedHistoryWeight = decay * h.unweightedWeight + 1;
@@ -299,31 +284,15 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float3 outUnweightedIllumination = lerp(h.unweightedIllumination, illumination, unweightedAlpha);
     float3 outWeightedIllumination = lerp(h.weightedIllumination, illumination, weightedAlpha);
 
-    float3 gradient = (illumination - h.unweightedIllumination);
-    float std = sqrt(variance);
-    float gamma = (unweightedHistoryWeight > 8) ? (abs(luminance(gradient)/std) * gGammaRatio) : 1.0f;
-    float gammaClamped = clamp(gamma, 0, 1);
-    float3 outIllumination = lerp(h.weightedIllumination, h.unweightedIllumination, gammaClamped);
-
-
     PS_OUT psOut;
-    // variance is propagated through the alpha channel
-    psOut.OutIllumination = float4(outIllumination, variance);
     psOut.OutMoments = moments;
-    psOut.OutHistoryLength = curWeight;
+    psOut.OutHistoryLength = curLength;
     psOut.OutUnweightedHistoryWeight = unweightedHistoryWeight;
     psOut.OutWeightedHistoryWeight = weightedHistoryWeight;
     psOut.OutUnweightedHistoryIllumination = float4(outUnweightedIllumination, variance);
     psOut.OutWeightedHistoryIllumination = float4(outWeightedIllumination, variance);
 
-    // gGradient[ipos] = float4(lerp(history.gradient, (illumination - history.rawIllumination), 1 / (history.unweightedWeight + 1)), 1);
-    // float std = sqrt(variance);
-    // float3 gradColor = float3(0, 0, 0);
-    // if (luminance(gradient) > std) gradColor.r = 1;
-    // if (luminance(gradient) < -std) gradColor.b = 1;
-    // gGradient[ipos] = float4(gradColor, 1);
-    gGradient[ipos] = float4(gradient, 1);
-    gOutGamma[ipos] = float4(gammaClamped, 0, 0, 0);
+    gVariance[ipos] = variance;
 
     return psOut;
 }

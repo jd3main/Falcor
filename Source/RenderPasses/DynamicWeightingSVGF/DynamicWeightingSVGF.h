@@ -1,6 +1,7 @@
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/BasePasses/FullScreenPass.h"
+#include "RenderGraph/BasePasses/ComputePass.h"
 
 using namespace Falcor;
 
@@ -28,7 +29,8 @@ private:
 
     void computeLinearZAndNormal(RenderContext* pRenderContext, Texture::SharedPtr pLinearZTexture,
         Texture::SharedPtr pWorldNormalTexture);
-    void computeReprojection(RenderContext* pRenderContext,
+    void computeReprojection(RenderContext* pRendercontext);
+    void computeTemporalFilter(RenderContext* pRenderContext,
         const RenderData& renderData,
         Texture::SharedPtr pAlbedoTexture,
         Texture::SharedPtr pColorTexture,
@@ -36,49 +38,64 @@ private:
         Texture::SharedPtr pEmissionTexture,
         Texture::SharedPtr pMotionVectorTexture,
         Texture::SharedPtr pPositionNormalFwidthTexture);
+    void DynamicWeightingSVGF::computeReprojection(RenderContext* pRendercontext,
+        Texture::SharedPtr pColorTexture,
+        Texture::SharedPtr pLinearZTexture,
+        Texture::SharedPtr pMotionoTexture,
+        Texture::SharedPtr pPositionNormalFwidthTexture);
     void computeFilteredMoments(RenderContext* pRenderContext);
-    void computeAtrousDecomposition(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture);
+    void computeAtrousDecomposition(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pAlbedoTexture);
     void computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture);
 
     bool mBuffersNeedClear = false;
+
+    // static params
+    uint2   mFrameDim;
 
     // SVGF parameters
     bool    mFilterEnabled = true;
     int32_t mFilterIterations = 4;
     int32_t mFeedbackTap = 1;
+    int32_t mGradientFilterIterations = 1;
     float   mVarainceEpsilon = 1e-4f;
     float   mPhiColor = 10.0f;
     float   mPhiNormal = 128.0f;
     float   mAlpha = 0.05f;
     float   mMomentsAlpha = 0.2f;
-    float   mMaxHistoryLength = 8.0f;
+    float   mGradientAlpha = 0.2f;
     float   mExpectedDelay = -10;
     float mGammaRatio = 1;
-    // float   mUnweightedHistoryMaxWeight = 8;
-    // float   mWeightedHistoryMaxWeight = 32;
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;
-    FullScreenPass::SharedPtr mpReprojection;
+    FullScreenPass::SharedPtr mpTemporalFilter;
     FullScreenPass::SharedPtr mpFilterMoments;
     FullScreenPass::SharedPtr mpAtrous;
+    FullScreenPass::SharedPtr mpReproject;
+    FullScreenPass::SharedPtr mpDynamicWeighting;
     FullScreenPass::SharedPtr mpFinalModulate;
 
+    ComputePass::SharedPtr mpReflectTypes;  ///< Helper for reflecting structured buffer types.
+
     // Intermediate framebuffers
-    Fbo::SharedPtr mpPingPongFbo[6];
+    Fbo::SharedPtr mpPingPongFbo[4];
     Fbo::SharedPtr mpLinearZAndNormalFbo;
-    Fbo::SharedPtr mpFilteredPastFbo[3];
-    Fbo::SharedPtr mpCurReprojFbo;
-    Fbo::SharedPtr mpPrevReprojFbo;
-    Fbo::SharedPtr mpFilteredIlluminationFbo;   // is this unused?
+    Fbo::SharedPtr mpFilteredPastFbo[2];
+    Fbo::SharedPtr mpCurTemporalFilterFbo;
+    Fbo::SharedPtr mpPrevTemporalFilterFbo;
+    Fbo::SharedPtr mpDynamicWeightingFbo;
     Fbo::SharedPtr mpFinalFbo;
-    Fbo::SharedPtr mpFinalFboUnweighted;
-    Fbo::SharedPtr mpFinalFboWeighted;
 
     // Intermediate textures
     Texture::SharedPtr mpPrevLinearZAndNormalTexture;
-    Texture::SharedPtr mpPrevColorTexture;
     Texture::SharedPtr mpPrevGradientTexture;
     Texture::SharedPtr mpGradientTexture;
     Texture::SharedPtr mpGammaTexture;
+    Texture::SharedPtr mpVarianceTexture;
+    Texture::SharedPtr mpPrevUnweightedIllumination;
+    Texture::SharedPtr mpPrevWeightedIllumination;
+
+    // Intermediate buffers
+    Buffer::SharedPtr mpReprojectionBuffer;
+    Fbo::SharedPtr mpReprojectionFbo;
 };
