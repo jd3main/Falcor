@@ -59,6 +59,7 @@ Reprojection reproject(float2 posH)
 
     Reprojection weights;
     weights.tapWidth = 0;
+    weights.iposPrev = int2(posPrev);
 
     // check for all 4 taps of the bilinear filter for validity
     bool valid = false;
@@ -124,7 +125,7 @@ Reprojection reproject(float2 posH)
                 if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth))
                 {
                     nValid += 1.0;
-                    weights.w[sampleIdx] = valid ? 1 : 0;
+                    weights.w[sampleIdx] = 1;
                 }
             }
         }
@@ -139,7 +140,6 @@ Reprojection reproject(float2 posH)
         }
     }
 
-    weights.iposPrev = int2(posPrev);
 
     return weights;
 }
@@ -151,7 +151,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     Reprojection reprojection = reproject(posH.xy);
 
     const int2 imageDim = getTextureDims(gColor, 0);
-    int idx = ipos.y * imageDim.y + ipos.x;
+    int idx = ipos.y * imageDim.x + ipos.x;
     gReprojection[idx] = reprojection;
 
     return float4(0, 0, 0, 0);

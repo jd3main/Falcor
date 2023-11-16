@@ -108,6 +108,7 @@ def render_graph_g():
     g.markOutput('SplitScreenPass2.output')
     g.markOutput('ColorMapPass.output')
     g.markOutput('ColorMapPass0.output')
+    g.markOutput('DynamicWeightingSVGF.OutGradient')
     return g
 
 g = render_graph_g()

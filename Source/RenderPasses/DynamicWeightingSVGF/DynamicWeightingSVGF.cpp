@@ -255,10 +255,6 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pOutputGradient = renderData.getTexture(kOutputGradient);
     Texture::SharedPtr pOutputGamma = renderData.getTexture(kOutputGamma);
 
-    FALCOR_ASSERT(mpFilteredIlluminationFbo &&
-        mpFilteredIlluminationFbo->getWidth() == pAlbedoTexture->getWidth() &&
-        mpFilteredIlluminationFbo->getHeight() == pAlbedoTexture->getHeight());
-
     if (mBuffersNeedClear)
     {
         clearBuffers(pRenderContext, renderData);
@@ -284,12 +280,13 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
             pMotionVectorTexture,
             pPosNormalFwidthTexture);
 
+        computeReprojection(pRenderContext, pColorTexture, pLinearZTexture, pMotionVectorTexture, pPosNormalFwidthTexture);
+
         // Do a first cross-bilateral filtering of the illumination and
         // estimate its variance, storing the result into a float4 in
         // mpPingPongFbo[0].  Takes mpCurReprojFbo as input.
         computeFilteredMoments(pRenderContext);
 
-        computeReprojection(pRenderContext, pColorTexture,pLinearZTexture, pMotionVectorTexture, pPosNormalFwidthTexture);
 
         // Filter illumination from mpCurReprojFbo[0], storing the result
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
@@ -349,9 +346,9 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
     }
 
     {
-        const uint32_t sampleCount = dim.x * dim.y;
         mpReprojectionFbo = Fbo::create2D(dim.x, dim.y, Falcor::ResourceFormat::RGBA32Float);
 
+        const uint32_t sampleCount = dim.x * dim.y;
         auto var = mpReflectTypes->getRootVar();
         mpReprojectionBuffer = Buffer::createStructured(var["reprojection"], sampleCount,
             Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
@@ -423,11 +420,12 @@ void DynamicWeightingSVGF::computeReprojection(RenderContext* pRendercontext,
     Texture::SharedPtr pPositionNormalFwidthTexture)
 {
     auto perImageCB = mpReproject["PerImageCB"];
+    perImageCB["gMotion"] = pMotionoTexture;
     perImageCB["gColor"] = pColorTexture;
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
-    perImageCB["gLinearZAndNormal"] = pLinearZTexture;
+    perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = mpPrevLinearZAndNormalTexture;
-    perImageCB["gMotion"] = pMotionoTexture;
+    perImageCB["gReprojection"] = mpReprojectionBuffer;
     mpReproject->execute(pRendercontext, mpReprojectionFbo);
 }
 

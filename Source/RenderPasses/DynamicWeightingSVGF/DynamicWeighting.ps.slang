@@ -30,7 +30,7 @@ struct History
 bool loadHistory(int2 ipos, out History history)
 {
     const int2 imageDim = getTextureDims(gUnweightedIllumination, 0);
-    int idx = ipos.y * imageDim.y + ipos.x;
+    int idx = ipos.y * imageDim.x + ipos.x;
     Reprojection reprojection = gReprojection[idx];
 
     history.gradient = float3(0, 0, 0);
@@ -58,11 +58,18 @@ bool loadHistory(int2 ipos, out History history)
             {
                 i++;
                 const int2 loc = reprojection.iposPrev + int2(xx, yy);
-                history.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
-                history.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
-                history.weightedIllumination += gPrevWeightedIllumination[loc].xyz * reprojection.w[i];
+                if (reprojection.w[i] != 0)
+                {
+                    history.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
+                    history.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
+                    history.weightedIllumination += gPrevWeightedIllumination[loc].xyz * reprojection.w[i];
+                }
             }
         }
+    }
+    else
+    {
+        history.unweightedIllumination = float3(0, 0, 1);
     }
 
     return reprojection.tapWidth > 0;
@@ -82,7 +89,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     float3 gradient = (unweightedIllumination - h.unweightedIllumination);
     gradient = lerp(h.gradient, gradient, gGradientAlpha);
     float std = sqrt(variance);
-    float gamma = abs(luminance(gradient) / std) * gGammaRatio;
+    float gamma = abs(luminance(gradient)) * gGammaRatio;
     float gammaClamped = clamp(gamma, 0, 1);
     float3 outIllumination = lerp(h.weightedIllumination, h.unweightedIllumination, gammaClamped);
 
