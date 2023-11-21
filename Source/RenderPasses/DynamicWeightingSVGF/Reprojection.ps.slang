@@ -60,6 +60,8 @@ Reprojection reproject(float2 posH)
     Reprojection weights;
     weights.tapWidth = 0;
     weights.iposPrev = int2(posPrev);
+    for (int i = 0; i < 9; i++)
+        weights.w[i] = 0;
 
     // check for all 4 taps of the bilinear filter for validity
     bool valid = false;

@@ -3,6 +3,8 @@ import Utils.Color.ColorHelpers;
 import RenderPasses.SVGFPass.SVGFCommon;
 import RenderPasses.DynamicWeightingSVGF.Common;
 
+#include "RenderPasses/DynamicWeightingSVGF/Enums.h"
+
 cbuffer PerImageCB
 {
     Texture2D gPrevUnweightedIllumination;
@@ -18,13 +20,13 @@ cbuffer PerImageCB
 
     float gGradientAlpha;
     float gGammaRatio;
+    SelectionMode gSelectionMode;
 };
 
 struct History
 {
     float3 gradient;
     float3 unweightedIllumination;
-    float3 weightedIllumination;
 }
 
 bool loadHistory(int2 ipos, out History history)
@@ -35,7 +37,6 @@ bool loadHistory(int2 ipos, out History history)
 
     history.gradient = float3(0, 0, 0);
     history.unweightedIllumination = float3(0, 0, 0);
-    history.weightedIllumination = float3(0, 0, 0);
 
     if (reprojection.tapWidth == 2)
     {
@@ -45,7 +46,6 @@ bool loadHistory(int2 ipos, out History history)
             const int2 loc = reprojection.iposPrev + offset[i];
             history.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
             history.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
-            history.weightedIllumination += gPrevWeightedIllumination[loc].xyz * reprojection.w[i];
         }
     }
     else if (reprojection.tapWidth == 3)
@@ -62,14 +62,9 @@ bool loadHistory(int2 ipos, out History history)
                 {
                     history.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
                     history.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
-                    history.weightedIllumination += gPrevWeightedIllumination[loc].xyz * reprojection.w[i];
                 }
             }
         }
-    }
-    else
-    {
-        history.unweightedIllumination = float3(0, 0, 1);
     }
 
     return reprojection.tapWidth > 0;
@@ -86,14 +81,28 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     History h;
     bool success = loadHistory(ipos, h);
 
-    float3 gradient = (unweightedIllumination - h.unweightedIllumination);
-    gradient = lerp(h.gradient, gradient, gGradientAlpha);
-    float std = sqrt(variance);
-    float gamma = abs(luminance(gradient)) * gGammaRatio;
-    float gammaClamped = clamp(gamma, 0, 1);
-    float3 outIllumination = lerp(h.weightedIllumination, h.unweightedIllumination, gammaClamped);
+    float3 delta = success ? (unweightedIllumination - h.unweightedIllumination) : float3(0, 0, 0);
+    float3 gradient = success ? lerp(h.gradient, delta, gGradientAlpha) : float3(0, 0, 0);
+    float gamma = 0;
+    switch (gSelectionMode)
+    {
+        case SelectionMode::Linear:
+            gamma = clamp((luminance(abs(gradient))) * gGammaRatio, 0, 1);
+            break;
+        case SelectionMode::Step:
+            gamma = (luminance(abs(gradient))) > gGammaRatio ? 1 : 0;
+            break;
+    }
 
+    float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
+
+
+    // if (isnan(h.gradient.x))
+    //     gGradient[ipos] = float4(1, 0, 0, 1);
+    // else
     gGradient[ipos] = float4(gradient, 1);
-    gOutGamma[ipos] = float4(gammaClamped, 0, 0, 0);
+    gOutGamma[ipos] = float4(gamma, 0, 0, 0);
+
+
     return float4(outIllumination, 1);
 }

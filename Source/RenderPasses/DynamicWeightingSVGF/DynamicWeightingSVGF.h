@@ -2,8 +2,10 @@
 #include "Falcor.h"
 #include "RenderGraph/BasePasses/FullScreenPass.h"
 #include "RenderGraph/BasePasses/ComputePass.h"
+#include "Enums.h"
 
 using namespace Falcor;
+
 
 class DynamicWeightingSVGF : public RenderPass
 {
@@ -54,6 +56,7 @@ private:
 
     // SVGF parameters
     bool    mFilterEnabled = true;
+    bool    mDynamicWeighingEnabled = true;
     int32_t mFilterIterations = 4;
     int32_t mFeedbackTap = 1;
     int32_t mGradientFilterIterations = 1;
@@ -64,7 +67,9 @@ private:
     float   mMomentsAlpha = 0.2f;
     float   mGradientAlpha = 0.2f;
     float   mExpectedDelay = -10;
-    float mGammaRatio = 1;
+    float   mGammaRatio = 1;
+    float   mGammaThreshold = 1;
+    uint32_t mSelectionMode = SelectionMode::Linear;
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;

@@ -258,7 +258,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
     // Load history
     History h;
-    const int sampleCount = gSampleCount[ipos];
+    const int sampleCount = max(gSampleCount[ipos], 1);
     const bool success = loadHistory(posH.xy, h);
 
     // Calculate alpha for moments
@@ -281,8 +281,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float weightedAlpha = sampleCount / (decay * h.weightedWeight + sampleCount);
     float unweightedHistoryWeight = decay * h.unweightedWeight + 1;
     float weightedHistoryWeight = decay * h.weightedWeight + sampleCount;
-    float3 outUnweightedIllumination = lerp(h.unweightedIllumination, illumination, unweightedAlpha);
-    float3 outWeightedIllumination = lerp(h.weightedIllumination, illumination, weightedAlpha);
+    float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
+    float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
 
     PS_OUT psOut;
     psOut.OutMoments = moments;
