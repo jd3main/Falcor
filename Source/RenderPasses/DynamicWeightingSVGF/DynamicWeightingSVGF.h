@@ -67,9 +67,9 @@ private:
     float   mMomentsAlpha = 0.2f;
     float   mGradientAlpha = 0.2f;
     float   mExpectedDelay = -10;
-    float   mGammaRatio = 1;
-    float   mGammaThreshold = 1;
-    uint32_t mSelectionMode = SelectionMode::Linear;
+    float   mGammaMidpoint = 0.01f;
+    float   mGammaSteepness = 100;
+    uint32_t mSelectionMode = SelectionMode::Logistic;
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;

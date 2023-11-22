@@ -19,7 +19,8 @@ cbuffer PerImageCB
     RWTexture2D gOutGamma;
 
     float gGradientAlpha;
-    float gGammaRatio;
+    float gGammaMidpoint;
+    float gGammaSteepness;
     SelectionMode gSelectionMode;
 };
 
@@ -82,16 +83,20 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     bool success = loadHistory(ipos, h);
 
     float3 delta = success ? (unweightedIllumination - h.unweightedIllumination) : float3(0, 0, 0);
+    delta = clamp(delta, -100, 100);
     float3 gradient = success ? lerp(h.gradient, delta, gGradientAlpha) : float3(0, 0, 0);
-    float gamma = 0;
+    float gamma = luminance(abs(gradient));
     switch (gSelectionMode)
     {
-        case SelectionMode::Linear:
-            gamma = clamp((luminance(abs(gradient))) * gGammaRatio, 0, 1);
-            break;
-        case SelectionMode::Step:
-            gamma = (luminance(abs(gradient))) > gGammaRatio ? 1 : 0;
-            break;
+    case SelectionMode::Linear:
+        gamma = clamp(gamma * gGammaSteepness, 0, 1);
+        break;
+    case SelectionMode::Step:
+        gamma = (gamma >= gGammaMidpoint) ? 1 : 0;
+        break;
+    case SelectionMode::Logistic:
+        gamma = 1 / (1 + exp(-gGammaSteepness * (gamma - gGammaMidpoint)));
+        break;
     }
 
     float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);

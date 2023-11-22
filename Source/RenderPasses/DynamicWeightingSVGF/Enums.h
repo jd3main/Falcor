@@ -4,4 +4,5 @@ enum SelectionMode
 {
     Linear,
     Step,
+    Logistic,
 };

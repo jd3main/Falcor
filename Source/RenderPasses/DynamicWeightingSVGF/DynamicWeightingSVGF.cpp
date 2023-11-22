@@ -38,7 +38,8 @@ namespace
     const char kAlpha[] = "Alpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
     const char kGradientAlpha[] = "GradientAlpha";
-    const char kGammaRatio[] = "GammaRatio";
+    const char kGradientMidpoint[] = "GradientMidpoint";
+    const char kGammaSteepness[] = "GammaSteepness";
     const char kSelectionMode[] = "SelectionMode";
 
     // Input buffer names
@@ -70,8 +71,6 @@ namespace
     const char kOutputWeightedHistoryWeight[] = "Weight_W";
     const char kOutputUnweightedHistoryIllumination[] = "Illumination_U";
     const char kOutputWeightedHistoryIllumination[] = "Illumination_W";
-    const char kOutputUnweightedHistoryFilteredImage[] = "Filtered_U";
-    const char kOutputWeightedHistoryFilteredImage[] = "Filtered_W";
     const char kOutputSampleCount[] = "SampleCount";
     const char kOutputGradient[] = "OutGradient";
     const char kOutputGamma[] = "OutGamma";
@@ -88,7 +87,8 @@ namespace
 
     Gui::DropdownList kSelectionModeList = {
         { (uint32_t)SelectionMode::Linear, "Linear" },
-        { (uint32_t)SelectionMode::Step, "Step" }
+        { (uint32_t)SelectionMode::Step, "Step" },
+        { (uint32_t)SelectionMode::Logistic, "Logistic" }
     };
 
     static const uint2 kScreenTileDim = { 16, 16 };     ///< Screen-tile dimension in pixels.
@@ -126,7 +126,8 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kAlpha) mAlpha = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
         else if (key == kGradientAlpha) mGradientAlpha = value;
-        else if (key == kGammaRatio) mGammaRatio = value;
+        else if (key == kGradientMidpoint) mGammaMidpoint = value;
+        else if (key == kGammaSteepness) mGammaSteepness = value;
         else if (key == kSelectionMode) mSelectionMode = value;
         else logWarning("Unknown field '{}' in DynamicWeightingSVGF dictionary.", key);
     }
@@ -158,7 +159,8 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kAlpha] = mAlpha;
     dict[kMomentsAlpha] = mMomentsAlpha;
     dict[kGradientAlpha] = mGradientAlpha;
-    dict[kGammaRatio] = mGammaRatio;
+    dict[kGradientMidpoint] = mGammaMidpoint;
+    dict[kGammaSteepness] = mGammaSteepness;
     dict[kSelectionMode] = mSelectionMode;
     return dict;
 }
@@ -221,8 +223,6 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
     reflector.addOutput(kOutputWeightedHistoryWeight, "Weight of long history").format(ResourceFormat::R32Float);
     reflector.addOutput(kOutputUnweightedHistoryIllumination, "Unweighted History Illumination").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputWeightedHistoryIllumination, "Weighted History Illumination").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputUnweightedHistoryFilteredImage, "Filtered image with unweighted history").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputWeightedHistoryFilteredImage, "Filtered image with long history ").format(ResourceFormat::RGBA16Float);
     reflector.addOutput(kOutputSampleCount, "Sample Count").format(ResourceFormat::R8Uint);
 
     reflector.addOutput(kOutputGradient, "Gradient").format(ResourceFormat::RGBA32Float);
@@ -258,8 +258,6 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pOutputWeightedHistoryWeight = renderData.getTexture(kOutputWeightedHistoryWeight);
     Texture::SharedPtr pOutputUnweightedHistoryIllumination = renderData.getTexture(kOutputUnweightedHistoryIllumination);
     Texture::SharedPtr pOutputWeightedHistoryIllumination = renderData.getTexture(kOutputWeightedHistoryIllumination);
-    Texture::SharedPtr pOutputUnweightedHistoryFilteredImage = renderData.getTexture(kOutputUnweightedHistoryFilteredImage);
-    Texture::SharedPtr pOutputWeightedHistoryFilteredImage = renderData.getTexture(kOutputWeightedHistoryFilteredImage);
     Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
     Texture::SharedPtr pOutputGradient = renderData.getTexture(kOutputGradient);
     Texture::SharedPtr pOutputGamma = renderData.getTexture(kOutputGamma);
@@ -296,6 +294,8 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         // mpPingPongFbo[0].  Takes mpCurReprojFbo as input.
         computeFilteredMoments(pRenderContext);
 
+        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), pOutputUnweightedHistoryIllumination->getRTV());
+        pRenderContext->blit(mpPingPongFbo[2]->getColorTexture(0)->getSRV(), pOutputWeightedHistoryIllumination->getRTV());
 
         // Filter illumination from mpCurReprojFbo[0], storing the result
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
@@ -310,8 +310,6 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
 
         // Blit into the output texture.
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
-        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), pOutputUnweightedHistoryIllumination->getRTV());
-        pRenderContext->blit(mpPingPongFbo[2]->getColorTexture(0)->getSRV(), pOutputWeightedHistoryIllumination->getRTV());
         pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::HistoryLength)->getSRV(), pOutputHistoryLength->getRTV());
         pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryWeight)->getSRV(), pOutputUnweightedHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryWeight)->getSRV(), pOutputWeightedHistoryWeight->getRTV());
@@ -558,7 +556,8 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
         mpDynamicWeighting["PerImageCB"]["gGradient"] = mpGradientTexture;
         mpDynamicWeighting["PerImageCB"]["gOutGamma"] = mpGammaTexture;
         mpDynamicWeighting["PerImageCB"]["gGradientAlpha"] = mGradientAlpha;
-        mpDynamicWeighting["PerImageCB"]["gGammaRatio"] = mGammaRatio;
+        mpDynamicWeighting["PerImageCB"]["gGammaSteepness"] = mGammaSteepness;
+        mpDynamicWeighting["PerImageCB"]["gGammaMidpoint"] = mGammaMidpoint;
         mpDynamicWeighting["PerImageCB"]["gSelectionMode"] = mSelectionMode;
         mpDynamicWeighting->execute(pRenderContext, mpDynamicWeightingFbo);
 
@@ -601,8 +600,19 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
     dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1e6f, 0.1f);
-    dirty |= (int)widget.var("Gamma Ratio", mGammaRatio, 0.0f, 1e6f, 0.1f);
+
+    widget.text("");
+    widget.text("Dynamic Weighting");
     dirty |= (int)widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
+    dirty |= (int)widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= (int)widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
+    dirty |= (int)widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
+
+    if (mSelectionMode == SelectionMode::Logistic)
+    {
+        float gamma0 = 1.0f / (1.0f + expf(-mGammaSteepness * (0 - mGammaMidpoint)));
+        widget.text("gamma(0) = " + std::to_string(gamma0));
+    }
+
     if (dirty) mBuffersNeedClear = true;
 }
