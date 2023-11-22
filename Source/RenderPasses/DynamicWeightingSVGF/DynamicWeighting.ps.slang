@@ -5,6 +5,18 @@ import RenderPasses.DynamicWeightingSVGF.Common;
 
 #include "RenderPasses/DynamicWeightingSVGF/Enums.h"
 
+// Workaround for isnan() not working in slang.
+bool isNaN(float f)
+{
+    uint u = asuint(f) & ~0x80000000u; // clear out the sign bit
+    return (u > 0x7F800000);           // greater than Inf is NaN
+}
+
+bool isNaN(float3 f)
+{
+    return isNaN(f.x) || isNaN(f.y) || isNaN(f.z);
+}
+
 cbuffer PerImageCB
 {
     Texture2D gPrevUnweightedIllumination;
@@ -30,14 +42,14 @@ struct History
     float3 unweightedIllumination;
 }
 
-bool loadHistory(int2 ipos, out History history)
+bool loadHistory(int2 ipos, out History h)
 {
     const int2 imageDim = getTextureDims(gUnweightedIllumination, 0);
     int idx = ipos.y * imageDim.x + ipos.x;
     Reprojection reprojection = gReprojection[idx];
 
-    history.gradient = float3(0, 0, 0);
-    history.unweightedIllumination = float3(0, 0, 0);
+    h.gradient = float3(0, 0, 0);
+    h.unweightedIllumination = float3(0, 0, 0);
 
     if (reprojection.tapWidth == 2)
     {
@@ -45,8 +57,8 @@ bool loadHistory(int2 ipos, out History history)
         for (int i = 0; i < 4; i++)
         {
             const int2 loc = reprojection.iposPrev + offset[i];
-            history.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
-            history.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
+            h.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
+            h.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
         }
     }
     else if (reprojection.tapWidth == 3)
@@ -61,12 +73,17 @@ bool loadHistory(int2 ipos, out History history)
                 const int2 loc = reprojection.iposPrev + int2(xx, yy);
                 if (reprojection.w[i] != 0)
                 {
-                    history.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
-                    history.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
+                    h.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
+                    h.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
                 }
             }
         }
     }
+
+    if (isNaN(h.gradient))
+        h.gradient = float3(0, 0, 0);
+    if (isNaN(h.unweightedIllumination))
+        h.unweightedIllumination = float3(0, 0, 0);
 
     return reprojection.tapWidth > 0;
 }
@@ -82,9 +99,13 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     History h;
     bool success = loadHistory(ipos, h);
 
+    // TODO: take log or normalize by illumination
+
     float3 delta = success ? (unweightedIllumination - h.unweightedIllumination) : float3(0, 0, 0);
-    delta = clamp(delta, -100, 100);
+    delta = clamp(delta, -1, 1);
+
     float3 gradient = success ? lerp(h.gradient, delta, gGradientAlpha) : float3(0, 0, 0);
+    gradient = clamp(gradient, -1, 1);
     float gamma = luminance(abs(gradient));
     switch (gSelectionMode)
     {

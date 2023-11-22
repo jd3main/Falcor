@@ -57,11 +57,11 @@ Reprojection reproject(float2 posH)
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
     const int2 offset[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1, 1) };
 
-    Reprojection weights;
-    weights.tapWidth = 0;
-    weights.iposPrev = int2(posPrev);
+    Reprojection reprojection;
+    reprojection.tapWidth = 0;
+    reprojection.iposPrev = int2(posPrev);
     for (int i = 0; i < 9; i++)
-        weights.w[i] = 0;
+        reprojection.w[i] = 0;
 
     // check for all 4 taps of the bilinear filter for validity
     bool valid = false;
@@ -78,7 +78,7 @@ Reprojection reproject(float2 posH)
 
     if (valid)
     {
-        weights.tapWidth = 2;
+        reprojection.tapWidth = 2;
 
         float sumw = 0;
         float x = frac(posPrev.x);
@@ -104,7 +104,7 @@ Reprojection reproject(float2 posH)
         valid = (sumw >= 0.01);
         for (int i = 0; i < 4; i++)
         {
-            weights.w[i] = valid ? w[i] / sumw : 0;
+            reprojection.w[i] = valid ? (w[i] / sumw) : 0;
         }
     }
 
@@ -127,23 +127,23 @@ Reprojection reproject(float2 posH)
                 if (isReprjValid(iposPrev, depth.x, depthFilter.x, depth.y, normal, normalFilter, normalFwidth))
                 {
                     nValid += 1.0;
-                    weights.w[sampleIdx] = 1;
+                    reprojection.w[sampleIdx] = 1;
                 }
             }
         }
 
         if (nValid > 0)
         {
-            weights.tapWidth = 3;
+            reprojection.tapWidth = 3;
             for (int i = 0; i < 9; i++)
             {
-                weights.w[i] /= nValid;
+                reprojection.w[i] /= nValid;
             }
         }
     }
 
 
-    return weights;
+    return reprojection;
 }
 
 float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
