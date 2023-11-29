@@ -41,6 +41,7 @@ namespace
     const char kGradientMidpoint[] = "GradientMidpoint";
     const char kGammaSteepness[] = "GammaSteepness";
     const char kSelectionMode[] = "SelectionMode";
+    const char kSampleCountOverride[] = "SampleCountOverride";
 
     // Input buffer names
     const char kInputBufferAlbedo[] = "Albedo";
@@ -55,8 +56,8 @@ namespace
 
     // Internal buffer names
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
-    const char kInternalBufferPreviousUnweightedHistoryWeight[] = "Previous Weight (Unweighted)";
-    const char kInternalBufferPreviousWeightedHistoryWeight[] = "Previous Weight (Weighted)";
+    // const char kInternalBufferPreviousUnweightedHistoryWeight[] = "Previous Weight (Unweighted)";
+    // const char kInternalBufferPreviousWeightedHistoryWeight[] = "Previous Weight (Weighted)";
     const char kInternalBufferPreviousGradient[] = "Previous Gradient";
     const char kInternalBufferGradient[] = "Gradient";
     const char kInternalBufferGamma[] = "Gamma";
@@ -74,6 +75,8 @@ namespace
     const char kOutputSampleCount[] = "SampleCount";
     const char kOutputGradient[] = "OutGradient";
     const char kOutputGamma[] = "OutGamma";
+    const char kOutputUnweightedAlpha[] = "UnweightedAlpha";
+    const char kOutputWeightedAlpha[] = "WeightedAlpha";
 
     enum TemporalFilterOutFields
     {
@@ -86,9 +89,9 @@ namespace
     };
 
     Gui::DropdownList kSelectionModeList = {
-        { (uint32_t)SelectionMode::Linear, "Linear" },
-        { (uint32_t)SelectionMode::Step, "Step" },
-        { (uint32_t)SelectionMode::Logistic, "Logistic" }
+        #define X(x) { (uint32_t)SelectionMode::x, #x },
+        FOR_SELECTION_MODES(X)
+        #undef X
     };
 
     static const uint2 kScreenTileDim = { 16, 16 };     ///< Screen-tile dimension in pixels.
@@ -129,6 +132,7 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kGradientMidpoint) mGammaMidpoint = value;
         else if (key == kGammaSteepness) mGammaSteepness = value;
         else if (key == kSelectionMode) mSelectionMode = value;
+        else if (key == kSampleCountOverride) mSampleCountOverride = value;
         else logWarning("Unknown field '{}' in DynamicWeightingSVGF dictionary.", key);
     }
 
@@ -162,6 +166,7 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kGradientMidpoint] = mGammaMidpoint;
     dict[kGammaSteepness] = mGammaSteepness;
     dict[kSelectionMode] = mSelectionMode;
+    dict[kSampleCountOverride] = mSampleCountOverride;
     return dict;
 }
 
@@ -196,8 +201,8 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
 
-    reflector.addInternal(kInternalBufferPreviousUnweightedHistoryWeight, "Previous weight of unweighted history");
-    reflector.addInternal(kInternalBufferPreviousWeightedHistoryWeight, "Previous weight of weighted history");
+    // reflector.addInternal(kInternalBufferPreviousUnweightedHistoryWeight, "Previous weight of unweighted history");
+    // reflector.addInternal(kInternalBufferPreviousWeightedHistoryWeight, "Previous weight of weighted history");
     reflector.addInternal(kInternalBufferPreviousGradient, "Previous gradient")
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
@@ -227,6 +232,8 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
 
     reflector.addOutput(kOutputGradient, "Gradient").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputGamma, "Gamma").format(ResourceFormat::RGBA32Float);
+    reflector.addOutput(kOutputUnweightedAlpha, "Unweighted Alpha").format(ResourceFormat::R32Float);
+    reflector.addOutput(kOutputWeightedAlpha, "Weighted Alpha").format(ResourceFormat::R32Float);
 
     return reflector;
 }
@@ -395,8 +402,8 @@ void DynamicWeightingSVGF::clearBuffers(RenderContext* pRenderContext, const Ren
     pRenderContext->clearFbo(mpFinalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
 
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousUnweightedHistoryWeight).get());
-    pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousWeightedHistoryWeight).get());
+    // pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousUnweightedHistoryWeight).get());
+    // pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousWeightedHistoryWeight).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousGradient).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferGradient).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferGamma).get());
@@ -450,6 +457,9 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     mpGradientTexture = renderData.getTexture(kInternalBufferGradient);
     mpVarianceTexture = renderData.getTexture(kInternalBufferVariance);
 
+    Texture::SharedPtr pUnweightedAlpha = renderData.getTexture(kOutputUnweightedAlpha);
+    Texture::SharedPtr pWeightedAlpha = renderData.getTexture(kOutputWeightedAlpha);
+
     auto perImageCB = mpTemporalFilter["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -468,6 +478,9 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     perImageCB["gPrevUnweightedIllum"] = mpFilteredPastFbo[0]->getColorTexture(0);
     perImageCB["gPrevWeightedIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
     perImageCB["gVariance"] = mpVarianceTexture;
+    perImageCB["gSampleCountOverride"] = mSampleCountOverride;
+    perImageCB["gUnweightedAlpha"] = pUnweightedAlpha;
+    perImageCB["gWeightedAlpha"] = pWeightedAlpha;
 
     // Setup variables for our reprojection pass
     perImageCB["gAlpha"] = mAlpha;
@@ -581,13 +594,12 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
 {
     int dirty = 0;
     dirty |= (int)widget.checkbox("Enable SVGF", mFilterEnabled);
-    dirty |= (int)widget.checkbox("Enable Dynamic Weighting", mDynamicWeighingEnabled);
 
     widget.text("");
     widget.text("Number of filter iterations.  Which");
     widget.text("    iteration feeds into future frames?");
-    dirty |= (int)widget.var("Iterations", mFilterIterations, 2, 10, 1);
-    dirty |= (int)widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 2, 1);
+    dirty |= (int)widget.var("Iterations", mFilterIterations, 0, 10, 1);
+    dirty |= (int)widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 1, 1);
     // dirty |= (int)widget.var("Gradient Filter Iterations", mGradientFilterIterations, 0, mFilterIterations, 1);
 
     widget.text("");
@@ -603,16 +615,25 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
 
     widget.text("");
     widget.text("Dynamic Weighting");
-    dirty |= (int)widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
-    dirty |= (int)widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
-    dirty |= (int)widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
-
-    if (mSelectionMode == SelectionMode::Logistic)
+    dirty |= (int)widget.checkbox("Enable Dynamic Weighting", mDynamicWeighingEnabled);
+    if (mDynamicWeighingEnabled)
     {
-        float gamma0 = 1.0f / (1.0f + expf(-mGammaSteepness * (0 - mGammaMidpoint)));
-        widget.text("gamma(0) = " + std::to_string(gamma0));
+        dirty |= (int)widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
+        dirty |= (int)widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
+        dirty |= (int)widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
+        dirty |= (int)widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
+
+        if (mSelectionMode == SelectionMode::Logistic)
+        {
+            float gamma0 = 1.0f / (1.0f + expf(-mGammaSteepness * (0 - mGammaMidpoint)));
+            widget.text("gamma(0) = " + std::to_string(gamma0));
+        }
     }
+
+    widget.text("");
+    widget.text("Debug");
+    mBuffersNeedClear |= (int)widget.button("Clear History");
+    dirty |= (int)widget.var("Sample Count Override", mSampleCountOverride, -1, 16, 1);
 
     if (dirty) mBuffersNeedClear = true;
 }

@@ -60,9 +60,13 @@ cbuffer PerImageCB
     Texture2D gPrevWeightedHistoryWeight;
 
     RWTexture2D<float> gVariance;
+    RWTexture2D<float> gUnweightedAlpha;
+    RWTexture2D<float> gWeightedAlpha;
 
     float gAlpha;
     float gMomentsAlpha;
+
+    int gSampleCountOverride = -1;
 };
 
 float3 demodulate(float3 c, float3 albedo)
@@ -258,11 +262,15 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
     // Load history
     History h;
-    const int sampleCount = max(gSampleCount[ipos], 1);
-    const bool success = loadHistory(posH.xy, h);
+    // int sampleCount = max(gSampleCount[ipos], 1);
+    uint sampleCount = (gSampleCountOverride >= 0) ? gSampleCountOverride : gSampleCount[ipos];
+    sampleCount = max(sampleCount, 1);
+    bool success = loadHistory(posH.xy, h);
+
+
 
     // Calculate alpha for moments
-    const float curLength = success ? min(h.length + 1, MAX_HISTORY_LENGTH) : 1;
+    float curLength = success ? min(h.length + 1, MAX_HISTORY_LENGTH) : 1;
     float alphaMoments = success ? max(gMomentsAlpha, 1 / curLength) : 1.0f;
 
     // compute first two moments of luminance
@@ -274,11 +282,11 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float variance = max(0.f, moments.g - moments.r * moments.r);
     // variance *= computeVarianceScale(16, 16, alpha);
 
-    float decay = success ? (1 - gAlpha) : 0.0f;
+    float decay = success ? (1.0f - gAlpha) : 0.0f;
     if (curLength < 8)
         decay = 1;
     float unweightedAlpha = 1.0f / (decay * h.unweightedWeight + 1);
-    float weightedAlpha = sampleCount / (decay * h.weightedWeight + sampleCount);
+    float weightedAlpha = float(sampleCount) / (decay * h.weightedWeight + float(sampleCount));
     float unweightedHistoryWeight = decay * h.unweightedWeight + 1;
     float weightedHistoryWeight = decay * h.weightedWeight + sampleCount;
     float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
@@ -293,6 +301,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutWeightedHistoryIllumination = float4(outWeightedIllumination, variance);
 
     gVariance[ipos] = variance;
+    gUnweightedAlpha[ipos] = unweightedAlpha;
+    gWeightedAlpha[ipos] = weightedAlpha;
 
     return psOut;
 }

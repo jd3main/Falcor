@@ -70,6 +70,7 @@ private:
     float   mGammaMidpoint = 0.01f;
     float   mGammaSteepness = 100;
     uint32_t mSelectionMode = SelectionMode::Logistic;
+    int32_t mSampleCountOverride = 0;
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;

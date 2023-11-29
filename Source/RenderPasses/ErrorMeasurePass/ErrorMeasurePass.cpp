@@ -321,6 +321,8 @@ void ErrorMeasurePass::renderUI(Gui::Widgets& widget)
         mRunningAvgError = -1.f;
     }
     widget.tooltip("Exponential moving average, sigma = " + std::to_string(mRunningErrorSigma));
+    widget.var("Running Error Sigma", mRunningErrorSigma, 0.f, 1.f, 0.01f, false);
+    widget.tooltip("Larger values mean slower response");
     if (mMeasurements.valid)
     {
         // Use stream so we can control formatting.

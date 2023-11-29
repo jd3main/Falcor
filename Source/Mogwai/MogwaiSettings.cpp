@@ -68,6 +68,7 @@ namespace Mogwai
         {
             static const uint2 resolutions[] =
             {
+                {800, 600},
                 {1280, 720},
                 {1920, 1080},
                 {1920, 1200},

@@ -31,6 +31,7 @@ namespace
     const std::string kFoveaMoveRadius = "foveaMoveRadius";
     const std::string kFoveaMoveFreq = "foveaMoveFreq";
     const std::string kFoveaMoveDirection = "foveaMoveDirection";
+    const std::string kUseRealTime = "useRealTime";
 
     // Input channels
     const std::string kInputHistorySampleWeight = "historySampleCount";
@@ -102,7 +103,8 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
     const auto& pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
 
     const auto currentTime = steady_clock::now();
-    float t = gpFramework->getGlobalClock().getTime();
+    float realtime = duration_cast<milliseconds>(currentTime.time_since_epoch()).count() / 1000.0f;
+    float t = mUseRealTime ? realtime : gpFramework->getGlobalClock().getTime();
     uint2 resolution = renderData.getDefaultTextureDims();
 
     // Reset accumulation when resolution changes.
@@ -201,6 +203,7 @@ FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
         else if (key == kFoveaMoveRadius) mFoveaMoveRadius = value;
         else if (key == kFoveaMoveFreq) mFoveaMoveFreq = value;
         else if (key == kFoveaMoveDirection) mFoveaMoveDirection = value;
+        else if (key == kUseRealTime) mUseRealTime = value;
         else logWarning("Unknown field '" + key + "' in a FoveatedPass dictionary");
     }
 
@@ -226,6 +229,7 @@ Dictionary FoveatedPass::getScriptingDictionary()
     d[kFoveaMoveRadius] = mFoveaMoveRadius;
     d[kFoveaMoveFreq] = mFoveaMoveFreq;
     d[kFoveaMoveDirection] = mFoveaMoveDirection;
+    d[kUseRealTime] = mUseRealTime;
     return d;
 }
 
@@ -254,6 +258,7 @@ void FoveatedPass::renderUI(Gui::Widgets& widget)
         dirty |= (int)widget.var("Move Frequency", mFoveaMoveFreq);
         dirty |= (int)widget.var("Move Radius", mFoveaMoveRadius);
         dirty |= (int)widget.dropdown("Move Direction", kFoveaMoveDirectionList, mFoveaMoveDirection);
+        dirty |= (int)widget.checkbox("Use Real Time", mUseRealTime);
     }
 
     if (dirty) mBuffersNeedClear = true;

@@ -66,6 +66,7 @@ private:
     float mFoveaMoveRadius = 300;
     float mFoveaMoveFreq = 0.5;
     uint32_t mFoveaMoveDirection = FoveaMoveDirection::Both;
+    bool mUseRealTime = false;
 
     float2 mMousePos;
 };

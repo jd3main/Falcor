@@ -1,13 +1,15 @@
 #pragma once
 
-enum Shape {
+enum Shape
+{
     Uniform,
     Circle,
     SplitHorizontally,
     SplitVertically,
 };
 
-enum FoveaInputType {
+enum FoveaInputType
+{
     None,
     SHM,
     Mouse,
