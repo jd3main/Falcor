@@ -5,6 +5,7 @@
 //#include "RenderGraph/RenderPassHelpers.h"
 //#include "Utils/Math/FalcorMath.h"
 
+#include <iostream>
 #include <chrono>
 
 using namespace std::chrono;
@@ -102,8 +103,8 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
 {
     const auto& pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
 
-    const auto currentTime = steady_clock::now();
-    float realtime = duration_cast<milliseconds>(currentTime.time_since_epoch()).count() / 1000.0f;
+    const auto currentTime = high_resolution_clock::now();
+    float realtime = duration_cast<microseconds>(currentTime.time_since_epoch()).count() / 1'000'000.0f;
     float t = mUseRealTime ? realtime : gpFramework->getGlobalClock().getTime();
     uint2 resolution = renderData.getDefaultTextureDims();
 

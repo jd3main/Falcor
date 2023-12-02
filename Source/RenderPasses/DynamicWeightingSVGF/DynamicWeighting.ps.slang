@@ -118,15 +118,6 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     case SelectionMode::Logistic:
         gamma = 1 / (1 + exp(-gGammaSteepness * (gamma - gGammaMidpoint)));
         break;
-    case SelectionMode::Variance:
-        gamma = clamp(gamma * gGammaSteepness / sqrt(variance), 0, 1);
-        break;
-    case SelectionMode::Unweighted:
-        gamma = 1;
-        break;
-    case SelectionMode::Weighted:
-        gamma = 0;
-        break;
     }
 
     // outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
@@ -138,7 +129,6 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
         outIllumination = unweightedIllumination;
     else
         outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
-
 
     // if (isnan(h.gradient.x))
     //     gGradient[ipos] = float4(1, 0, 0, 1);

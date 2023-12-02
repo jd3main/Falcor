@@ -48,6 +48,10 @@ private:
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pAlbedoTexture);
     void computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture);
+    void dynamicWeighting(
+        RenderContext* pRenderContext,
+        Texture::SharedPtr pUnweightedIlluminationTexture,
+        Texture::SharedPtr pWeightedIlluminationTexture);
 
     bool mBuffersNeedClear = false;
 
@@ -59,7 +63,7 @@ private:
     bool    mDynamicWeighingEnabled = true;
     int32_t mFilterIterations = 4;
     int32_t mFeedbackTap = 1;
-    int32_t mGradientFilterIterations = 1;
+    int32_t mSelectAfterIterations = 1;
     float   mVarainceEpsilon = 1e-4f;
     float   mPhiColor = 10.0f;
     float   mPhiNormal = 128.0f;
@@ -70,7 +74,7 @@ private:
     float   mGammaMidpoint = 0.01f;
     float   mGammaSteepness = 100;
     uint32_t mSelectionMode = SelectionMode::Logistic;
-    int32_t mSampleCountOverride = 0;
+    int32_t mSampleCountOverride = -1;
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;

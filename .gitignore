@@ -26,3 +26,5 @@
 *.mp4
 *.tlog
 *.bak
+Source/Mogwai/Data/ErrorMeasure
+Source/Mogwai/Data/Record

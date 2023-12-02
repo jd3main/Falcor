@@ -3,6 +3,11 @@
 #include "RenderGraph/RenderPassLibrary.h"
 #include "RenderGraph/BasePasses/FullScreenPass.h"
 
+using std::string;
+using std::vector;
+using std::cerr;
+using std::endl;
+
  /*
  (from original SVGF Pass)
  TODO:
@@ -31,7 +36,7 @@ namespace
     const char kDynamicWeighingEnabled[] = "DynamicWeighingEnabled";
     const char kIterations[] = "Iterations";
     const char kFeedbackTap[] = "FeedbackTap";
-    const char kGradientFilterIterations[] = "GradientFilterIterations";
+    const char kSelectAfterIterations[] = "GradientFilterIterations";
     const char kVarianceEpsilon[] = "VarianceEpsilon";
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
@@ -56,8 +61,6 @@ namespace
 
     // Internal buffer names
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
-    // const char kInternalBufferPreviousUnweightedHistoryWeight[] = "Previous Weight (Unweighted)";
-    // const char kInternalBufferPreviousWeightedHistoryWeight[] = "Previous Weight (Weighted)";
     const char kInternalBufferPreviousGradient[] = "Previous Gradient";
     const char kInternalBufferGradient[] = "Gradient";
     const char kInternalBufferGamma[] = "Gamma";
@@ -75,8 +78,6 @@ namespace
     const char kOutputSampleCount[] = "SampleCount";
     const char kOutputGradient[] = "OutGradient";
     const char kOutputGamma[] = "OutGamma";
-    const char kOutputUnweightedAlpha[] = "UnweightedAlpha";
-    const char kOutputWeightedAlpha[] = "WeightedAlpha";
 
     enum TemporalFilterOutFields
     {
@@ -122,7 +123,7 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kDynamicWeighingEnabled) mDynamicWeighingEnabled = value;
         else if (key == kIterations) mFilterIterations = value;
         else if (key == kFeedbackTap) mFeedbackTap = value;
-        else if (key == kGradientFilterIterations) mGradientFilterIterations = value;
+        else if (key == kSelectAfterIterations) mSelectAfterIterations = value;
         else if (key == kVarianceEpsilon) mVarainceEpsilon = value;
         else if (key == kPhiColor) mPhiColor = value;
         else if (key == kPhiNormal) mPhiNormal = value;
@@ -156,7 +157,7 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kDynamicWeighingEnabled] = mDynamicWeighingEnabled;
     dict[kIterations] = mFilterIterations;
     dict[kFeedbackTap] = mFeedbackTap;
-    dict[kGradientFilterIterations] = mGradientFilterIterations;
+    dict[kSelectAfterIterations] = mSelectAfterIterations;
     dict[kVarianceEpsilon] = mVarainceEpsilon;
     dict[kPhiColor] = mPhiColor;
     dict[kPhiNormal] = mPhiNormal;
@@ -201,8 +202,6 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
 
-    // reflector.addInternal(kInternalBufferPreviousUnweightedHistoryWeight, "Previous weight of unweighted history");
-    // reflector.addInternal(kInternalBufferPreviousWeightedHistoryWeight, "Previous weight of weighted history");
     reflector.addInternal(kInternalBufferPreviousGradient, "Previous gradient")
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
@@ -232,8 +231,6 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
 
     reflector.addOutput(kOutputGradient, "Gradient").format(ResourceFormat::RGBA32Float);
     reflector.addOutput(kOutputGamma, "Gamma").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputUnweightedAlpha, "Unweighted Alpha").format(ResourceFormat::R32Float);
-    reflector.addOutput(kOutputWeightedAlpha, "Weighted Alpha").format(ResourceFormat::R32Float);
 
     return reflector;
 }
@@ -402,8 +399,6 @@ void DynamicWeightingSVGF::clearBuffers(RenderContext* pRenderContext, const Ren
     pRenderContext->clearFbo(mpFinalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
 
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
-    // pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousUnweightedHistoryWeight).get());
-    // pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousWeightedHistoryWeight).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousGradient).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferGradient).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferGamma).get());
@@ -457,9 +452,6 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     mpGradientTexture = renderData.getTexture(kInternalBufferGradient);
     mpVarianceTexture = renderData.getTexture(kInternalBufferVariance);
 
-    Texture::SharedPtr pUnweightedAlpha = renderData.getTexture(kOutputUnweightedAlpha);
-    Texture::SharedPtr pWeightedAlpha = renderData.getTexture(kOutputWeightedAlpha);
-
     auto perImageCB = mpTemporalFilter["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
@@ -479,8 +471,6 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     perImageCB["gPrevWeightedIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
     perImageCB["gVariance"] = mpVarianceTexture;
     perImageCB["gSampleCountOverride"] = mSampleCountOverride;
-    perImageCB["gUnweightedAlpha"] = pUnweightedAlpha;
-    perImageCB["gWeightedAlpha"] = pWeightedAlpha;
 
     // Setup variables for our reprojection pass
     perImageCB["gAlpha"] = mAlpha;
@@ -512,6 +502,12 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
 
 void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pAlbedoTexture)
 {
+    // cerr << "computeAtrousDecomposition()" << endl;
+    mpGammaTexture = renderData.getTexture(kInternalBufferGamma);
+    mpGradientTexture = renderData.getTexture(kInternalBufferGradient);
+    mpPrevUnweightedIllumination = renderData.getTexture(kInternalBufferPreviousUnweightedIllumination);
+    mpPrevWeightedIllumination = renderData.getTexture(kInternalBufferPreviousWeightedIllumination);
+
     auto perImageCB = mpAtrous["PerImageCB"];
 
     perImageCB["gAlbedo"] = pAlbedoTexture;
@@ -525,10 +521,28 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
         TemporalFilterOutFields::WeightedHistoryWeight,
     };
 
+    bool doneSelection = false;
     for (int i = 0; i < mFilterIterations; i++)
     {
-        for (int srcId = 0; srcId < 4; srcId += 2)
+        if (mDynamicWeighingEnabled && mSelectAfterIterations == i)
         {
+            dynamicWeighting(pRenderContext,
+                mpPingPongFbo[0]->getColorTexture(0),
+                mpPingPongFbo[2]->getColorTexture(0));
+
+            pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mpPrevUnweightedIllumination->getRTV());
+            pRenderContext->blit(mpPingPongFbo[2]->getColorTexture(0)->getSRV(), mpPrevWeightedIllumination->getRTV());
+
+            pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(0)->getSRV(), mpPingPongFbo[0]->getColorTexture(0)->getRTV());
+
+            doneSelection = true;
+        }
+        // If dynamic doneSelection has been done, we only need to filter the first pair of ping-pong buffers
+        int nSrcIds = doneSelection ? 2 : 4;
+        // int nSrcIds = 4;
+        for (int srcId = 0; srcId < nSrcIds; srcId += 2)
+        {
+            // cerr << "i=" << i << ", " << "srcId=" << srcId << endl;
             int dstId = srcId + 1;
             perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(weightTextureIds[srcId/2]);
             perImageCB["gStepSize"] = 1 << i;
@@ -539,6 +553,7 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
             // store the filtered color for the feedback path
             if (i == std::min(mFeedbackTap, mFilterIterations - 1))
             {
+                FALCOR_ASSERT(!doneSelection)
                 pRenderContext->blit(curTargetFbo->getColorTexture(0)->getSRV(), mpFilteredPastFbo[srcId/2]->getRenderTargetView(0));
             }
 
@@ -546,39 +561,46 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
         }
     }
 
-    if (mFeedbackTap < 0)
+    if (mDynamicWeighingEnabled && mSelectAfterIterations == mFilterIterations)
     {
-        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryIllumination)->getSRV(), mpFilteredPastFbo[0]->getRenderTargetView(0));
-        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryIllumination)->getSRV(), mpFilteredPastFbo[1]->getRenderTargetView(0));
-    }
-
-    mpGammaTexture = renderData.getTexture(kInternalBufferGamma);
-    mpGradientTexture = renderData.getTexture(kInternalBufferGradient);
-    mpPrevUnweightedIllumination = renderData.getTexture(kInternalBufferPreviousUnweightedIllumination);
-    mpPrevWeightedIllumination = renderData.getTexture(kInternalBufferPreviousWeightedIllumination);
-
-    if (mDynamicWeighingEnabled)
-    {
-        mpDynamicWeighting["PerImageCB"]["gPrevUnweightedIllumination"] = mpPrevUnweightedIllumination;
-        mpDynamicWeighting["PerImageCB"]["gPrevWeightedIllumination"] = mpPrevWeightedIllumination;
-        mpDynamicWeighting["PerImageCB"]["gUnweightedIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
-        mpDynamicWeighting["PerImageCB"]["gWeightedIllumination"] = mpPingPongFbo[2]->getColorTexture(0);
-        mpDynamicWeighting["PerImageCB"]["gPrevGradient"] = mpPrevGradientTexture;
-        mpDynamicWeighting["PerImageCB"]["gVariance"] = mpVarianceTexture;
-        mpDynamicWeighting["PerImageCB"]["gReprojection"] = mpReprojectionBuffer;
-        mpDynamicWeighting["PerImageCB"]["gGradient"] = mpGradientTexture;
-        mpDynamicWeighting["PerImageCB"]["gOutGamma"] = mpGammaTexture;
-        mpDynamicWeighting["PerImageCB"]["gGradientAlpha"] = mGradientAlpha;
-        mpDynamicWeighting["PerImageCB"]["gGammaSteepness"] = mGammaSteepness;
-        mpDynamicWeighting["PerImageCB"]["gGammaMidpoint"] = mGammaMidpoint;
-        mpDynamicWeighting["PerImageCB"]["gSelectionMode"] = mSelectionMode;
-        mpDynamicWeighting->execute(pRenderContext, mpDynamicWeightingFbo);
+        dynamicWeighting(pRenderContext,
+            mpPingPongFbo[0]->getColorTexture(0),
+            mpPingPongFbo[2]->getColorTexture(0));
 
         pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mpPrevUnweightedIllumination->getRTV());
         pRenderContext->blit(mpPingPongFbo[2]->getColorTexture(0)->getSRV(), mpPrevWeightedIllumination->getRTV());
 
         pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(0)->getSRV(), mpPingPongFbo[0]->getColorTexture(0)->getRTV());
     }
+
+    if (mFeedbackTap < 0)
+    {
+        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryIllumination)->getSRV(), mpFilteredPastFbo[0]->getRenderTargetView(0));
+        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryIllumination)->getSRV(), mpFilteredPastFbo[1]->getRenderTargetView(0));
+    }
+}
+
+void DynamicWeightingSVGF::dynamicWeighting(
+    RenderContext* pRenderContext,
+    Texture::SharedPtr pUnweightedIlluminationTexture,
+    Texture::SharedPtr pWeightedIlluminationTexture)
+{
+    // cerr << "dynamicWeighting()" << endl;
+    auto perImageCB = mpDynamicWeighting["PerImageCB"];
+    perImageCB["gPrevUnweightedIllumination"] = mpPrevUnweightedIllumination;
+    perImageCB["gPrevWeightedIllumination"] = mpPrevWeightedIllumination;
+    perImageCB["gUnweightedIllumination"] = pUnweightedIlluminationTexture;
+    perImageCB["gWeightedIllumination"] = pWeightedIlluminationTexture;
+    perImageCB["gPrevGradient"] = mpPrevGradientTexture;
+    perImageCB["gVariance"] = mpVarianceTexture;
+    perImageCB["gReprojection"] = mpReprojectionBuffer;
+    perImageCB["gGradient"] = mpGradientTexture;
+    perImageCB["gOutGamma"] = mpGammaTexture;
+    perImageCB["gGradientAlpha"] = mGradientAlpha;
+    perImageCB["gGammaMidpoint"] = mGammaMidpoint;
+    perImageCB["gGammaSteepness"] = mGammaSteepness;
+    perImageCB["gSelectionMode"] = mSelectionMode;
+    mpDynamicWeighting->execute(pRenderContext, mpDynamicWeightingFbo);
 }
 
 void DynamicWeightingSVGF::computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture)
@@ -600,7 +622,8 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     widget.text("    iteration feeds into future frames?");
     dirty |= (int)widget.var("Iterations", mFilterIterations, 0, 10, 1);
     dirty |= (int)widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 1, 1);
-    // dirty |= (int)widget.var("Gradient Filter Iterations", mGradientFilterIterations, 0, mFilterIterations, 1);
+    if (mDynamicWeighingEnabled)
+        dirty |= (int)widget.var("Select After Iterations", mSelectAfterIterations, std::max(0, mFeedbackTap+1), mFilterIterations, 1);
 
     widget.text("");
     widget.text("Contol edge stopping on bilateral fitler");

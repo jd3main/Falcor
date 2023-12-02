@@ -60,8 +60,6 @@ cbuffer PerImageCB
     Texture2D gPrevWeightedHistoryWeight;
 
     RWTexture2D<float> gVariance;
-    RWTexture2D<float> gUnweightedAlpha;
-    RWTexture2D<float> gWeightedAlpha;
 
     float gAlpha;
     float gMomentsAlpha;
@@ -301,8 +299,6 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutWeightedHistoryIllumination = float4(outWeightedIllumination, variance);
 
     gVariance[ipos] = variance;
-    gUnweightedAlpha[ipos] = unweightedAlpha;
-    gWeightedAlpha[ipos] = weightedAlpha;
 
     return psOut;
 }

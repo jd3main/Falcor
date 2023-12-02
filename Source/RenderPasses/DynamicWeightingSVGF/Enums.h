@@ -7,7 +7,6 @@
     X(Linear) \
     X(Step) \
     X(Logistic) \
-    X(Variance) \
 
 
 enum SelectionMode
