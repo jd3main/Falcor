@@ -73,8 +73,9 @@ private:
     float   mExpectedDelay = -10;
     float   mGammaMidpoint = 0.01f;
     float   mGammaSteepness = 100;
-    uint32_t mSelectionMode = SelectionMode::Logistic;
+    uint32_t mSelectionMode = (uint32_t)SelectionMode::Logistic;
     int32_t mSampleCountOverride = -1;
+    uint32_t mNormalizationMode = (uint32_t)NormalizationMode::None;
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;

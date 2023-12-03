@@ -34,6 +34,7 @@ cbuffer PerImageCB
     float gGammaMidpoint;
     float gGammaSteepness;
     SelectionMode gSelectionMode;
+    NormalizationMode gNormalizationMode;
 };
 
 struct History
@@ -107,8 +108,21 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     float3 gradient = success ? lerp(h.gradient, delta, gGradientAlpha) : float3(0, 0, 0);
     gradient = clamp(gradient, -1, 1);
     float gamma = luminance(abs(gradient));
+
+    // normalize
+    if (gNormalizationMode == NormalizationMode::Luminance)
+        gamma = gamma / luminance(unweightedIllumination);
+    if (gNormalizationMode == NormalizationMode::Variance)
+        gamma = gamma / max(variance, 1e-6f);
+    if (gNormalizationMode == NormalizationMode::StandardDeviation)
+        gamma = gamma / sqrt(max(variance, 1e-6f));
+
     switch (gSelectionMode)
     {
+    case SelectionMode::Unweighted:
+        gamma = 1.0f;
+    case SelectionMode::Weighted:
+        gamma = 0.0f;
     case SelectionMode::Linear:
         gamma = clamp(gamma * gGammaSteepness, 0, 1);
         break;
@@ -120,15 +134,8 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
         break;
     }
 
-    // outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
+    float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 
-    float3 outIllumination = float3(0, 0, 0);
-    if (gSelectionMode == SelectionMode::Weighted)
-        outIllumination = weightedIllumination;
-    else if (gSelectionMode == SelectionMode::Unweighted)
-        outIllumination = unweightedIllumination;
-    else
-        outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 
     // if (isnan(h.gradient.x))
     //     gGradient[ipos] = float4(1, 0, 0, 1);

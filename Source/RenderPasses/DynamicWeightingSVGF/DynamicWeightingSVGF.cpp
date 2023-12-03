@@ -47,6 +47,7 @@ namespace
     const char kGammaSteepness[] = "GammaSteepness";
     const char kSelectionMode[] = "SelectionMode";
     const char kSampleCountOverride[] = "SampleCountOverride";
+    const char kNormalizationMode[] = "NormalizationMode";
 
     // Input buffer names
     const char kInputBufferAlbedo[] = "Albedo";
@@ -95,6 +96,12 @@ namespace
         #undef X
     };
 
+    Gui::DropdownList kNormalizationModeList = {
+        #define X(x) { (uint32_t)NormalizationMode::x, #x },
+        FOR_NORMALIZATION_MODES(X)
+        #undef X
+    };
+
     static const uint2 kScreenTileDim = { 16, 16 };     ///< Screen-tile dimension in pixels.
 }
 
@@ -134,6 +141,7 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kGammaSteepness) mGammaSteepness = value;
         else if (key == kSelectionMode) mSelectionMode = value;
         else if (key == kSampleCountOverride) mSampleCountOverride = value;
+        else if (key == kNormalizationMode) mNormalizationMode = value;
         else logWarning("Unknown field '{}' in DynamicWeightingSVGF dictionary.", key);
     }
 
@@ -168,6 +176,7 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kGammaSteepness] = mGammaSteepness;
     dict[kSelectionMode] = mSelectionMode;
     dict[kSampleCountOverride] = mSampleCountOverride;
+    dict[kNormalizationMode] = mNormalizationMode;
     return dict;
 }
 
@@ -600,6 +609,7 @@ void DynamicWeightingSVGF::dynamicWeighting(
     perImageCB["gGammaMidpoint"] = mGammaMidpoint;
     perImageCB["gGammaSteepness"] = mGammaSteepness;
     perImageCB["gSelectionMode"] = mSelectionMode;
+    perImageCB["gNormalizationMode"] = mNormalizationMode;
     mpDynamicWeighting->execute(pRenderContext, mpDynamicWeightingFbo);
 }
 
@@ -645,8 +655,9 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
         dirty |= (int)widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
         dirty |= (int)widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
         dirty |= (int)widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
+        dirty |= (int)widget.dropdown("Normalization Mode", kNormalizationModeList, mNormalizationMode);
 
-        if (mSelectionMode == SelectionMode::Logistic)
+        if (mSelectionMode == (uint32_t)SelectionMode::Logistic)
         {
             float gamma0 = 1.0f / (1.0f + expf(-mGammaSteepness * (0 - mGammaMidpoint)));
             widget.text("gamma(0) = " + std::to_string(gamma0));
