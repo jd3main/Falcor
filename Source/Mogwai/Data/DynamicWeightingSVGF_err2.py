@@ -26,6 +26,7 @@ def render_graph_g():
     loadRenderPassLibrary('MySVGFPass.dll')
     loadRenderPassLibrary('NRDPass.dll')
     loadRenderPassLibrary('PixelInspectorPass.dll')
+    loadRenderPassLibrary('RecordPass.dll')
     loadRenderPassLibrary('SkyBox.dll')
     loadRenderPassLibrary('RTXDIPass.dll')
     loadRenderPassLibrary('RTXGIPass.dll')
@@ -60,6 +61,8 @@ def render_graph_g():
     g.addPass(ErrorMeasurePass, 'ErrorMeasurePass')
     ErrorMeasurePass0 = createPass('ErrorMeasurePass', {'ReferenceImagePath': WindowsPath('.'), 'MeasurementsFilePath': WindowsPath('C:/Users/jd3/Desktop/Code/Falcor/Source/Mogwai/Data/ErrorMeasure/Unweighted.csv'), 'IgnoreBackground': False, 'ComputeSquaredDifference': True, 'ComputeAverage': False, 'UseLoadedReference': False, 'ReportRunningError': True, 'RunningErrorSigma': 0.0, 'SelectedOutputId': OutputId.Source})
     g.addPass(ErrorMeasurePass0, 'ErrorMeasurePass0')
+    RecordPass = createPass('RecordPass', {'StatistcsFilePath': WindowsPath('C:/Users/jd3/Desktop/Code/Falcor/Source/Mogwai/Data/ErrorMeasure/UnweightedIllumination.csv'), 'ReportRunningAverage': True, 'RunningAverageSigma': 0.0})
+    g.addPass(RecordPass, 'RecordPass')
     g.addEdge('GBufferRaster.viewW', 'PathTracer.viewW')
     g.addEdge('GBufferRaster.vbuffer', 'PathTracer.vbuffer')
     g.addEdge('GBufferRaster.mvec', 'PathTracer.mvec')
@@ -102,8 +105,10 @@ def render_graph_g():
     g.addEdge('SVGFPass.Filtered image', 'ErrorMeasurePass0.Source')
     g.addEdge('FoveatedPass.sampleCount', 'SVGFPass.SampleCount')
     g.addEdge('FoveatedPass.sampleCount', 'GroundTruthSVGFPass.SampleCount')
+    g.addEdge('DynamicWeightingSVGF.Illumination_U', 'RecordPass.Input')
     g.markOutput('ErrorMeasurePass0.Output')
     g.markOutput('ErrorMeasurePass.Output')
+    g.markOutput('RecordPass.Output')
     return g
 
 g = render_graph_g()
