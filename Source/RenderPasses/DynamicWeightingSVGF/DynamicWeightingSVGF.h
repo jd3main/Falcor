@@ -100,8 +100,6 @@ private:
     // Intermediate textures
     Texture::SharedPtr mpPrevLinearZAndNormalTexture;
     Texture::SharedPtr mpPrevGradientTexture;
-    Texture::SharedPtr mpGradientTexture;
-    Texture::SharedPtr mpGammaTexture;
     Texture::SharedPtr mpVarianceTexture;
     Texture::SharedPtr mpPrevUnweightedIllumination;
     Texture::SharedPtr mpPrevWeightedIllumination;

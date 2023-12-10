@@ -27,9 +27,6 @@ cbuffer PerImageCB
     Texture2D<float> gVariance;
     StructuredBuffer<Reprojection> gReprojection;
 
-    RWTexture2D gGradient;
-    RWTexture2D gOutGamma;
-
     float gGradientAlpha;
     float gGammaMidpoint;
     float gGammaSteepness;
@@ -89,7 +86,14 @@ bool loadHistory(int2 ipos, out History h)
     return reprojection.tapWidth > 0;
 }
 
-float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
+struct PS_OUT
+{
+    float4 color        : SV_Target0;
+    float4 gradient     : SV_Target1;
+    float4 gamma        : SV_Target2;
+};
+
+PS_OUT main(FullScreenPassVsOut vsOut)
 {
     const int2 ipos = int2(vsOut.posH.xy);
 
@@ -136,13 +140,10 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 
     float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 
+    PS_OUT psOut;
+    psOut.color = float4(outIllumination, 1);
+    psOut.gradient = float4(gradient, 1);
+    psOut.gamma = float4(gamma, 0, 0, 0);
 
-    // if (isnan(h.gradient.x))
-    //     gGradient[ipos] = float4(1, 0, 0, 1);
-    // else
-    gGradient[ipos] = float4(gradient, 1);
-    gOutGamma[ipos] = float4(gamma, 0, 0, 0);
-
-
-    return float4(outIllumination, 1);
+    return psOut;
 }

@@ -63,6 +63,8 @@ def render_graph_g():
     g.addPass(ErrorMeasurePass0, 'ErrorMeasurePass0')
     RecordPass = createPass('RecordPass', {'StatistcsFilePath': WindowsPath('C:/Users/jd3/Desktop/Code/Falcor/Source/Mogwai/Data/ErrorMeasure/UnweightedIllumination.csv'), 'ReportRunningAverage': True, 'RunningAverageSigma': 0.0})
     g.addPass(RecordPass, 'RecordPass')
+    RecordPass0 = createPass('RecordPass', {'StatistcsFilePath': WindowsPath('C:/Users/jd3/Desktop/Code/Falcor/Source/Mogwai/Data/ErrorMeasure/Gamma.csv'), 'ReportRunningAverage': True, 'RunningAverageSigma': 0.0})
+    g.addPass(RecordPass0, 'RecordPass0')
     g.addEdge('GBufferRaster.viewW', 'PathTracer.viewW')
     g.addEdge('GBufferRaster.vbuffer', 'PathTracer.vbuffer')
     g.addEdge('GBufferRaster.mvec', 'PathTracer.mvec')
@@ -106,9 +108,11 @@ def render_graph_g():
     g.addEdge('FoveatedPass.sampleCount', 'SVGFPass.SampleCount')
     g.addEdge('FoveatedPass.sampleCount', 'GroundTruthSVGFPass.SampleCount')
     g.addEdge('DynamicWeightingSVGF.Illumination_U', 'RecordPass.Input')
+    g.addEdge('DynamicWeightingSVGF.OutGamma', 'RecordPass0.Input')
     g.markOutput('ErrorMeasurePass0.Output')
     g.markOutput('ErrorMeasurePass.Output')
     g.markOutput('RecordPass.Output')
+    g.markOutput('RecordPass0.Output')
     return g
 
 g = render_graph_g()
