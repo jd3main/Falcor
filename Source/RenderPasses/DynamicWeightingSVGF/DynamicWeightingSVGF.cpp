@@ -1,6 +1,7 @@
 #include "DynamicWeightingSVGF.h"
 
 #include "RenderGraph/RenderPassLibrary.h"
+#include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/BasePasses/FullScreenPass.h"
 
 using std::string;
@@ -59,6 +60,19 @@ namespace
     const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
     const char kInputBufferLinearZ[] = "LinearZ";
     const char kInputBufferMotionVector[] = "MotionVec";
+    const ChannelList kInputChannels =
+    {
+        { kInputBufferAlbedo,           "_",   "Albedo",          false, ResourceFormat::Unknown},
+        { kInputBufferColor,            "_",   "Color",           false, ResourceFormat::Unknown},
+        { kInputBufferSampleCount,      "_",   "Sample Count",    false, ResourceFormat::R8Uint},
+        { kInputBufferEmission,         "_",   "Emission",        false, ResourceFormat::Unknown},
+        { kInputBufferWorldPosition,    "_",   "World Position",  false, ResourceFormat::Unknown},
+        { kInputBufferWorldNormal,      "_",   "World Normal",    false, ResourceFormat::Unknown},
+        { kInputBufferPosNormalFwidth,  "_",   "PosNormalFwidth", false, ResourceFormat::Unknown},
+        { kInputBufferLinearZ,          "_",   "Linear Z",        false, ResourceFormat::Unknown},
+        { kInputBufferMotionVector,     "_",   "Motion Vector",   false, ResourceFormat::Unknown},
+    };
+
 
     // Internal buffer names
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
@@ -79,6 +93,18 @@ namespace
     const char kOutputSampleCount[] = "SampleCount";
     const char kOutputGradient[] = "OutGradient";
     const char kOutputGamma[] = "OutGamma";
+    const ChannelList kOutputChannels =
+    {
+        { kOutputBufferFilteredImage,           "_",   "Filtered image",                  false,  ResourceFormat::RGBA16Float },
+        { kOutputHistoryLength,                 "_",   "History Length",                  false,  ResourceFormat::R32Float },
+        { kOutputUnweightedHistoryWeight,       "_",   "Unweighted History Weight",       false,  ResourceFormat::R32Float },
+        { kOutputWeightedHistoryWeight,         "_",   "Weighted History Weight",         false,  ResourceFormat::R32Float },
+        { kOutputUnweightedHistoryIllumination, "_",   "Unweighted History Illumination", false,  ResourceFormat::RGBA16Float },
+        { kOutputWeightedHistoryIllumination,   "_",   "Weighted History Illumination",   false,  ResourceFormat::RGBA16Float },
+        { kOutputSampleCount,                   "_",   "Sample Count",                    false,  ResourceFormat::R8Uint },
+        { kOutputGradient,                      "_",   "Gradient",                        false,  ResourceFormat::RGBA32Float },
+        { kOutputGamma,                         "_",   "Gamma",                           false,  ResourceFormat::RGBA32Float },
+    };
 
     enum TemporalFilterOutFields
     {
@@ -197,15 +223,7 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
 {
     RenderPassReflection reflector;
 
-    reflector.addInput(kInputBufferAlbedo, "Albedo");
-    reflector.addInput(kInputBufferColor, "Color");
-    reflector.addInput(kInputBufferSampleCount, "SampleCount").format(ResourceFormat::R8Uint).bindFlags(Resource::BindFlags::ShaderResource);
-    reflector.addInput(kInputBufferEmission, "Emission");
-    reflector.addInput(kInputBufferWorldPosition, "posW");
-    reflector.addInput(kInputBufferWorldNormal, "World Normal");
-    reflector.addInput(kInputBufferPosNormalFwidth, "PositionNormalFwidth");
-    reflector.addInput(kInputBufferLinearZ, "LinearZ");
-    reflector.addInput(kInputBufferMotionVector, "Motion vectors");
+    addRenderPassInputs(reflector, kInputChannels);
 
     reflector.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(ResourceFormat::RGBA32Float)
@@ -230,16 +248,7 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
 
-    reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputHistoryLength, "History Sample Length").format(ResourceFormat::R32Float);
-    reflector.addOutput(kOutputUnweightedHistoryWeight, "Weight of unweighted history").format(ResourceFormat::R32Float);
-    reflector.addOutput(kOutputWeightedHistoryWeight, "Weight of long history").format(ResourceFormat::R32Float);
-    reflector.addOutput(kOutputUnweightedHistoryIllumination, "Unweighted History Illumination").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputWeightedHistoryIllumination, "Weighted History Illumination").format(ResourceFormat::RGBA16Float);
-    reflector.addOutput(kOutputSampleCount, "Sample Count").format(ResourceFormat::R8Uint);
-
-    reflector.addOutput(kOutputGradient, "Gradient").format(ResourceFormat::RGBA32Float);
-    reflector.addOutput(kOutputGamma, "Gamma").format(ResourceFormat::RGBA32Float);
+    addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::RenderTarget);
 
     return reflector;
 }
@@ -397,6 +406,7 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
 
 void DynamicWeightingSVGF::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    // Clear the FBOs
     for (int i=0; i<4; i++)
         pRenderContext->clearFbo(mpPingPongFbo[i].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpLinearZAndNormalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
@@ -407,6 +417,7 @@ void DynamicWeightingSVGF::clearBuffers(RenderContext* pRenderContext, const Ren
     pRenderContext->clearFbo(mpDynamicWeightingFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpFinalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
 
+    // Clear the internal buffers
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousGradient).get());
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferGradient).get());
@@ -464,26 +475,34 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     auto perImageCB = mpTemporalFilter["PerImageCB"];
 
     // Setup textures for our reprojection shader pass
-    perImageCB["gMotion"] = pMotionVectorTexture;
-    perImageCB["gColor"] = pColorTexture;
-    perImageCB["gEmission"] = pEmissionTexture;
+
+    // From input channels
     perImageCB["gAlbedo"] = pAlbedoTexture;
+    perImageCB["gColor"] = pColorTexture;
+    perImageCB["gSampleCount"] = pSampleCountTexture;
+    perImageCB["gEmission"] = pEmissionTexture;
+    perImageCB["gMotion"] = pMotionVectorTexture;
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
-    perImageCB["gPrevMoments"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::Moments);
+
+    // From computeLinearZAndNormal
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
+
+    // From previous frame
+    perImageCB["gPrevMoments"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::Moments);
     perImageCB["gPrevLinearZAndNormal"] = mpPrevLinearZAndNormalTexture;
     perImageCB["gPrevHistoryLength"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::HistoryLength);
-    perImageCB["gSampleCount"] = pSampleCountTexture;
     perImageCB["gPrevUnweightedHistoryWeight"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryWeight);
     perImageCB["gPrevWeightedHistoryWeight"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryWeight);
     perImageCB["gPrevUnweightedIllum"] = mpFilteredPastFbo[0]->getColorTexture(0);
     perImageCB["gPrevWeightedIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
-    perImageCB["gVariance"] = mpVarianceTexture;
-    perImageCB["gSampleCountOverride"] = mSampleCountOverride;
 
-    // Setup variables for our reprojection pass
+    // Outputs
+    perImageCB["gVariance"] = mpVarianceTexture;
+
+    // Parameters
     perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
+    perImageCB["gSampleCountOverride"] = mSampleCountOverride;
 
     mpTemporalFilter->execute(pRenderContext, mpCurTemporalFilterFbo);
 }
@@ -495,15 +514,16 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::Moments);
 
+    // Parameters
     perImageCB["gPhiColor"] = mPhiColor;
     perImageCB["gPhiNormal"] = mPhiNormal;
 
-    // Unweighted History
+    // Filter unweighted history
     perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryWeight);
     perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryIllumination);
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
 
-    // Weighted History
+    // Filter weighted history
     perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryWeight);
     perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryIllumination);
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[2]);
@@ -596,6 +616,8 @@ void DynamicWeightingSVGF::dynamicWeighting(
 {
     // cerr << "dynamicWeighting()" << endl;
     auto perImageCB = mpDynamicWeighting["PerImageCB"];
+
+    // Input textures
     perImageCB["gPrevUnweightedIllumination"] = mpPrevUnweightedIllumination;
     perImageCB["gPrevWeightedIllumination"] = mpPrevWeightedIllumination;
     perImageCB["gUnweightedIllumination"] = pUnweightedIlluminationTexture;
@@ -603,13 +625,18 @@ void DynamicWeightingSVGF::dynamicWeighting(
     perImageCB["gPrevGradient"] = mpPrevGradientTexture;
     perImageCB["gVariance"] = mpVarianceTexture;
     perImageCB["gReprojection"] = mpReprojectionBuffer;
+
+    // Output textures
     perImageCB["gGradient"] = mpGradientTexture;
     perImageCB["gOutGamma"] = mpGammaTexture;
+
+    // Parameters
     perImageCB["gGradientAlpha"] = mGradientAlpha;
     perImageCB["gGammaMidpoint"] = mGammaMidpoint;
     perImageCB["gGammaSteepness"] = mGammaSteepness;
     perImageCB["gSelectionMode"] = mSelectionMode;
     perImageCB["gNormalizationMode"] = mNormalizationMode;
+
     mpDynamicWeighting->execute(pRenderContext, mpDynamicWeightingFbo);
 }
 
