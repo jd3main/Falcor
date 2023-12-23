@@ -105,7 +105,7 @@ RenderPassReflection RecordPass::reflect(const CompileData& compileData)
 
     reflector.addInput(kInputBuffer, "Input image").flags(RenderPassReflection::Field::Flags::Optional);
 
-    reflector.addOutput(kOutputBuffer, "Output image").format(ResourceFormat::RGBA32Float).bindFlags(Resource::BindFlags::RenderTarget);
+    reflector.addOutput(kOutputBuffer, "Output image").bindFlags(Resource::BindFlags::RenderTarget);
 
     return reflector;
 }
