@@ -29,26 +29,23 @@
 #include "Falcor.h"
 #include "Utils/Algorithm/ComputeParallelReduction.h"
 #include <fstream>
-#include <vector>
 
 using namespace Falcor;
 
-class RecordPass : public RenderPass
+class ErrorMeasurePassEx : public RenderPass
 {
 public:
-    struct Statistics
-    {
-        std::string name;
-        float3 averageColor;
-        float  meanAverage;
-        float3 runningAverageColor;
-        float  meanRunningAverage;
-        bool   valid = false;
-    };
-
-    using SharedPtr = std::shared_ptr<RecordPass>;
+    using SharedPtr = std::shared_ptr<ErrorMeasurePassEx>;
 
     static const Info kInfo;
+
+    enum class OutputId
+    {
+        Source,
+        Reference,
+        Difference,
+        Count
+    };
 
     static SharedPtr create(RenderContext* pRenderContext = nullptr, const Dictionary& dict = {});
 
@@ -56,27 +53,55 @@ public:
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
+    virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override;
     virtual void setScene(RenderContext* pRenderContext, const std::shared_ptr<Scene>& pScene) override;
 
 private:
-    RecordPass(const Dictionary& dict);
+    ErrorMeasurePassEx(const Dictionary& dict);
 
     bool init(RenderContext* pRenderContext, const Dictionary& dict);
+
+    void loadReference();
+    Texture::SharedPtr getReference(const RenderData& renderData) const;
     void openMeasurementsFile();
     void closeMeasurementsFile();
     void saveMeasurementsToFile();
-    void runReductionPasses(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pInputTexture, Statistics &outMeasurement);
 
+    void runDifferencePass(RenderContext* pRenderContext, const RenderData& renderData);
+    void runReductionPasses(RenderContext* pRenderContext, const RenderData& renderData);
+
+    ComputePass::SharedPtr mpErrorMeasurerPass;
     ComputeParallelReduction::SharedPtr mpParallelReduction;
-    Statistics mStatistics;
+
+    struct Measurements
+    {
+        float3 error;           ///< Error (either L1 or MSE) in RGB.
+        float  avgError;        ///< Error averaged over color components.
+        bool   valid = false;
+    } mMeasurements;
 
     // Internal state
+    float3                  mRunningError = float3(0.f, 0.f, 0.f);
+    float                   mRunningAvgError = -1.f;        ///< A negative value indicates that both running error values are invalid.
+
+    Texture::SharedPtr      mpReferenceTexture;
+    Texture::SharedPtr      mpDifferenceTexture;
+
     std::ofstream           mMeasurementsFile;
 
-    // Serialized variables
-    std::filesystem::path   mOutputFilePath;              ///< Path to the output file where measurements are stored (.csv).
+    // UI variables
+    std::filesystem::path   mReferenceImagePath;                ///< Path to the reference used in the comparison.
+    std::filesystem::path   mMeasurementsFilePath;              ///< Path to the output file where measurements are stored (.csv).
 
+    bool                    mIgnoreBackground = true;           ///< If true, do not measure error on pixels that belong to the background.
+    bool                    mComputeSquaredDifference = true;   ///< Compute the square difference when creating the difference image.
     bool                    mComputeAverage = false;            ///< Compute the average of the RGB components when creating the difference image.
-    bool                    mReportRunningAverage = true;         ///< Use exponetial moving average (EMA) for the computed error.
-    float                   mRunningAverageSigma = 0;             ///< Coefficient used for the exponential moving average. Larger values mean slower response.
+    bool                    mUseLoadedReference = false;        ///< If true, use loaded reference image instead of input.
+    bool                    mReportRunningError = true;         ///< Use exponetial moving average (EMA) for the computed error.
+    float                   mRunningErrorSigma = 0.995f;        ///< Coefficient used for the exponential moving average. Larger values mean slower response.
+
+    OutputId                mSelectedOutputId = OutputId::Source;
+
+    static const Gui::RadioButtonGroup sOutputSelectionButtons;
+    static const Gui::RadioButtonGroup sOutputSelectionButtonsSourceOnly;
 };

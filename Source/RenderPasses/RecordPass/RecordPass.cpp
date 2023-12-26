@@ -28,6 +28,7 @@
 #include "RecordPass.h"
 #include "RenderGraph/RenderPassLibrary.h"
 #include <sstream>
+#include <iostream>
 
 const RenderPass::Info RecordPass::kInfo { "RecordPass", "Record average value of textures" };
 
@@ -146,6 +147,14 @@ void RecordPass::runReductionPasses(RenderContext* pRenderContext, const RenderD
     }
 }
 
+void RecordPass::setScene(RenderContext* pRenderContext, const std::shared_ptr<Scene>& pScene)
+{
+    closeMeasurementsFile();
+    mStatistics = Statistics();
+    openMeasurementsFile();
+}
+
+
 void RecordPass::renderUI(Gui::Widgets& widget)
 {
     // std::cerr << "RecordPass::renderUI" << std::endl;
@@ -222,6 +231,14 @@ void RecordPass::openMeasurementsFile()
         mMeasurementsFile << std::endl;
         mMeasurementsFile << std::scientific;
     }
+}
+
+void RecordPass::closeMeasurementsFile()
+{
+    std::cerr << "RecordPass::closeMeasurementsFile" << std::endl;
+    if (!mMeasurementsFile) return;
+
+    mMeasurementsFile.close();
 }
 
 void RecordPass::saveMeasurementsToFile()
