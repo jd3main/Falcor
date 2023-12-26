@@ -11,9 +11,12 @@ cbuffer PerFrameCB
     uint2 gResolution;
     float gInnerTargetQuality;
     float gOuterTargetQuality;
-    float gSampleCountWhenDisabled;
     float2 gFoveaCenter;
     float gFoveaRadius;
+    bool gFlickerEnabled;
+    float gFlickerBrightDuration;
+    float gFlickerDarkDuration;
+    float gFrameTime;
 };
 
 RWTexture2D<float> gHistorySampleWeight;
@@ -40,22 +43,34 @@ void calculateSampleCount(uint3 dispatchThreadId : SV_DispatchThreadID)
     switch (gShape)
     {
     case Shape::Uniform:
-        baseSampleCount = gSampleCountWhenDisabled;
+        baseSampleCount = gInnerTargetQuality;
         break;
     case Shape::Circle:
-        baseSampleCount = (dist < gFoveaRadius) ? gInnerTargetQuality : gSampleCountWhenDisabled;
+        baseSampleCount = (dist < gFoveaRadius) ? gInnerTargetQuality : gOuterTargetQuality;
         break;
     case Shape::SplitHorizontally:
-        baseSampleCount = (pixelPos.y < gFoveaCenter.y) ? gInnerTargetQuality : gSampleCountWhenDisabled;
+        baseSampleCount = (pixelPos.y < gFoveaCenter.y) ? gInnerTargetQuality : gOuterTargetQuality;
         break;
     case Shape::SplitVertically:
-        baseSampleCount = (pixelPos.x < gFoveaCenter.x) ? gInnerTargetQuality : gSampleCountWhenDisabled;
+        baseSampleCount = (pixelPos.x < gFoveaCenter.x) ? gInnerTargetQuality : gOuterTargetQuality;
         break;
     }
 
     sampleCount = gUseHistory
-                    ? min(baseSampleCount*stability - historySampleWeight*beta, baseSampleCount)
-                    : baseSampleCount;
+                      ? min(baseSampleCount * stability - historySampleWeight * beta, baseSampleCount)
+                      : baseSampleCount;
+
+    if (gFlickerEnabled)
+    {
+        float flickerDuration = gFlickerBrightDuration + gFlickerDarkDuration;
+        float flickerProgress = fmod(gFrameTime, flickerDuration);
+
+        if (flickerProgress < gFlickerBrightDuration)
+            sampleCount = gInnerTargetQuality;
+        else
+            sampleCount = gOuterTargetQuality;
+    }
+
     sampleCount = clamp(sampleCount, 1.0f, kMaxSamplesPerPixel);
 
 

@@ -62,11 +62,12 @@ private:
     float mFoveaRadius = 200;
     float mFoveaSampleCount = 8;
     float mPeriphSampleCount = 2;
-    float mSampleCountWhenDisabled = 1;
     float mFoveaMoveRadius = 300;
     float mFoveaMoveFreq = 0.5;
     uint32_t mFoveaMoveDirection = FoveaMoveDirection::Both;
     bool mUseRealTime = false;
-
+    bool mFlickerEnabled = false;
+    float mFlickerBrightDuration = 1.0f;
+    float mFlickerDarkDuration = 1.0f;
     float2 mMousePos;
 };

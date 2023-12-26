@@ -33,6 +33,9 @@ namespace
     const std::string kFoveaMoveFreq = "foveaMoveFreq";
     const std::string kFoveaMoveDirection = "foveaMoveDirection";
     const std::string kUseRealTime = "useRealTime";
+    const std::string kFlickerEnabled = "flickerEnabled";
+    const std::string kFlickerBrightDurationMs = "flickerBrightDurationMs";
+    const std::string kFlickerDarkDurationMs = "flickerDarkDurationMs";
 
     // Input channels
     const std::string kInputHistorySampleWeight = "historySampleCount";
@@ -63,6 +66,10 @@ namespace
 }
 
 
+static void regBindings(pybind11::module& m)
+{
+}
+
 // Don't remove this. it's required for hot-reload to function properly
 extern "C" FALCOR_API_EXPORT const char* getProjDir()
 {
@@ -72,6 +79,7 @@ extern "C" FALCOR_API_EXPORT const char* getProjDir()
 extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
 {
     lib.registerPass(FoveatedPass::kInfo, FoveatedPass::create);
+    ScriptBindings::registerBinding(regBindings);
 }
 
 FoveatedPass::SharedPtr FoveatedPass::create(RenderContext* pRenderContext, const Dictionary& dict)
@@ -151,10 +159,13 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
         CB["gAlpha"] = mAlpha;
         CB["gInnerTargetQuality"] = mFoveaSampleCount;
         CB["gOuterTargetQuality"] = mPeriphSampleCount;
-        CB["gSampleCountWhenDisabled"] = mSampleCountWhenDisabled;
         CB["gFoveaCenter"] = foveaCenter;
         CB["gFoveaRadius"] = mFoveaRadius;
         CB["gResolution"] = resolution;
+        CB["gFlickerEnabled"] = mFlickerEnabled;
+        CB["gFlickerBrightDuration"] = mFlickerBrightDuration;
+        CB["gFlickerDarkDuration"] = mFlickerDarkDuration;
+        CB["gFrameTime"] = t;
 
         mpVars["gHistorySampleWeight"] = renderData.getTexture(kInputHistorySampleWeight);
         mpVars["gOutputSampleCount"] = pOutputSampleCount;
@@ -200,11 +211,13 @@ FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
         else if (key == kFoveaRadius) mFoveaRadius = value;
         else if (key == kFoveaSampleCount) mFoveaSampleCount = value;
         else if (key == kPeriphSampleCount) mPeriphSampleCount = value;
-        else if (key == kUniformSampleCount) mSampleCountWhenDisabled = value;
         else if (key == kFoveaMoveRadius) mFoveaMoveRadius = value;
         else if (key == kFoveaMoveFreq) mFoveaMoveFreq = value;
         else if (key == kFoveaMoveDirection) mFoveaMoveDirection = value;
         else if (key == kUseRealTime) mUseRealTime = value;
+        else if (key == kFlickerEnabled) mFlickerEnabled = value;
+        else if (key == kFlickerBrightDurationMs) mFlickerBrightDuration = value;
+        else if (key == kFlickerDarkDurationMs) mFlickerDarkDuration = value;
         else logWarning("Unknown field '" + key + "' in a FoveatedPass dictionary");
     }
 
@@ -226,11 +239,13 @@ Dictionary FoveatedPass::getScriptingDictionary()
     d[kFoveaRadius] = mFoveaRadius;
     d[kFoveaSampleCount] = mFoveaSampleCount;
     d[kPeriphSampleCount] = mPeriphSampleCount;
-    d[kUniformSampleCount] = mSampleCountWhenDisabled;
     d[kFoveaMoveRadius] = mFoveaMoveRadius;
     d[kFoveaMoveFreq] = mFoveaMoveFreq;
     d[kFoveaMoveDirection] = mFoveaMoveDirection;
     d[kUseRealTime] = mUseRealTime;
+    d[kFlickerEnabled] = mFlickerEnabled;
+    d[kFlickerBrightDurationMs] = mFlickerBrightDuration;
+    d[kFlickerDarkDurationMs] = mFlickerDarkDuration;
     return d;
 }
 
@@ -246,12 +261,12 @@ void FoveatedPass::renderUI(Gui::Widgets& widget)
     if (mShape == Shape::Circle || mShape == Shape::SplitHorizontally || mShape == Shape::SplitVertically)
     {
         dirty |= (int)widget.var("Fovea Radius", mFoveaRadius);
-        dirty |= (int)widget.var("Fovea Sample Count", mFoveaSampleCount, 0.0f, 128.0f, 1.0f);
-        dirty |= (int)widget.var("Periph Sample Count", mPeriphSampleCount, 0.0f, 128.0f, 1.0f);
+        dirty |= (int)widget.var("Fovea Sample Count", mFoveaSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
+        dirty |= (int)widget.var("Periph Sample Count", mPeriphSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
     }
     else
     {
-        dirty |= (int)widget.var("Sample Count", mSampleCountWhenDisabled, 0.0f, 128.0f, 1.0f);
+        dirty |= (int)widget.var("Sample Count", mFoveaSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
     }
 
     if (mFoveaInputType == FoveaInputType::SHM)
@@ -260,6 +275,13 @@ void FoveatedPass::renderUI(Gui::Widgets& widget)
         dirty |= (int)widget.var("Move Radius", mFoveaMoveRadius);
         dirty |= (int)widget.dropdown("Move Direction", kFoveaMoveDirectionList, mFoveaMoveDirection);
         dirty |= (int)widget.checkbox("Use Real Time", mUseRealTime);
+    }
+
+    dirty |= (int)widget.checkbox("Flicker", mFlickerEnabled);
+    if (mFlickerEnabled)
+    {
+        dirty |= (int)widget.var("Bright Duration", mFlickerBrightDuration, 0.0f, 20.0f, 0.001f, false, "%.3f");
+        dirty |= (int)widget.var("Dark Duration", mFlickerDarkDuration, 0.0f, 20.0f, 0.001f, false, "%.3f");
     }
 
     if (dirty) mBuffersNeedClear = true;
