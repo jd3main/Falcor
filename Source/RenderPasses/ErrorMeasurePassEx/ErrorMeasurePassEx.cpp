@@ -386,6 +386,7 @@ void ErrorMeasurePassEx::openMeasurementsFile()
     }
     else
     {
+        mMeasurementsFile << "time,";
         if (mComputeSquaredDifference)
         {
             mMeasurementsFile << "avg_L2_error,red_L2_error,green_L2_error,blue_L2_error" << std::endl;
@@ -410,6 +411,7 @@ void ErrorMeasurePassEx::saveMeasurementsToFile()
     if (!mMeasurementsFile) return;
 
     FALCOR_ASSERT(mMeasurements.valid);
+    mMeasurementsFile << gpFramework->getGlobalClock().getTime() << ",";
     mMeasurementsFile << mMeasurements.avgError << ",";
     mMeasurementsFile << mMeasurements.error.r << ',' << mMeasurements.error.g << ',' << mMeasurements.error.b;
     mMeasurementsFile << std::endl;

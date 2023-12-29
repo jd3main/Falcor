@@ -227,6 +227,7 @@ void RecordPass::openMeasurementsFile()
     else
     {
         std::string name = mStatistics.name;
+        mMeasurementsFile << "time,";
         mMeasurementsFile << "average_" << name << ",r_" << name << ",g_" << name << ",b_" << name;
         mMeasurementsFile << std::endl;
         mMeasurementsFile << std::scientific;
@@ -243,11 +244,12 @@ void RecordPass::closeMeasurementsFile()
 
 void RecordPass::saveMeasurementsToFile()
 {
-    std::cerr << "RecordPass::saveMeasurementsToFile" << std::endl;
+    std::cerr << "RecordPass::saveMeasurementsToFile*" << std::endl;
     if (!mMeasurementsFile) return;
 
     FALCOR_ASSERT(mStatistics.valid);
 
+    mMeasurementsFile << gpFramework->getGlobalClock().getTime() << ",";
     mMeasurementsFile << mStatistics.meanAverage << ",";
     mMeasurementsFile << mStatistics.averageColor.r << ',' << mStatistics.averageColor.g << ',' << mStatistics.averageColor.b;
     mMeasurementsFile << std::endl;
