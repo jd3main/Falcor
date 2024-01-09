@@ -33,6 +33,8 @@ import RenderPasses.SVGFPass.SVGFCommon;
 
 #define MAX_HISTORY_LENGTH 32
 
+#define DW_ENABLED _DW_ENABLED
+
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
 {
@@ -93,10 +95,11 @@ struct History
     float2 moments;
     float length;
     float unweightedWeight;
-    float weightedWeight;
     float3 unweightedIllumination;
+#if DW_ENABLED
+    float weightedWeight;
     float3 weightedIllumination;
-    float3 gradient;
+#endif
 };
 
 bool loadHistory(float2 posH, out History history)
@@ -116,10 +119,11 @@ bool loadHistory(float2 posH, out History history)
     float2 prevMoments = float2(0, 0);
     float historyLength = 0;
     float unweightedHistoryWeight = 0;
-    float weightedHistoryWeight = 0;
     float3 unweightedHistoryIllum = float3(0, 0, 0);
+#if DW_ENABLED
+    float weightedHistoryWeight = 0;
     float3 weightedHistoryIllum = float3(0, 0, 0);
-    float3 gradient = float3(0, 0, 0);
+#endif
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -160,9 +164,11 @@ bool loadHistory(float2 posH, out History history)
                 sumw += w[sampleIdx];
                 historyLength += w[sampleIdx] * gPrevHistoryLength[loc].x;
                 unweightedHistoryWeight += w[sampleIdx] * gPrevUnweightedHistoryWeight[loc].x;
-                weightedHistoryWeight += w[sampleIdx] * gPrevWeightedHistoryWeight[loc].x;
                 unweightedHistoryIllum += w[sampleIdx] * gPrevUnweightedIllum[loc].xyz;
+#if DW_ENABLED
+                weightedHistoryWeight += w[sampleIdx] * gPrevWeightedHistoryWeight[loc].x;
                 weightedHistoryIllum += w[sampleIdx] * gPrevWeightedIllum[loc].xyz;
+#endif
             }
         }
 
@@ -171,10 +177,11 @@ bool loadHistory(float2 posH, out History history)
         prevMoments = valid ? prevMoments / sumw : float2(0, 0);
         historyLength = valid ? historyLength / sumw : 0;
         unweightedHistoryWeight = valid ? unweightedHistoryWeight / sumw : 0;
-        weightedHistoryWeight = valid ? weightedHistoryWeight / sumw : 0;
         unweightedHistoryIllum = valid ? unweightedHistoryIllum / sumw : float3(0, 0, 0);
+#if DW_ENABLED
+        weightedHistoryWeight = valid ? weightedHistoryWeight / sumw : 0;
         weightedHistoryIllum = valid ? weightedHistoryIllum / sumw : float3(0, 0, 0);
-        gradient = valid ? gradient / sumw : float3(0, 0, 0);
+#endif
     }
 
     if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
@@ -197,9 +204,11 @@ bool loadHistory(float2 posH, out History history)
                     nValid += 1.0;
                     historyLength += gPrevHistoryLength[p].x;
                     unweightedHistoryWeight += gPrevUnweightedHistoryWeight[p].x;
-                    weightedHistoryWeight += gPrevWeightedHistoryWeight[p].x;
                     unweightedHistoryIllum += gPrevUnweightedIllum[p].xyz;
+#if DW_ENABLED
+                    weightedHistoryWeight += gPrevWeightedHistoryWeight[p].x;
                     weightedHistoryIllum += gPrevWeightedIllum[p].xyz;
+#endif
                 }
             }
         }
@@ -209,20 +218,22 @@ bool loadHistory(float2 posH, out History history)
             prevMoments /= nValid;
             historyLength /= nValid;
             unweightedHistoryWeight /= nValid;
-            weightedHistoryWeight /= nValid;
             unweightedHistoryIllum /= nValid;
+#if DW_ENABLED
+            weightedHistoryWeight /= nValid;
             weightedHistoryIllum /= nValid;
-            gradient /= nValid;
+#endif
         }
     }
 
     history.moments = prevMoments;
     history.length = historyLength;
     history.unweightedWeight = unweightedHistoryWeight;
-    history.weightedWeight = weightedHistoryWeight;
     history.unweightedIllumination = unweightedHistoryIllum;
+#if DW_ENABLED
+    history.weightedWeight = weightedHistoryWeight;
     history.weightedIllumination = weightedHistoryIllum;
-    history.gradient = gradient;
+#endif
 
     return valid;
 }
@@ -237,11 +248,13 @@ float computeVarianceScale(float numSamples, float loopLength, float alpha)
 struct PS_OUT
 {
     float4 OutUnweightedHistoryIllumination : SV_TARGET0;
-    float4 OutWeightedHistoryIllumination   : SV_TARGET1;
-    float2 OutMoments                       : SV_TARGET2;
-    float OutHistoryLength                  : SV_TARGET3;
-    float OutUnweightedHistoryWeight        : SV_TARGET4;
+    float2 OutMoments                       : SV_TARGET1;
+    float OutHistoryLength                  : SV_TARGET2;
+    float OutUnweightedHistoryWeight        : SV_TARGET3;
+#if DW_ENABLED
+    float4 OutWeightedHistoryIllumination   : SV_TARGET4;
     float OutWeightedHistoryWeight          : SV_TARGET5;
+#endif
 };
 
 // PS_OUT main(FullScreenPassVsOut vsOut)
@@ -265,8 +278,6 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     sampleCount = max(sampleCount, 1);
     bool success = loadHistory(posH.xy, h);
 
-
-
     // Calculate alpha for moments
     float curLength = success ? min(h.length + 1, MAX_HISTORY_LENGTH) : 1;
     float alphaMoments = success ? max(gMomentsAlpha, 1 / curLength) : 1.0f;
@@ -284,19 +295,23 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     if (curLength < 8)
         decay = 1;
     float unweightedAlpha = 1.0f / (decay * h.unweightedWeight + 1);
-    float weightedAlpha = float(sampleCount) / (decay * h.weightedWeight + float(sampleCount));
     float unweightedHistoryWeight = decay * h.unweightedWeight + 1;
-    float weightedHistoryWeight = decay * h.weightedWeight + sampleCount;
     float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
+#if DW_ENABLED
+    float weightedAlpha = float(sampleCount) / (decay * h.weightedWeight + float(sampleCount));
+    float weightedHistoryWeight = decay * h.weightedWeight + sampleCount;
     float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
+#endif
 
     PS_OUT psOut;
     psOut.OutMoments = moments;
     psOut.OutHistoryLength = curLength;
     psOut.OutUnweightedHistoryWeight = unweightedHistoryWeight;
-    psOut.OutWeightedHistoryWeight = weightedHistoryWeight;
     psOut.OutUnweightedHistoryIllumination = float4(outUnweightedIllumination, variance);
+#if DW_ENABLED
+    psOut.OutWeightedHistoryWeight = weightedHistoryWeight;
     psOut.OutWeightedHistoryIllumination = float4(outWeightedIllumination, variance);
+#endif
 
     gVariance[ipos] = variance;
 

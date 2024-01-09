@@ -54,6 +54,7 @@ private:
         Texture::SharedPtr pWeightedIlluminationTexture);
 
     bool mBuffersNeedClear = false;
+    bool mRecompile = true;
 
     // static params
     uint2   mFrameDim;

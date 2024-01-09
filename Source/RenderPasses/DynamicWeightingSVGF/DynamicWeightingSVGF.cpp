@@ -64,7 +64,7 @@ namespace
     {
         { kInputBufferAlbedo,           "_",   "Albedo",          false, ResourceFormat::Unknown},
         { kInputBufferColor,            "_",   "Color",           false, ResourceFormat::Unknown},
-        { kInputBufferSampleCount,      "_",   "Sample Count",    false, ResourceFormat::R8Uint},
+        { kInputBufferSampleCount,      "_",   "Sample Count",    true,  ResourceFormat::R8Uint},
         { kInputBufferEmission,         "_",   "Emission",        false, ResourceFormat::Unknown},
         { kInputBufferWorldPosition,    "_",   "World Position",  false, ResourceFormat::Unknown},
         { kInputBufferWorldNormal,      "_",   "World Normal",    false, ResourceFormat::Unknown},
@@ -88,7 +88,6 @@ namespace
     const char kOutputWeightedHistoryWeight[] = "Weight_W";
     const char kOutputUnweightedHistoryIllumination[] = "Illumination_U";
     const char kOutputWeightedHistoryIllumination[] = "Illumination_W";
-    const char kOutputSampleCount[] = "SampleCount";
     const char kOutputGradient[] = "OutGradient";
     const char kOutputGamma[] = "OutGamma";
     const ChannelList kOutputChannels =
@@ -100,7 +99,6 @@ namespace
         { kOutputWeightedHistoryWeight,         "_",   "Weighted History Weight",         false,  ResourceFormat::R32Float },
         { kOutputUnweightedHistoryIllumination, "_",   "Unweightedly temporal filtered illumination",   false,  ResourceFormat::RGBA16Float },
         { kOutputWeightedHistoryIllumination,   "_",   "Weightedly tmeporal filtered illumination",     false,  ResourceFormat::RGBA16Float },
-        { kOutputSampleCount,                   "_",   "Sample Count",                    false,  ResourceFormat::R8Uint },
         { kOutputGradient,                      "_",   "Gradient",                        false,  ResourceFormat::RGBA32Float },
         { kOutputGamma,                         "_",   "Gamma",                           false,  ResourceFormat::RGBA32Float },
     };
@@ -108,10 +106,10 @@ namespace
     enum TemporalFilterOutFields
     {
         UnweightedHistoryIllumination,
-        WeightedHistoryIllumination,
         Moments,
         HistoryLength,
         UnweightedHistoryWeight,
+        WeightedHistoryIllumination,
         WeightedHistoryWeight,
     };
 
@@ -177,17 +175,8 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else logWarning("Unknown field '{}' in DynamicWeightingSVGF dictionary.", key);
     }
 
-    mpPackLinearZAndNormal = FullScreenPass::create(kPackLinearZAndNormalShader);
-    mpTemporalFilter = FullScreenPass::create(kTemporalFilterShader);
-    mpAtrous = FullScreenPass::create(kAtrousShader);
-    mpReproject = FullScreenPass::create(kReprojectShader);
-    mpDynamicWeighting = FullScreenPass::create(kDynamicWeightingShader);
-    mpFilterMoments = FullScreenPass::create(kFilterMomentShader);
-
     mpReflectTypes = ComputePass::create(kReflectTypesShader);
-
-    mpFinalModulate = FullScreenPass::create(kFinalModulateShader);
-    FALCOR_ASSERT(mpPackLinearZAndNormal && mpTemporalFilter && mpAtrous && mpFilterMoments && mpFinalModulate);
+    FALCOR_ASSERT(mpReflectTypes);
 }
 
 Dictionary DynamicWeightingSVGF::getScriptingDictionary()
@@ -280,9 +269,29 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pOutputWeightedHistoryWeight = renderData.getTexture(kOutputWeightedHistoryWeight);
     Texture::SharedPtr pOutputUnweightedHistoryIllumination = renderData.getTexture(kOutputUnweightedHistoryIllumination);
     Texture::SharedPtr pOutputWeightedHistoryIllumination = renderData.getTexture(kOutputWeightedHistoryIllumination);
-    Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
     Texture::SharedPtr pOutputGradient = renderData.getTexture(kOutputGradient);
     Texture::SharedPtr pOutputGamma = renderData.getTexture(kOutputGamma);
+
+
+
+    if (!mpPackLinearZAndNormal || mRecompile)
+    {
+        mRecompile = false;
+        mBuffersNeedClear = true;
+
+        mpPackLinearZAndNormal = FullScreenPass::create(kPackLinearZAndNormalShader);
+        {
+            Program::DefineList defines;
+            defines.add("_DW_ENABLED", mDynamicWeighingEnabled ? "1" : "0");
+            mpTemporalFilter = FullScreenPass::create(kTemporalFilterShader, defines);
+        }
+        mpAtrous = FullScreenPass::create(kAtrousShader);
+        mpReproject = FullScreenPass::create(kReprojectShader);
+        mpDynamicWeighting = FullScreenPass::create(kDynamicWeightingShader);
+        mpFilterMoments = FullScreenPass::create(kFilterMomentShader);
+        mpFinalModulate = FullScreenPass::create(kFinalModulateShader);
+    }
+    FALCOR_ASSERT(mpPackLinearZAndNormal && mpTemporalFilter && mpAtrous && mpFilterMoments && mpFinalModulate);
 
     if (mBuffersNeedClear)
     {
@@ -335,7 +344,6 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::HistoryLength)->getSRV(), pOutputHistoryLength->getRTV());
         pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryWeight)->getSRV(), pOutputUnweightedHistoryWeight->getRTV());
         pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryWeight)->getSRV(), pOutputWeightedHistoryWeight->getRTV());
-        pRenderContext->blit(pSampleCountTexture->getSRV(), pOutputSampleCount->getRTV());
         pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Gradient)->getSRV(), pOutputGradient->getRTV());
         pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Gamma)->getSRV(), pOutputGamma->getRTV());
 
@@ -651,38 +659,40 @@ void DynamicWeightingSVGF::computeFinalModulate(RenderContext* pRenderContext, T
 
 void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
 {
-    int dirty = 0;
-    dirty |= (int)widget.checkbox("Enable SVGF", mFilterEnabled);
+    bool dirty = 0;
+    dirty |= widget.checkbox("Enable SVGF", mFilterEnabled);
 
     widget.text("");
     widget.text("Number of filter iterations.  Which");
     widget.text("    iteration feeds into future frames?");
-    dirty |= (int)widget.var("Iterations", mFilterIterations, 0, 10, 1);
-    dirty |= (int)widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 1, 1);
+    dirty |= widget.var("Iterations", mFilterIterations, 0, 10, 1);
+    dirty |= widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 1, 1);
     if (mDynamicWeighingEnabled)
-        dirty |= (int)widget.var("Select After Iterations", mSelectAfterIterations, std::max(0, mFeedbackTap+1), mFilterIterations, 1);
+        dirty |= widget.var("Select After Iterations", mSelectAfterIterations, std::max(0, mFeedbackTap+1), mFilterIterations, 1);
 
     widget.text("");
     widget.text("Contol edge stopping on bilateral fitler");
-    dirty |= (int)widget.var("For Color", mPhiColor, 0.0f, 10000.0f, 0.01f);
-    dirty |= (int)widget.var("For Normal", mPhiNormal, 0.001f, 1000.0f, 0.2f);
+    dirty |= widget.var("For Color", mPhiColor, 0.0f, 10000.0f, 0.01f);
+    dirty |= widget.var("For Normal", mPhiNormal, 0.001f, 1000.0f, 0.2f);
 
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= (int)widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= (int)widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
 
     widget.text("");
     widget.text("Dynamic Weighting");
-    dirty |= (int)widget.checkbox("Enable Dynamic Weighting", mDynamicWeighingEnabled);
+    bool enabledChanged = widget.checkbox("Enable Dynamic Weighting", mDynamicWeighingEnabled);
+    dirty |= enabledChanged;
+    mRecompile |= enabledChanged;
     if (mDynamicWeighingEnabled)
     {
-        dirty |= (int)widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
-        dirty |= (int)widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
-        dirty |= (int)widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
-        dirty |= (int)widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
-        dirty |= (int)widget.dropdown("Normalization Mode", kNormalizationModeList, mNormalizationMode);
+        dirty |= widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
+        dirty |= widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
+        dirty |= widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
+        dirty |= widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
+        dirty |= widget.dropdown("Normalization Mode", kNormalizationModeList, mNormalizationMode);
 
         if (mSelectionMode == (uint32_t)SelectionMode::Logistic)
         {
@@ -693,8 +703,8 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
 
     widget.text("");
     widget.text("Debug");
-    mBuffersNeedClear |= (int)widget.button("Clear History");
-    dirty |= (int)widget.var("Sample Count Override", mSampleCountOverride, -1, 16, 1);
+    mBuffersNeedClear |= widget.button("Clear History");
+    dirty |= widget.var("Sample Count Override", mSampleCountOverride, -1, 16, 1);
 
     if (dirty) mBuffersNeedClear = true;
 }
