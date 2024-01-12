@@ -244,7 +244,6 @@ void RecordPass::closeMeasurementsFile()
 
 void RecordPass::saveMeasurementsToFile()
 {
-    std::cerr << "RecordPass::saveMeasurementsToFile*" << std::endl;
     if (!mMeasurementsFile) return;
 
     FALCOR_ASSERT(mStatistics.valid);
