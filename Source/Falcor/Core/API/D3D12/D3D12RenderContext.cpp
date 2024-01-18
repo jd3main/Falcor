@@ -249,6 +249,8 @@ namespace Falcor
         static_assert(offsetof(GraphicsState::Scissor, right) == offsetof(D3D12_RECT, right), "Scissor.right offset");
         static_assert(offsetof(GraphicsState::Scissor, bottom) == offsetof(D3D12_RECT, bottom), "Scissor.bottom offset");
 
+        // logWarning("[Scissor] bottom("+std::to_string(sc->bottom)+") top("+std::to_string(sc->top)+")\n");
+
         pList->RSSetScissorRects(D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE, (D3D12_RECT*)sc);
     }
 

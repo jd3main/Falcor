@@ -96,6 +96,7 @@ private:
     Fbo::SharedPtr mpCurTemporalFilterFbo;
     Fbo::SharedPtr mpPrevTemporalFilterFbo;
     Fbo::SharedPtr mpDynamicWeightingFbo;
+    Fbo::SharedPtr mpSpatialFilteredFbo;
     Fbo::SharedPtr mpFinalFbo;
 
     // Intermediate textures

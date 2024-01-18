@@ -251,10 +251,8 @@ struct PS_OUT
     float2 OutMoments                       : SV_TARGET1;
     float OutHistoryLength                  : SV_TARGET2;
     float OutUnweightedHistoryWeight        : SV_TARGET3;
-#if DW_ENABLED
     float4 OutWeightedHistoryIllumination   : SV_TARGET4;
     float OutWeightedHistoryWeight          : SV_TARGET5;
-#endif
 };
 
 // PS_OUT main(FullScreenPassVsOut vsOut)

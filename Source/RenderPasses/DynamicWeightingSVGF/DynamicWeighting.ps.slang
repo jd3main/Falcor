@@ -140,6 +140,12 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
     float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 
+    if (gSelectionMode == SelectionMode::Unweighted)
+        outIllumination = unweightedIllumination;
+    if (gSelectionMode == SelectionMode::Weighted)
+        outIllumination = weightedIllumination;
+
+
     PS_OUT psOut;
     psOut.color = float4(outIllumination, 1);
     psOut.gradient = float4(gradient, 1);
