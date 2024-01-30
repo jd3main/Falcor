@@ -34,21 +34,20 @@ def loadImageSequence(path, filename_pattern:str, max_frame_id=None):
         frame_id += 1
     return dataset
 
-
+record_path = Path(__file__).parents[4]/'Record'
 MAX_FRAMES = 120
-iters='0,-1,0'
+iters='1,-1,1'
 
 # load reference images
-reference_path = Path(__file__).parent/'Record'/f'{scene_name}_iters({iters})'
+reference_path = record_path/f'{scene_name}_iters({iters})'
 reference_images = loadImageSequence(reference_path, '60fps.SVGFPass.Filtered image.{}.exr', MAX_FRAMES)
 if len(reference_images) == 0:
     print(f'cannot load reference images')
     exit()
 
 # load source images
-base_path = Path(__file__).parent/'Record'
-unweighted_path = base_path/f'{scene_name}_iters({iters})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-weighted_path = base_path/f'{scene_name}_iters({iters})_Weighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+unweighted_path = record_path/f'{scene_name}_iters({iters})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+weighted_path = record_path/f'{scene_name}_iters({iters})_Weighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
 unweighted_images = loadImageSequence(unweighted_path, '60fps.SVGFPass.Filtered image.{}.exr', MAX_FRAMES)
 weighted_images = loadImageSequence(weighted_path, '60fps.SVGFPass.Filtered image.{}.exr', MAX_FRAMES)
 # gradient_images = loadImageSequence(weighted_path, '60fps.SVGFPass.OutGradient.{}.exr', MAX_FRAMES)
@@ -140,23 +139,3 @@ while True:
     elif key == ord('-'):
         multplier /= 1.1
 cv.destroyAllWindows()
-
-# # plot
-# nrows = 2
-# ncols = 1
-# ax1 = plt.subplot(nrows, ncols, 1)
-# ax1.set_ylabel("Mean Error")
-# ax1.set_xlabel("Frame")
-# ax2 = plt.subplot(nrows, ncols, 2, sharex=ax1)
-# ax2.set_ylabel('Max Error')
-
-# ax1.plot(mean_errs[0], label=f'unweighted.mean')
-# ax2.plot(max_errs[0], label=f'unweighted.max')
-# print(f'mean({np.mean(mean_errs[0]):.6f}), max({np.mean(max_errs[0]):.4f}) unweighted')
-# ax1.plot(mean_errs[1], label=f'weighted.mean')
-# ax2.plot(max_errs[1], label=f'weighted.max')
-# print(f'mean({np.mean(mean_errs[1]):.6f}), max({np.mean(max_errs[1]):.4f}) weighted')
-
-# ax1.legend(loc='upper left')
-# ax2.legend(loc='upper left')
-# plt.show()

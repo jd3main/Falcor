@@ -128,7 +128,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     case SelectionMode::Weighted:
         gamma = 0.0f;
     case SelectionMode::Linear:
-        gamma = clamp(gamma * gGammaSteepness, 0, 1);
+        gamma = clamp(0.5 + (gamma-gGammaMidpoint) * gGammaSteepness, 0, 1);
         break;
     case SelectionMode::Step:
         gamma = (gamma >= gGammaMidpoint) ? 1 : 0;

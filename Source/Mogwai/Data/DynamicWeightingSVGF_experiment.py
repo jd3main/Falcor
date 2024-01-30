@@ -13,6 +13,7 @@ from enum import IntEnum, auto
 import json
 from typing import Union
 import numpy as np
+from DynamicWeighting_Common import *
 
 loadRenderPassLibrary('DLSSPass.dll')
 loadRenderPassLibrary('AccumulatePass.dll')
@@ -64,31 +65,6 @@ class AllFrames:
         return dict()
     def toJSON(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
-
-class FoveaShape(IntEnum):
-    UNIFORM = 0
-    CIRCLE = auto()
-    SPLIT_HORIZONTALLY = auto()
-    SPLIT_VERTICALLY = auto()
-
-class FoveaInputType(IntEnum):
-    NONE = 0
-    SHM = auto()
-    MOUSE = auto()
-
-class SelectionMode(IntEnum):
-    UNWEIGHTED = 0
-    WEIGHTED = auto()
-    LINEAR = auto()
-    STEP = auto()
-    LOGISTIC = auto()
-
-class NormalizationMode(IntEnum):
-    NONE = 0
-    LUMINANCE = auto()
-    VARIANCE = auto()
-    STANDARD_DEVIATION = auto()
-
 
 
 def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
@@ -178,8 +154,8 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
         g.addEdge('FoveatedPass.sampleCount', 'SVGFPass.SampleCount')
 
     g.markOutput('SVGFPass.Filtered image')
-    if foveated_pass_enabled:
-        g.markOutput('FoveatedPass.sampleCount')
+    # if foveated_pass_enabled:
+    #     g.markOutput('FoveatedPass.sampleCount')
     # g.markOutput('SVGFPass.OutGradient')
     # g.markOutput('SVGFPass.Illumination_U')
     # g.markOutput('SVGFPass.Illumination_W')
@@ -287,13 +263,13 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
 
     record_params = {
         'start_time': 0,
-        'end_time': 5,
-        'fps': 60,
+        'end_time': 20,
+        'fps': 30,
         'frames': AllFrames(),
         **record_params_override
     }
 
-    output_path_base = Path(__file__).parent/'Record'
+    output_path_base = Path(__file__).parents[4]/'Record'
     while True:
         folder_name_parts = []
         folder_name_parts.append(scene_name)
@@ -334,14 +310,14 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
         output_path = output_path_base / folder_name
         if output_path.exists():
             if force_record:
-                print(f"[Warning] Found existing record at {output_path}. Force continue recording.")
+                print(f"[Warning] Found existing record at \"{output_path}\". Force continue recording.")
                 break
             g_params = loadMetadata(output_path)
             if g_params == graph_params:
-                print(f"[Warning] Found existing record with same parameters at {output_path}. Skip recording.")
+                print(f"[Warning] Found existing record with same parameters at \"{output_path}\". Skip recording.")
                 return
             else:
-                print(f"[Warning] Found existing record with different parameters at {output_path}. Continue recording.")
+                print(f"[Warning] Found existing record with different parameters at \"{output_path}\". Continue recording.")
                 break
         else:
             break
@@ -366,8 +342,8 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     m.removeGraph(g)
 
 
-# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
-scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
+scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
@@ -379,6 +355,17 @@ except Exception as e:
     print(e)
     raise e
 
+
+common_record_params = {
+    'fps': 30,
+    'start_time': 0,
+    'end_time': 20,
+}
+
+common_graph_params = {
+    'alpha': 0.05,
+}
+
 foveated_params_override = {
     'shape': FoveaShape.SPLIT_HORIZONTALLY,
     'foveaInputType': FoveaInputType.SHM,
@@ -388,80 +375,100 @@ foveated_params_override = {
     'foveaMoveDirection': 0,
 }
 
-
+# iters, feedback, grad_iters
 iter_params = [
-    (0, -1, 0),
-    (1, -1, 1),
+    # (0, -1, 0),
+    # (1, -1, 1),
     (2, -1, 2),
-    (3, -1, 3),
+    # (3, -1, 3),
     # (4, -1, 4),
-    (1, 0, 1),
-    (2, 0, 2),
-    (2, 1, 2),
+    # (1, 0, 1),
+    # (2, 0, 2),
+    # (2, 1, 2),
 ]
-
-# iters = 0
-# feedback = -1
-# grad_iters = 0
 
 for iters, feedback, grad_iters in iter_params:
     # Try different parameters with dynamic weighting
-    for midpoint in [0.0001, 0.001, 0.01]:
-        for steepness in [5.0, 50.0, 500.0]:
+    for midpoint in [0.0, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0]:
+        for steepness in [0.5, 5.0, 50.0, 500.0, 5000.0]:
             run(graph_params_override = {
-                'iters': iters,
-                'feedback': feedback,
-                'grad_iters': grad_iters,
-                'dynamic_weighting_enabled': True,
-                'dynamic_weighting_params': {
-                    'GradientAlpha': 0.2,
-                    'GradientMidpoint': float(midpoint),
-                    'GammaSteepness': float(steepness),
-                    'SelectionMode': SelectionMode.LOGISTIC,
-                    'SampleCountOverride': -1,
-                    'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
+                    'iters': iters,
+                    'feedback': feedback,
+                    'grad_iters': grad_iters,
+                    'dynamic_weighting_enabled': True,
+                    'dynamic_weighting_params': {
+                        'GradientAlpha': 0.2,
+                        'GradientMidpoint': float(midpoint),
+                        'GammaSteepness': float(steepness),
+                        'SelectionMode': SelectionMode.LINEAR,
+                        'SampleCountOverride': -1,
+                        'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
+                    },
+                    'foveated_pass_enabled': True,
+                    'foveated_pass_params': foveated_params_override,
+                    **common_graph_params
                 },
-                'foveated_pass_enabled': True,
-                'foveated_pass_params': foveated_params_override,
-            }, force_record=False)
+                record_params_override={
+                    **common_record_params,
+                },
+                force_record=False)
 
     # Unweighted
     print("Run Unweighted")
     run(graph_params_override = {
-        'iters': iters,
-        'feedback': feedback,
-        'grad_iters': grad_iters,
-        'dynamic_weighting_enabled': False,
-        'dynamic_weighting_params': {
-            'SelectionMode': SelectionMode.UNWEIGHTED,
+            'iters': iters,
+            'feedback': feedback,
+            'grad_iters': grad_iters,
+            'dynamic_weighting_enabled': False,
+            'dynamic_weighting_params': {
+                'SelectionMode': SelectionMode.UNWEIGHTED,
+            },
+            'foveated_pass_enabled': True,
+            'foveated_pass_params': foveated_params_override,
+            **common_graph_params
         },
-        'foveated_pass_enabled': True,
-        'foveated_pass_params': foveated_params_override,
-    }, force_record=False)
+        record_params_override={
+            **common_record_params,
+        },
+        force_record=False
+    )
 
     # Weighted
     print("Run Weighted")
     run(graph_params_override = {
-        'iters': iters,
-        'feedback': feedback,
-        'grad_iters': grad_iters,
-        'dynamic_weighting_enabled': True,
-        'dynamic_weighting_params': {
-            'SelectionMode': SelectionMode.WEIGHTED,
+            'iters': iters,
+            'feedback': feedback,
+            'grad_iters': grad_iters,
+            'dynamic_weighting_enabled': True,
+            'dynamic_weighting_params': {
+                'SelectionMode': SelectionMode.WEIGHTED,
+            },
+            'foveated_pass_enabled': True,
+            'foveated_pass_params': foveated_params_override,
+            **common_graph_params
         },
-        'foveated_pass_enabled': True,
-        'foveated_pass_params': foveated_params_override,
-    }, force_record=False)
+        record_params_override={
+            **common_record_params,
+        },
+        force_record=False
+    )
 
 
     # Generate ground truth
     print("Run Ground Truth")
     run(graph_params_override = {
-        'iters': iters,
-        'feedback': feedback,
-        'grad_iters': grad_iters,
-        'dynamic_weighting_enabled': False,
-        'foveated_pass_enabled': False,
-    }, force_record=False)
+            'iters': iters,
+            'feedback': feedback,
+            'grad_iters': grad_iters,
+            'dynamic_weighting_enabled': False,
+            'foveated_pass_enabled': False,
+            **common_graph_params
+        },
+        record_params_override={
+            **common_record_params,
+        },
+        force_record=False
+    )
 
+    print("All Done")
 exit()
