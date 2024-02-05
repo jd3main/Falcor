@@ -31,7 +31,7 @@
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include "Rendering/Lights/EmissiveUniformSampler.h"
 
-const RenderPass::Info PathTracer::kInfo { "PathTracer", "Reference path tracer." };
+const RenderPass::Info PathTracerEx::kInfo { "PathTracerEx", "Path tracer with larger max sample count." };
 
 namespace
 {
@@ -185,12 +185,14 @@ extern "C" FALCOR_API_EXPORT const char* getProjDir()
 
 extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
 {
-    lib.registerPass(PathTracer::kInfo, PathTracer::create);
-    ScriptBindings::registerBinding(PathTracer::registerBindings);
+    lib.registerPass(PathTracerEx::kInfo, PathTracerEx::create);
+    ScriptBindings::registerBinding(PathTracerEx::registerBindings);
 }
 
-void PathTracer::registerBindings(pybind11::module& m)
+void PathTracerEx::registerBindings(pybind11::module& m)
 {
+    // Already bound in PathTracer.cpp
+    /*
     pybind11::enum_<ColorFormat> colorFormat(m, "ColorFormat");
     colorFormat.value("RGBA32F", ColorFormat::RGBA32F);
     colorFormat.value("LogLuvHDR", ColorFormat::LogLuvHDR);
@@ -199,26 +201,27 @@ void PathTracer::registerBindings(pybind11::module& m)
     misHeuristic.value("Balance", MISHeuristic::Balance);
     misHeuristic.value("PowerTwo", MISHeuristic::PowerTwo);
     misHeuristic.value("PowerExp", MISHeuristic::PowerExp);
+    */
 
-    pybind11::class_<PathTracer, RenderPass, PathTracer::SharedPtr> pass(m, "PathTracer");
-    pass.def_property_readonly("pixelStats", &PathTracer::getPixelStats);
+    pybind11::class_<PathTracerEx, RenderPass, PathTracerEx::SharedPtr> pass(m, "PathTracerEx");
+    pass.def_property_readonly("pixelStats", &PathTracerEx::getPixelStats);
 
     pass.def_property("useFixedSeed",
-        [](const PathTracer* pt) { return pt->mParams.useFixedSeed ? true : false; },
-        [](PathTracer* pt, bool value) { pt->mParams.useFixedSeed = value ? 1 : 0; }
+        [](const PathTracerEx* pt) { return pt->mParams.useFixedSeed ? true : false; },
+        [](PathTracerEx* pt, bool value) { pt->mParams.useFixedSeed = value ? 1 : 0; }
     );
     pass.def_property("fixedSeed",
-        [](const PathTracer* pt) { return pt->mParams.fixedSeed; },
-        [](PathTracer* pt, uint32_t value) { pt->mParams.fixedSeed = value; }
+        [](const PathTracerEx* pt) { return pt->mParams.fixedSeed; },
+        [](PathTracerEx* pt, uint32_t value) { pt->mParams.fixedSeed = value; }
     );
 }
 
-PathTracer::SharedPtr PathTracer::create(RenderContext* pRenderContext, const Dictionary& dict)
+PathTracerEx::SharedPtr PathTracerEx::create(RenderContext* pRenderContext, const Dictionary& dict)
 {
-    return SharedPtr(new PathTracer(dict));
+    return SharedPtr(new PathTracerEx(dict));
 }
 
-PathTracer::PathTracer(const Dictionary& dict)
+PathTracerEx::PathTracerEx(const Dictionary& dict)
     : RenderPass(kInfo)
 {
     if (!gpDevice->isShaderModelSupported(Device::ShaderModel::SM6_5))
@@ -246,7 +249,7 @@ PathTracer::PathTracer(const Dictionary& dict)
     mpPixelDebug = PixelDebug::create();
 }
 
-void PathTracer::parseDictionary(const Dictionary& dict)
+void PathTracerEx::parseDictionary(const Dictionary& dict)
 {
     for (const auto& [key, value] : dict)
     {
@@ -317,7 +320,7 @@ void PathTracer::parseDictionary(const Dictionary& dict)
     }
 }
 
-void PathTracer::validateOptions()
+void PathTracerEx::validateOptions()
 {
     if (mParams.specularRoughnessThreshold < 0.f || mParams.specularRoughnessThreshold > 1.f)
     {
@@ -357,7 +360,7 @@ void PathTracer::validateOptions()
     }
 }
 
-Dictionary PathTracer::getScriptingDictionary()
+Dictionary PathTracerEx::getScriptingDictionary()
 {
     if (auto lightBVHSampler = std::dynamic_pointer_cast<LightBVHSampler>(mpEmissiveSampler))
     {
@@ -408,7 +411,7 @@ Dictionary PathTracer::getScriptingDictionary()
     return d;
 }
 
-RenderPassReflection PathTracer::reflect(const CompileData& compileData)
+RenderPassReflection PathTracerEx::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
     const uint2 sz = RenderPassHelpers::calculateIOSize(mOutputSizeSelection, mFixedOutputSize, compileData.defaultTexDims);
@@ -418,7 +421,7 @@ RenderPassReflection PathTracer::reflect(const CompileData& compileData)
     return reflector;
 }
 
-void PathTracer::setFrameDim(const uint2 frameDim)
+void PathTracerEx::setFrameDim(const uint2 frameDim)
 {
     auto prevFrameDim = mParams.frameDim;
     auto prevScreenTiles = mParams.screenTiles;
@@ -440,7 +443,7 @@ void PathTracer::setFrameDim(const uint2 frameDim)
     }
 }
 
-void PathTracer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
+void PathTracerEx::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
 {
     mpScene = pScene;
     mParams.frameCount = 0;
@@ -472,7 +475,7 @@ void PathTracer::setScene(RenderContext* pRenderContext, const Scene::SharedPtr&
     }
 }
 
-void PathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void PathTracerEx::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     if (!beginFrame(pRenderContext, renderData)) return;
 
@@ -514,7 +517,7 @@ void PathTracer::execute(RenderContext* pRenderContext, const RenderData& render
     endFrame(pRenderContext, renderData);
 }
 
-void PathTracer::renderUI(Gui::Widgets& widget)
+void PathTracerEx::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
 
@@ -532,7 +535,7 @@ void PathTracer::renderUI(Gui::Widgets& widget)
     }
 }
 
-bool PathTracer::renderRenderingUI(Gui::Widgets& widget)
+bool PathTracerEx::renderRenderingUI(Gui::Widgets& widget)
 {
     bool dirty = false;
     bool runtimeDirty = false;
@@ -678,7 +681,7 @@ bool PathTracer::renderRenderingUI(Gui::Widgets& widget)
     return dirty || runtimeDirty;
 }
 
-bool PathTracer::renderDebugUI(Gui::Widgets& widget)
+bool PathTracerEx::renderDebugUI(Gui::Widgets& widget)
 {
     bool dirty = false;
 
@@ -698,7 +701,7 @@ bool PathTracer::renderDebugUI(Gui::Widgets& widget)
     return dirty;
 }
 
-void PathTracer::renderStatsUI(Gui::Widgets& widget)
+void PathTracerEx::renderStatsUI(Gui::Widgets& widget)
 {
     if (auto g = widget.group("Statistics"))
     {
@@ -707,12 +710,12 @@ void PathTracer::renderStatsUI(Gui::Widgets& widget)
     }
 }
 
-bool PathTracer::onMouseEvent(const MouseEvent& mouseEvent)
+bool PathTracerEx::onMouseEvent(const MouseEvent& mouseEvent)
 {
     return mpPixelDebug->onMouseEvent(mouseEvent);
 }
 
-PathTracer::TracePass::TracePass(const std::string& name, const std::string& passDefine, const Scene::SharedPtr& pScene, const Program::DefineList& defines, const Program::TypeConformanceList& globalTypeConformances)
+PathTracerEx::TracePass::TracePass(const std::string& name, const std::string& passDefine, const Scene::SharedPtr& pScene, const Program::DefineList& defines, const Program::TypeConformanceList& globalTypeConformances)
     : name(name)
     , passDefine(passDefine)
 {
@@ -778,7 +781,7 @@ PathTracer::TracePass::TracePass(const std::string& name, const std::string& pas
     pProgram = RtProgram::create(desc, defines);
 }
 
-void PathTracer::TracePass::prepareProgram(const Program::DefineList& defines)
+void PathTracerEx::TracePass::prepareProgram(const Program::DefineList& defines)
 {
     FALCOR_ASSERT(pProgram != nullptr && pBindingTable != nullptr);
     pProgram->setDefines(defines);
@@ -786,7 +789,7 @@ void PathTracer::TracePass::prepareProgram(const Program::DefineList& defines)
     pVars = RtProgramVars::create(pProgram, pBindingTable);
 }
 
-void PathTracer::updatePrograms()
+void PathTracerEx::updatePrograms()
 {
     FALCOR_ASSERT(mpScene);
 
@@ -847,7 +850,7 @@ void PathTracer::updatePrograms()
     mRecompile = false;
 }
 
-void PathTracer::prepareResources(RenderContext* pRenderContext, const RenderData& renderData)
+void PathTracerEx::prepareResources(RenderContext* pRenderContext, const RenderData& renderData)
 {
     // Compute allocation requirements for paths and output samples.
     // Note that the sample buffers are padded to whole tiles, while the max path count depends on actual frame dimension.
@@ -900,7 +903,7 @@ void PathTracer::prepareResources(RenderContext* pRenderContext, const RenderDat
     }
 }
 
-void PathTracer::preparePathTracer(const RenderData& renderData)
+void PathTracerEx::preparePathTracer(const RenderData& renderData)
 {
     // Create path tracer parameter block if needed.
     if (!mpPathTracerBlock || mVarsChanged)
@@ -916,7 +919,7 @@ void PathTracer::preparePathTracer(const RenderData& renderData)
     setShaderData(var, renderData);
 }
 
-void PathTracer::resetLighting()
+void PathTracerEx::resetLighting()
 {
     // Retain the options for the emissive sampler.
     if (auto lightBVHSampler = std::dynamic_pointer_cast<LightBVHSampler>(mpEmissiveSampler))
@@ -929,7 +932,7 @@ void PathTracer::resetLighting()
     mRecompile = true;
 }
 
-void PathTracer::prepareMaterials(RenderContext* pRenderContext)
+void PathTracerEx::prepareMaterials(RenderContext* pRenderContext)
 {
     // This functions checks for material changes and performs any necessary update.
     // For now all we need to do is to trigger a recompile so that the right defines get set.
@@ -941,7 +944,7 @@ void PathTracer::prepareMaterials(RenderContext* pRenderContext)
     }
 }
 
-bool PathTracer::prepareLighting(RenderContext* pRenderContext)
+bool PathTracerEx::prepareLighting(RenderContext* pRenderContext)
 {
     bool lightingChanged = false;
 
@@ -1040,7 +1043,7 @@ bool PathTracer::prepareLighting(RenderContext* pRenderContext)
     return lightingChanged;
 }
 
-void PathTracer::prepareRTXDI(RenderContext* pRenderContext)
+void PathTracerEx::prepareRTXDI(RenderContext* pRenderContext)
 {
     if (mStaticParams.useRTXDI)
     {
@@ -1058,7 +1061,7 @@ void PathTracer::prepareRTXDI(RenderContext* pRenderContext)
     }
 }
 
-void PathTracer::setNRDData(const ShaderVar& var, const RenderData& renderData) const
+void PathTracerEx::setNRDData(const ShaderVar& var, const RenderData& renderData) const
 {
     var["sampleRadiance"] = mpSampleNRDRadiance;
     var["sampleHitDist"] = mpSampleNRDHitDist;
@@ -1079,7 +1082,7 @@ void PathTracer::setNRDData(const ShaderVar& var, const RenderData& renderData) 
     var["deltaTransmissionPosW"] = renderData.getTexture(kOutputNRDDeltaTransmissionPosW);
 }
 
-void PathTracer::setShaderData(const ShaderVar& var, const RenderData& renderData, bool useLightSampling) const
+void PathTracerEx::setShaderData(const ShaderVar& var, const RenderData& renderData, bool useLightSampling) const
 {
     // Bind static resources that don't change per frame.
     if (mVarsChanged)
@@ -1121,7 +1124,7 @@ void PathTracer::setShaderData(const ShaderVar& var, const RenderData& renderDat
     }
 }
 
-bool PathTracer::beginFrame(RenderContext* pRenderContext, const RenderData& renderData)
+bool PathTracerEx::beginFrame(RenderContext* pRenderContext, const RenderData& renderData)
 {
     const auto& pOutputColor = renderData.getTexture(kOutputColor);
     FALCOR_ASSERT(pOutputColor);
@@ -1243,7 +1246,7 @@ bool PathTracer::beginFrame(RenderContext* pRenderContext, const RenderData& ren
     return true;
 }
 
-void PathTracer::endFrame(RenderContext* pRenderContext, const RenderData& renderData)
+void PathTracerEx::endFrame(RenderContext* pRenderContext, const RenderData& renderData)
 {
     mpPixelStats->endFrame(pRenderContext);
     mpPixelDebug->endFrame(pRenderContext);
@@ -1273,7 +1276,7 @@ void PathTracer::endFrame(RenderContext* pRenderContext, const RenderData& rende
     mParams.frameCount++;
 }
 
-void PathTracer::generatePaths(RenderContext* pRenderContext, const RenderData& renderData)
+void PathTracerEx::generatePaths(RenderContext* pRenderContext, const RenderData& renderData)
 {
     FALCOR_PROFILE("generatePaths");
 
@@ -1304,7 +1307,7 @@ void PathTracer::generatePaths(RenderContext* pRenderContext, const RenderData& 
     mpGeneratePaths->execute(pRenderContext, { mParams.screenTiles.x * tileSize, mParams.screenTiles.y, 1u });
 }
 
-void PathTracer::tracePass(RenderContext* pRenderContext, const RenderData& renderData, TracePass& tracePass)
+void PathTracerEx::tracePass(RenderContext* pRenderContext, const RenderData& renderData, TracePass& tracePass)
 {
     FALCOR_PROFILE(tracePass.name);
 
@@ -1333,7 +1336,7 @@ void PathTracer::tracePass(RenderContext* pRenderContext, const RenderData& rend
     mpScene->raytrace(pRenderContext, tracePass.pProgram.get(), tracePass.pVars, uint3(mParams.frameDim, 1));
 }
 
-void PathTracer::resolvePass(RenderContext* pRenderContext, const RenderData& renderData)
+void PathTracerEx::resolvePass(RenderContext* pRenderContext, const RenderData& renderData)
 {
     if (!mOutputGuideData && !mOutputNRDData && mFixedSampleCount && mStaticParams.samplesPerPixel == 1) return;
 
@@ -1380,7 +1383,7 @@ void PathTracer::resolvePass(RenderContext* pRenderContext, const RenderData& re
     mpResolvePass->execute(pRenderContext, { mParams.frameDim, 1u });
 }
 
-Program::DefineList PathTracer::StaticParams::getDefines(const PathTracer& owner) const
+Program::DefineList PathTracerEx::StaticParams::getDefines(const PathTracerEx& owner) const
 {
     Program::DefineList defines;
 

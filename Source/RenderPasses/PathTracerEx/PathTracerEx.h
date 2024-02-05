@@ -43,10 +43,10 @@ using namespace Falcor;
 
 /** Fast path tracer.
 */
-class PathTracer : public RenderPass
+class PathTracerEx : public RenderPass
 {
 public:
-    using SharedPtr = std::shared_ptr<PathTracer>;
+    using SharedPtr = std::shared_ptr<PathTracerEx>;
 
     static const Info kInfo;
 
@@ -77,7 +77,7 @@ private:
         void prepareProgram(const Program::DefineList& defines);
     };
 
-    PathTracer(const Dictionary& dict);
+    PathTracerEx(const Dictionary& dict);
 
     void parseDictionary(const Dictionary& dict);
     void validateOptions();
@@ -136,7 +136,7 @@ private:
         // Denoising parameters
         bool        useNRDDemodulation = true;                  ///< Global switch for NRD demodulation.
 
-        Program::DefineList getDefines(const PathTracer& owner) const;
+        Program::DefineList getDefines(const PathTracerEx& owner) const;
     };
 
     // Configuration
