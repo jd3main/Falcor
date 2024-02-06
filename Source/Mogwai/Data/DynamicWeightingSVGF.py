@@ -60,7 +60,7 @@ def render_graph_g():
     g.addPass(CountToColor1, 'CountToColor1')
     CountToColor2 = createPass('CountToColor', {'MaxValue': 256})
     g.addPass(CountToColor2, 'CountToColor2')
-    DynamicWeightingSVGF = createPass('DynamicWeightingSVGF', {'Enabled': True, 'DynamicWeighingEnabled': True, 'Iterations': 4, 'FeedbackTap': 0, 'GradientFilterIterations': 1, 'VarianceEpsilon': 9.999999747378752e-05, 'PhiColor': 10.0, 'PhiNormal': 128.0, 'Alpha': 0.05000000074505806, 'MomentsAlpha': 0.20000000298023224, 'GradientAlpha': 0.20000000298023224, 'GradientMidpoint': 0.009999999776482582, 'GammaSteepness': 100.0, 'SelectionMode': 2, 'SampleCountOverride': 0, 'NormalizationMode': 0})
+    DynamicWeightingSVGF = createPass('DynamicWeightingSVGF', {'Enabled': True, 'DynamicWeighingEnabled': True, 'Iterations': 4, 'FeedbackTap': -1, 'GradientFilterIterations': 0, 'VarianceEpsilon': 9.999999747378752e-05, 'PhiColor': 10.0, 'PhiNormal': 128.0, 'Alpha': 0.05000000074505806, 'MomentsAlpha': 0.20000000298023224, 'GradientAlpha': 0.20000000298023224, 'GradientMidpoint': 0.009999999776482582, 'GammaSteepness': 100.0, 'SelectionMode': 2, 'SampleCountOverride': 0, 'NormalizationMode': 3})
     g.addPass(DynamicWeightingSVGF, 'DynamicWeightingSVGF')
     ColorMapPass = createPass('ColorMapPass', {'colorMap': ColorMap.Jet, 'channel': 0, 'autoRange': False, 'minValue': -1.0, 'maxValue': 1.0})
     g.addPass(ColorMapPass, 'ColorMapPass')

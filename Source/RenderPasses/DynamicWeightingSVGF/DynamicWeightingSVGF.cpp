@@ -324,8 +324,11 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
             pMotionVectorTexture,
             pPosNormalFwidthTexture);
 
-        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryIllumination)->getSRV(), pOutputUnweightedHistoryIllumination->getRTV());
-        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryIllumination)->getSRV(), pOutputWeightedHistoryIllumination->getRTV());
+        {
+            FALCOR_PROFILE("[debug] blit history illumination");
+            pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryIllumination)->getSRV(), pOutputUnweightedHistoryIllumination->getRTV());
+            pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryIllumination)->getSRV(), pOutputWeightedHistoryIllumination->getRTV());
+        }
 
         computeReprojection(pRenderContext, pColorTexture, pLinearZTexture, pMotionVectorTexture, pPosNormalFwidthTexture);
 
@@ -334,8 +337,11 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         // mpPingPongFbo[0].  Takes mpCurReprojFbo as input.
         computeFilteredMoments(pRenderContext);
 
-        pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), pOutputUnweightedFilteredIllumination->getRTV());
-        pRenderContext->blit(mpPingPongFbo[2]->getColorTexture(0)->getSRV(), pOutputWeightedFilteredIllumination->getRTV());
+        {
+            FALCOR_PROFILE("[debug] blit filtered moments");
+            pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), pOutputUnweightedFilteredIllumination->getRTV());
+            pRenderContext->blit(mpPingPongFbo[2]->getColorTexture(0)->getSRV(), pOutputWeightedFilteredIllumination->getRTV());
+        }
 
         // Filter illumination from mpCurReprojFbo[0], storing the result
         // in mpPingPongFbo[0].  Along the way (or at the end, depending on
@@ -354,6 +360,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryWeight)->getSRV(), pOutputUnweightedHistoryWeight->getRTV());
         if (mDynamicWeighingEnabled)
         {
+            FALCOR_PROFILE("[debug] blit weight, gradient, gamma");
             pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryWeight)->getSRV(), pOutputWeightedHistoryWeight->getRTV());
             pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Gradient)->getSRV(), pOutputGradient->getRTV());
             pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Gamma)->getSRV(), pOutputGamma->getRTV());
@@ -366,6 +373,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), mpPrevLinearZAndNormalTexture->getRTV());
         if (mDynamicWeighingEnabled)
         {
+            FALCOR_PROFILE("blit prev gradient");
             pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Gradient)->getSRV(), mpPrevGradientTexture->getRTV());
         }
     }
@@ -467,6 +475,8 @@ void DynamicWeightingSVGF::clearBuffers(RenderContext* pRenderContext, const Ren
 void DynamicWeightingSVGF::computeLinearZAndNormal(RenderContext* pRenderContext, Texture::SharedPtr pLinearZTexture,
     Texture::SharedPtr pWorldNormalTexture)
 {
+    FALCOR_PROFILE("computeLinearZAndNormal");
+
     auto perImageCB = mpPackLinearZAndNormal["PerImageCB"];
     perImageCB["gLinearZ"] = pLinearZTexture;
     perImageCB["gNormal"] = pWorldNormalTexture;
@@ -480,6 +490,8 @@ void DynamicWeightingSVGF::computeReprojection(RenderContext* pRendercontext,
     Texture::SharedPtr pMotionoTexture,
     Texture::SharedPtr pPositionNormalFwidthTexture)
 {
+    FALCOR_PROFILE("computeReprojection");
+
     auto perImageCB = mpReproject["PerImageCB"];
     perImageCB["gMotion"] = pMotionoTexture;
     perImageCB["gColor"] = pColorTexture;
@@ -499,6 +511,8 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     Texture::SharedPtr pMotionVectorTexture,
     Texture::SharedPtr pPositionNormalFwidthTexture)
 {
+    FALCOR_PROFILE("computeTemporalFilter");
+
     mpPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
     mpPrevGradientTexture = renderData.getTexture(kInternalBufferPreviousGradient);
     mpVarianceTexture = renderData.getTexture(kInternalBufferVariance);
@@ -543,6 +557,8 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
 
 void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
 {
+    FALCOR_PROFILE("computeFilteredMoments");
+
     auto perImageCB = mpFilterMoments["PerImageCB"];
 
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
@@ -574,6 +590,8 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
 
 void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pAlbedoTexture)
 {
+    FALCOR_PROFILE("computeAtrousDecomposition");
+
     // cerr << "computeAtrousDecomposition()" << endl;
     mpPrevUnweightedIllumination = renderData.getTexture(kInternalBufferPreviousUnweightedIllumination);
     mpPrevWeightedIllumination = renderData.getTexture(kInternalBufferPreviousWeightedIllumination);
@@ -596,20 +614,23 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
     bool doneSelection = false;
     for (int i = 0; i < mFilterIterations; i++)
     {
-        if (mDynamicWeighingEnabled && mSelectAfterIterations == i)
+        if (mDynamicWeighingEnabled && i == mSelectAfterIterations)
         {
             // cerr << "dynamicWeighting: i=" << i << endl;
             dynamicWeighting(pRenderContext,
                 mpPingPongFbo[0]->getColorTexture(0),
                 mpPingPongFbo[2]->getColorTexture(0));
 
-            // cerr << "blit mpDynamicWeightingFbo => mpSpatialFilteredFbo\n";
-            pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Color)->getSRV(), mpSpatialFilteredFbo->getColorTexture(0)->getRTV());
-
+            {
+                // cerr << "blit mpDynamicWeightingFbo => mpSpatialFilteredFbo\n";
+                FALCOR_PROFILE("dynamicWeighting blit & swap");
+                pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Color)->getSRV(), mpPingPongFbo[3]->getColorTexture(0)->getRTV());
+                std::swap(mpPingPongFbo[0], mpPingPongFbo[3]);
+            }
             doneSelection = true;
         }
         // If dynamic doneSelection has been done, we only need to filter the first pair of ping-pong buffers
-        int nSrcIds = (doneSelection && mDynamicWeighingEnabled) ? 2 : 4;
+        int nSrcIds = (mDynamicWeighingEnabled && !doneSelection) ? 4 : 2;
         // int nSrcIds = 4;
         for (int srcId = 0; srcId < nSrcIds; srcId += 2)
         {
@@ -618,6 +639,8 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
             perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(weightTextureIds[srcId/2]);
             perImageCB["gStepSize"] = 1 << i;
             perImageCB["gIllumination"] = mpPingPongFbo[srcId]->getColorTexture(0);
+
+            FALCOR_PROFILE("Atrous["+std::to_string(i)+"], srcId="+std::to_string(srcId)+", dstId="+std::to_string(dstId));
             // Fbo::SharedPtr curTargetFbo = mpPingPongFbo[dstId];
             // cerr << "atrous: mpPingPongFbo[" << srcId << "] => mpPingPongFbo[" << dstId << "]\n";
             mpAtrous->execute(pRenderContext, mpPingPongFbo[dstId]);
@@ -625,6 +648,7 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
             // store the filtered color for the feedback path
             if (i == std::min(mFeedbackTap, mFilterIterations - 1))
             {
+                FALCOR_PROFILE("feedback");
                 FALCOR_ASSERT(!doneSelection)
                 // cerr << "feedback: mpPingPongFbo[" << dstId << "] => mpFilteredPastFbo[" << srcId/2 << "]\n";
                 pRenderContext->blit(mpPingPongFbo[dstId]->getColorTexture(0)->getSRV(), mpFilteredPastFbo[srcId/2]->getRenderTargetView(0));
@@ -643,10 +667,15 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
             mpPingPongFbo[2]->getColorTexture(0));
 
         // cerr << "*blit mpDynamicWeightingFbo => mpSpatialFilteredFbo\n";
-        pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Color)->getSRV(), mpSpatialFilteredFbo->getColorTexture(0)->getRTV());
+        {
+            FALCOR_PROFILE("dynamicWeighting blit");
+            pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields::Color)->getSRV(), mpPingPongFbo[3]->getColorTexture(0)->getRTV());
+            std::swap(mpPingPongFbo[0], mpPingPongFbo[3]);
+        }
     }
-    else if(!mDynamicWeighingEnabled)
+    // else if(!mDynamicWeighingEnabled)
     {
+        FALCOR_PROFILE("blit mpPingPongFbo[0] -> mpSpatialFilteredFbo");
         // cerr << "*blit mpPingPongFbo[0] => mpSpatialFilteredFbo\n";
         pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), mpSpatialFilteredFbo->getColorTexture(0)->getRTV());
     }
@@ -654,6 +683,7 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
 
     if (mFeedbackTap < 0)
     {
+        FALCOR_PROFILE("direct feedback");
         // cerr << "*feedback" << endl;
         pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::UnweightedHistoryIllumination)->getSRV(), mpFilteredPastFbo[0]->getRenderTargetView(0));
         if (mDynamicWeighingEnabled)
@@ -666,6 +696,8 @@ void DynamicWeightingSVGF::dynamicWeighting(
     Texture::SharedPtr pUnweightedIlluminationTexture,
     Texture::SharedPtr pWeightedIlluminationTexture)
 {
+    FALCOR_PROFILE("dynamicWeighting");
+
     // cerr << "dynamicWeighting()" << endl;
     auto perImageCB = mpDynamicWeighting["PerImageCB"];
 
@@ -693,6 +725,8 @@ void DynamicWeightingSVGF::dynamicWeighting(
 
 void DynamicWeightingSVGF::computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture)
 {
+    FALCOR_PROFILE("computeFinalModulate");
+
     auto perImageCB = mpFinalModulate["PerImageCB"];
     perImageCB["gAlbedo"] = pAlbedoTexture;
     perImageCB["gEmission"] = pEmissionTexture;

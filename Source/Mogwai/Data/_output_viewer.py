@@ -9,42 +9,45 @@ import matplotlib.pyplot as plt
 from enum import IntEnum, auto
 from _utils import *
 
-# scene_name = 'VeachAjarAnimated'
-scene_name = 'BistroExterior'
+scene_name = 'VeachAjarAnimated'
+# scene_name = 'BistroExterior'
 # scene_name = 'EmeraldSquare_Day'
 # scene_name = 'SunTemple'
 
 
-record_path = Path(__file__).parent/'Record'
+record_path = Path(__file__).parents[4]/'Record'
 MAX_FRAMES = 10
-iters='0,-1,0'
+fps = 30
+iters = 2
+feedback = -1
+grad_iters = 2
 
 # load reference images
 
 # load source images
-reference_path = record_path/f'{scene_name}_iters({iters})'
-reference_images = loadImageSequence(reference_path, '60fps.SVGFPass.Filtered image.{}.exr', MAX_FRAMES)
-unweighted_path = record_path/f'{scene_name}_iters({iters})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+reference_path = record_path/f'{scene_name}_iters({iters},{feedback})'
+reference_images = loadImageSequence(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', MAX_FRAMES)
+unweighted_path = record_path/f'{scene_name}_iters({iters},{feedback})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
 # unweighted_path = record_path/f'{scene_name}_iters({iters})_Unweighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-weighted_path = record_path/f'{scene_name}_iters({iters})_Weighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-unweighted_images = loadImageSequence(unweighted_path, '60fps.SVGFPass.Filtered image.{}.exr', MAX_FRAMES)
-weighted_images = loadImageSequence(weighted_path, '60fps.SVGFPass.Filtered image.{}.exr', MAX_FRAMES)
-# gradient_images = loadImageSequence(weighted_path, '60fps.SVGFPass.OutGradient.{}.exr', MAX_FRAMES)
-unweighted_illum_images = loadImageSequence(unweighted_path, '60fps.SVGFPass.Illumination_U.{}.exr', MAX_FRAMES)
-weighted_illum_images = loadImageSequence(unweighted_path, '60fps.SVGFPass.Illumination_W.{}.exr', MAX_FRAMES)
-filtered_unweighted_illum_images = loadImageSequence(unweighted_path, '60fps.SVGFPass.Filtered_Illumination_U.{}.exr', MAX_FRAMES)
-filtered_weighted_illum_images = loadImageSequence(unweighted_path, '60fps.SVGFPass.Filtered_Illumination_W.{}.exr', MAX_FRAMES)
-gamma_images = loadImageSequence(unweighted_path, '60fps.SVGFPass.OutGamma.{}.exr', MAX_FRAMES)
+weighted_path = record_path/f'{scene_name}_iters({iters},{feedback})_Weighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+unweighted_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', MAX_FRAMES)
+weighted_images = loadImageSequence(weighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', MAX_FRAMES)
+# gradient_images = loadImageSequence(weighted_path, f'{fps}fps.SVGFPass.OutGradient.{{}}.exr', MAX_FRAMES)
+# unweighted_illum_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.Illumination_U.{{}}.exr', MAX_FRAMES)
+# weighted_illum_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.Illumination_W.{{}}.exr', MAX_FRAMES)
+# filtered_unweighted_illum_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.Filtered_Illumination_U.{{}}.exr', MAX_FRAMES)
+# filtered_weighted_illum_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.Filtered_Illumination_W.{{}}.exr', MAX_FRAMES)
+# gamma_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.OutGamma.{{}}.exr', MAX_FRAMES)
 
 image_sequences = [
     ("reference", reference_images),
     ("unweighted", unweighted_images),
     ("weighted", weighted_images),
-    ("unweighted_illum", unweighted_illum_images),
-    ("weighted_illum", weighted_illum_images),
-    ("filtered_unweighted_illum", filtered_unweighted_illum_images),
-    ("filtered_weighted_illum", filtered_weighted_illum_images),
-    ("gamma", gamma_images),
+#     ("unweighted_illum", unweighted_illum_images),
+#     ("weighted_illum", weighted_illum_images),
+#     ("filtered_unweighted_illum", filtered_unweighted_illum_images),
+#     ("filtered_weighted_illum", filtered_weighted_illum_images),
+#     ("gamma", gamma_images),
 ]
 
 for name, images in image_sequences:
