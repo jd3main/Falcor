@@ -144,15 +144,15 @@ FORCE_RECALCULATE = False
 
 xp = cp if USE_CUDA else np
 
-scene_name = 'VeachAjarAnimated'
-# scene_name = 'BistroExterior'
+# scene_name = 'VeachAjarAnimated'
+scene_name = 'BistroExterior'
 # scene_name = 'EmeraldSquare_Day'
 # scene_name = 'SunTemple'
 
 
 record_path = Path(__file__).parents[4]/'Record'
 fps = 30
-record_seconds = 20
+record_seconds = 10
 n_frames = int(fps * record_seconds)
 selection_func = "Linear"
 # selection_func = "Step"
@@ -207,7 +207,7 @@ for iters, feedback, grad_iters in iter_params:
 
     # setup source folders
     source_folders: list[Path] = []
-    midpoints = [0.0, 0.001, 0.01, 0.1, 1.0]
+    midpoints = [0.0, 0.05, 0.5, 1.0]
     # steepnesses = ([0,] if selection_func=='Step' else [0.5, 1.0, 5.0, 50.0, 500.0, 5000.0])
     steepnesses = ([0,] if selection_func=='Step' else [1.0, 10.0, 100.0])
     # midpoints = [0.0, 0.01, 1.0]

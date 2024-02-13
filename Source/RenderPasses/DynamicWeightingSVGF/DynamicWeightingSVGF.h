@@ -50,8 +50,10 @@ private:
     void computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture);
     void dynamicWeighting(
         RenderContext* pRenderContext,
+        const RenderData& renderData,
         Texture::SharedPtr pUnweightedIlluminationTexture,
-        Texture::SharedPtr pWeightedIlluminationTexture);
+        Texture::SharedPtr pWeightedIlluminationTexture,
+        Fbo::SharedPtr pOutputFbo);
 
     bool mBuffersNeedClear = false;
     bool mRecompile = true;
@@ -75,8 +77,15 @@ private:
     float   mGammaMidpoint = 0.01f;
     float   mGammaSteepness = 100;
     uint32_t mSelectionMode = (uint32_t)SelectionMode::Logistic;
-    int32_t mSampleCountOverride = -1;
     uint32_t mNormalizationMode = (uint32_t)NormalizationMode::None;
+
+    // Debug parameters
+    bool mEnableDebugOutput = false;
+    bool mEnableDebugTag = false;
+    int32_t mOutputPingPongAfterIters = 0;
+    int32_t mOutputPingPongIdx = 0;
+    int32_t mSampleCountOverride = -1;
+
 
     // SVGF passes
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;

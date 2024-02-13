@@ -48,6 +48,17 @@ def imageSequenceLoader(path, filename_pattern:str, max_frame_id=None):
         yield img
         frame_id += 1
 
+def getImageSequencePaths(path, filename_pattern:str, max_frame_id=None) -> list[Path]:
+    path = Path(path)
+    frame_id = 1
+    result_paths = []
+    while (max_frame_id is None) or (frame_id <= max_frame_id):
+        img_path = path/filename_pattern.format(frame_id)
+        if not img_path.exists():
+            break
+        result_paths.append(img_path)
+        frame_id += 1
+    return result_paths
 
 def countImages(path, filename_pattern:str) -> int:
     path = Path(path)

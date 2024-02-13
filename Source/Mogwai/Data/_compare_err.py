@@ -9,39 +9,42 @@ import matplotlib.pyplot as plt
 from enum import IntEnum, auto
 from _utils import *
 
-scene_name = 'VeachAjarAnimated'
-# scene_name = 'BistroExterior'
+# scene_name = 'VeachAjarAnimated'
+scene_name = 'BistroExterior'
 # scene_name = 'EmeraldSquare_Day'
 # scene_name = 'SunTemple'
 
 
 record_path = Path(__file__).parents[4]/'Record'
-MAX_FRAMES = 30
 fps = 30
+duration = 0.5
+n_frames = int(fps * duration)
 iters = (2, -1, 0)
-ref_iters = (iters[0], iters[1], iters[0])
+ref_iters = iters[0:2]
+no_dw_iters = iters[0:2]
 
 iters = ','.join(map(str, iters))
 ref_iters = ','.join(map(str, ref_iters))
+no_dw_iters = ','.join(map(str, no_dw_iters))
 
 # load reference images
 reference_path = record_path/f'{scene_name}_iters({ref_iters})'
-reference_images = loadImageSequence(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', MAX_FRAMES)
+reference_images = loadImageSequence(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
 if len(reference_images) == 0:
     print(f'cannot load reference images')
     exit()
 
 # load source images
-unweighted_path = record_path/f'{scene_name}_iters({iters})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-weighted_path = record_path/f'{scene_name}_iters({iters})_Weighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+unweighted_path = record_path/f'{scene_name}_iters({no_dw_iters})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+weighted_path = record_path/f'{scene_name}_iters({no_dw_iters})_Weighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
 
-steepness = 50.0
-midpoint = 0.01
+midpoint = 0.5
+steepness = 1.0
 dynamic_weighted_path = record_path/f'{scene_name}_iters({iters})_Linear({midpoint},{steepness})_GAlpha(0.2)_Norm(STANDARD_DEVIATION)_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
 
-unweighted_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', MAX_FRAMES)
-weighted_images = loadImageSequence(weighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', MAX_FRAMES)
-dynamic_weighted_images = loadImageSequence(dynamic_weighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', MAX_FRAMES)
+unweighted_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
+weighted_images = loadImageSequence(weighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
+dynamic_weighted_images = loadImageSequence(dynamic_weighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
 # gradient_images = loadImageSequence(weighted_path, f'{fps}fps.SVGFPass.OutGradient.{{}}.exr', MAX_FRAMES)
 
 print(f'{len(reference_images)} reference images')
@@ -123,10 +126,11 @@ while True:
     # elif display_image_type == DisplayImageType.GRADIENT:
     #     display_image = gradient_images[frame_id]
     #     display_image_name = 'gradient'
+    text_color = (0,100,200)    # BGR, orange
     display_image = cv.putText(display_image, f'frame {frame_id} {display_image_name}',
-                               (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv.LINE_AA)
+                               (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, text_color, 2, cv.LINE_AA)
     display_image = cv.putText(display_image, err_str,
-                               (10, 60), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv.LINE_AA)
+                               (10, 60), cv.FONT_HERSHEY_SIMPLEX, 1, text_color, 2, cv.LINE_AA)
     cv.imshow('image', display_image * multplier)
 
 

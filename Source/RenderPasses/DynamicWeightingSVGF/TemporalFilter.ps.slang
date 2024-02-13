@@ -272,7 +272,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     // Load history
     History h;
     // int sampleCount = max(gSampleCount[ipos], 1);
-    uint sampleCount = (gSampleCountOverride >= 0) ? gSampleCountOverride : gSampleCount[ipos];
+    uint sampleCount = (gSampleCountOverride > 0) ? gSampleCountOverride : gSampleCount[ipos];
     sampleCount = max(sampleCount, 1);
     bool success = loadHistory(posH.xy, h);
 

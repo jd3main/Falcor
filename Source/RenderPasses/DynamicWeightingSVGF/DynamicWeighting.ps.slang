@@ -5,6 +5,10 @@ import RenderPasses.DynamicWeightingSVGF.Common;
 
 #include "RenderPasses/DynamicWeightingSVGF/Enums.h"
 
+#ifndef _DEBUG_TAG_ENABLED
+#define _DEBUG_TAG_ENABLED 0
+#endif
+
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
 {
@@ -19,6 +23,7 @@ bool isNaN(float3 f)
 
 cbuffer PerImageCB
 {
+    // Input buffer
     Texture2D gPrevUnweightedIllumination;
     Texture2D gPrevWeightedIllumination;
     Texture2D gUnweightedIllumination;
@@ -27,6 +32,7 @@ cbuffer PerImageCB
     Texture2D<float> gVariance;
     StructuredBuffer<Reprojection> gReprojection;
 
+    // Parameters
     float gGradientAlpha;
     float gGammaMidpoint;
     float gGammaSteepness;
@@ -90,16 +96,17 @@ struct PS_OUT
 {
     float4 color        : SV_Target0;
     float4 gradient     : SV_Target1;
-    float4 gamma        : SV_Target2;
+    float gamma         : SV_Target2;
 };
 
 PS_OUT main(FullScreenPassVsOut vsOut)
 {
+
     const int2 ipos = int2(vsOut.posH.xy);
 
-    float3 unweightedIllumination = gUnweightedIllumination[ipos].rgb;
-    float3 weightedIllumination = gWeightedIllumination[ipos].rgb;
-    float variance = gVariance[ipos].x;
+    const float3 unweightedIllumination = gUnweightedIllumination[ipos].rgb;
+    const float variance = gUnweightedIllumination[ipos].a;
+    const float3 weightedIllumination = gWeightedIllumination[ipos].rgb;
 
     History h;
     bool success = loadHistory(ipos, h);
@@ -145,11 +152,18 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     if (gSelectionMode == SelectionMode::Weighted)
         outIllumination = weightedIllumination;
 
+#if _DEBUG_TAG_ENABLED
+    if (ipos.x < 20 && ipos.y < 100)
+    {
+        float3 debugColor = float3(1, 0, 0);
+        outIllumination = debugColor;
+    }
+#endif
 
     PS_OUT psOut;
-    psOut.color = float4(outIllumination, 1);
-    psOut.gradient = float4(gradient, 1);
-    psOut.gamma = float4(gamma, 0, 0, 0);
+    psOut.color = float4(outIllumination, variance);
+    psOut.gradient = float4(gradient, 0);
+    psOut.gamma = gamma;
 
     return psOut;
 }

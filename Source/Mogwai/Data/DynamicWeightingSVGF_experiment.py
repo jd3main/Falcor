@@ -75,7 +75,8 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
                    dynamic_weighting_enabled=False, dynamic_weighting_params:dict={},
                    foveated_pass_enabled=False, foveated_pass_params:dict={},
                    output_sample_count=False,
-                   sample_count=DEFAULT_GT_SAMPLE_COUNT):
+                   sample_count=DEFAULT_GT_SAMPLE_COUNT,
+                   debug_tag_enabled=False):
     g = RenderGraph('g')
 
     GBufferRaster = createPass('GBufferRaster', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack})
@@ -125,6 +126,7 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
         'SelectionMode': SelectionMode.LOGISTIC,
         'SampleCountOverride': -1,
         'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
+        'EnableDebugTag': debug_tag_enabled,
         **dynamic_weighting_params})
     g.addPass(SVGFPass, 'SVGFPass')
 
@@ -242,14 +244,14 @@ scene_name: str = ''
 def normalizeGraphParams(graph_params: dict) -> dict:
     if 'dynamic_weighting_enabled' in graph_params:
         if not graph_params['dynamic_weighting_enabled']:
-            graph_params['grad_iters'] = graph_params['iters']
+            graph_params['grad_iters'] = 0
             graph_params['dynamic_weighting_params'] = {
                 'SelectionMode': SelectionMode.UNWEIGHTED,
             }
         elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.UNWEIGHTED:
-            graph_params['grad_iters'] = graph_params['iters']
+            graph_params['grad_iters'] = 0
         elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.WEIGHTED:
-            graph_params['grad_iters'] = graph_params['iters']
+            graph_params['grad_iters'] = 0
             graph_params['dynamic_weighting_params'] = {
                 'SelectionMode': SelectionMode.WEIGHTED,
             }
@@ -321,8 +323,6 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     }
     graph_params = normalizeGraphParams(graph_params)
 
-    print(graph_params)
-
     record_params = {
         'start_time': 0,
         'end_time': 20,
@@ -364,8 +364,8 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     m.removeGraph(g)
 
 
-scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
-# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
+scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
@@ -381,11 +381,12 @@ except Exception as e:
 common_record_params = {
     'fps': 30,
     'start_time': 0,
-    'end_time': 20,
+    'end_time': 10,
 }
 
 common_graph_params = {
     'alpha': 0.05,
+    'debug_tag_enabled': False,
 }
 
 foveated_params_override = {
@@ -399,7 +400,6 @@ foveated_params_override = {
 
 # iters, feedback, grad_iters
 iter_params = [
-    # (2,-1,2)
     (2, -1, 0),
     # (2, 0, 1),
     # (2, 1, 2),
@@ -412,8 +412,8 @@ for iters, feedback, grad_iters in iter_params:
     # Try different parameters with dynamic weighting
     # midpoints = [0.0, 0.0001, 0.001, 0.01, 0.1, 1.0]
     # steepnesses = [0.5, 1.0, 5.0, 50.0, 500.0]
-    midpoints = [0.0, 0.001, 0.01, 0.1, 1.0]
-    steepnesses = [1.0, 10.0, 100.0]
+    midpoints = [0.5]
+    steepnesses = [1.0]
     for midpoint in midpoints:
         for steepness in steepnesses:
             run(graph_params_override = {
@@ -467,7 +467,7 @@ for iters, feedback, grad_iters in iter_params:
     run(graph_params_override = {
             'iters': iters,
             'feedback': feedback,
-            'grad_iters': iters,
+            'grad_iters': 0,
             'dynamic_weighting_enabled': False,
             'dynamic_weighting_params': {
                 'SelectionMode': SelectionMode.UNWEIGHTED,
@@ -480,7 +480,7 @@ for iters, feedback, grad_iters in iter_params:
         record_params_override={
             **common_record_params,
         },
-        force_record=False
+        force_record=True
     )
 
     # Weighted
@@ -488,7 +488,7 @@ for iters, feedback, grad_iters in iter_params:
     run(graph_params_override = {
             'iters': iters,
             'feedback': feedback,
-            'grad_iters': iters,
+            'grad_iters': 0,
             'dynamic_weighting_enabled': True,
             'dynamic_weighting_params': {
                 'SelectionMode': SelectionMode.WEIGHTED,
@@ -518,7 +518,7 @@ for iters, feedback, grad_iters in iter_params:
         record_params_override={
             **common_record_params,
         },
-        force_record=True
+        force_record=False
     )
 
     print("All Done")

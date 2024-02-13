@@ -11,6 +11,7 @@ target_sources(DynamicWeightingSVGF PRIVATE
     Reprojection.ps.slang
     TemporalFilter.ps.slang
     ReflectTypes.cs.slang
+    Atrous.ps.slang
 )
 
 target_source_group(DynamicWeightingSVGF "RenderPasses")
