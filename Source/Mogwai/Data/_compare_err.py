@@ -17,7 +17,7 @@ scene_name = 'BistroExterior'
 
 record_path = Path(__file__).parents[4]/'Record'
 fps = 30
-duration = 0.5
+duration = 1
 n_frames = int(fps * duration)
 iters = (2, -1, 0)
 ref_iters = iters[0:2]

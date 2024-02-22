@@ -8,6 +8,7 @@ import typing
 import re
 from dataclasses import dataclass
 from enum import IntEnum, auto
+import argparse
 
 import numpy as np
 import cupy as cp
@@ -27,6 +28,8 @@ USE_CUDA = True
 class ErrorType(IntEnum):
     L1 = 1
     L2 = 2
+    RMSE = 2
+    REL_MSE = 3
 
 class WeightingMode(IntEnum):
     UNWEIGHTED = 0
@@ -137,59 +140,116 @@ def loadMetadata(path) -> dict:
         print(e)
     return data
 
-
-PLOT_HISTO = False
-PLOT_ERROR_OVER_TIME = False
-FORCE_RECALCULATE = False
-
 xp = cp if USE_CUDA else np
 
-# scene_name = 'VeachAjarAnimated'
-scene_name = 'BistroExterior'
-# scene_name = 'EmeraldSquare_Day'
-# scene_name = 'SunTemple'
 
+### Default parameters
+DEFAULT_PLOT_HISTO = False
+DEFAULT_PLOT_ERROR_OVER_TIME = False
+DEFAULT_FORCE_RECALCULATE = False
 
-record_path = Path(__file__).parents[4]/'Record'
-fps = 30
-record_seconds = 10
-n_frames = int(fps * record_seconds)
-selection_func = "Linear"
-# selection_func = "Step"
-# selection_func = "Logistic"
-err_type = ErrorType.L2
+# DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+DEFAULT_SCENE_NAME = 'BistroExterior'
+# DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
+# DEFAULT_SCENE_NAME = 'SunTemple'
 
+DEFAULT_RECORD_PATH = Path(__file__).parents[4]/'Record'
+DEFAULT_FPS = 30
+DEFAULT_RECORD_SECONDS = 10
+DEFAULT_ERR_TYPE = ErrorType.REL_MSE
+REL_MSE_EPSILON = 1e-2
 
-print(f'scene_name = {scene_name}')
-print(f'n_frames = {n_frames}')
-print(f'selection_func = {selection_func}')
+DEFAULT_SELECTION_FUNC = "Linear"
+# DEFAULT_SELECTION_FUNC = "Step"
+# DEFAULT_SELECTION_FUNC = "Logistic"
 
-iter_params = [
-    # (2, -1, 2),
+# DEFAULT_NORMALZATION_MODE = NormalizationMode.STANDARD_DEVIATION
+# DEFAULT_NORMALZATION_MODE = NormalizationMode.NONE
+DEFAULT_NORMALZATION_MODE = NormalizationMode.LUMINANCE
+
+DEFAULT_ITER_PARAMS = [
     (2, -1, 0),
     # (2, 0, 1),
     # (2, 1, 2),
-    # (3, 0, 1),
 ]
+
+DEFAULT_MIDPOINTS = [0.0, 0.05, 0.5, 1.0]
+DEFAULT_STEEPNESSES = [0.1, 1.0, 10.0]
+
+### Argument parsing
+parser = argparse.ArgumentParser(description='Calculate errors')
+parser.add_argument('--scene_name', type=str, default=DEFAULT_SCENE_NAME, help='scene name')
+parser.add_argument('-r', '--record_path', type=str, default=DEFAULT_RECORD_PATH, help='record path')
+parser.add_argument('-i', '--iters', type=str, help='iteration parameters, e.g. "2,-1,0"')
+parser.add_argument('-f', '--fps', type=int, default=DEFAULT_FPS, help='fps')
+parser.add_argument('-d', '--duration', type=int, default=DEFAULT_RECORD_SECONDS, help='duration in seconds')
+parser.add_argument('-s', '--selection_func', type=str, default=DEFAULT_SELECTION_FUNC, help='selection function')
+parser.add_argument('--midpoints', type=str, help='midpoints of selection function')
+parser.add_argument('--steepnesses', type=str, help='steepnesses of selection function')
+parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
+parser.add_argument('-e', '--err_type', type=str, default=DEFAULT_ERR_TYPE.name, help='error type')
+parser.add_argument('--force', action='store_true', help='force recalculate')
+parser.add_argument('--plot_histo', action='store_true', help='plot histogram')
+parser.add_argument('--plot_error_over_time', action='store_true', help='plot error over time')
+args = parser.parse_args()
+
+### Load parameters
+scene_name = args.scene_name
+record_path = Path(args.record_path)
+if args.iters is not None:
+    iter_params = [tuple(map(int, args.iters.split(',')))]
+else:
+    iter_params = DEFAULT_ITER_PARAMS
+fps = args.fps
+duration = args.duration
+n_frames = int(fps * duration)
+
+selection_func = args.selection_func
+if args.midpoints is not None:
+    midpoints = list(map(float, args.midpoints.split(',')))
+else:
+    midpoints = DEFAULT_MIDPOINTS
+
+if args.steepnesses is not None:
+    steepnesses = list(map(float, args.steepnesses.split(',')))
+else:
+    steepnesses = ([0,] if selection_func=='Step' else DEFAULT_STEEPNESSES)
+
+normalization_mode = NormalizationMode[args.norm_mode.upper()]
+err_type = ErrorType[args.err_type.upper()]
+force_recalculate = args.force
+plot_histo = args.plot_histo
+plot_error_over_time = args.plot_error_over_time
+
+
+print(f'scene_name:         {scene_name}')
+print(f'n_frames:           {n_frames}')
+print(f'selection_func:     {selection_func}')
+print(f'normalization_mode: {normalization_mode.name}')
+print(f'err_type:           {err_type.name}')
+print(f'iter_params:        {iter_params}')
+print(f'midpoints:          {midpoints}')
+print(f'steepnesses:        {steepnesses}')
 
 
 for iters, feedback, grad_iters in iter_params:
-    print(f'iters = {iters}')
-    print(f'feedback = {feedback}')
-    print(f'grad_iters = {grad_iters}')
+    print(f'iters: ({iters},{feedback},{grad_iters})')
 
-    # load reference data
+    # check reference data path
     reference_path = record_path/f'{scene_name}_iters({iters},{feedback})'
-    ## pre-check
+    if not reference_path.exists():
+        logErr(f'[Error] reference folder not found: {reference_path}')
+        exit()
+    # check number of reference images
     n_ref_images = countImages(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr')
     if n_ref_images < n_frames:
-        logErr(f'[Error] reference images not enough')
+        logErr(f'[Error] {n_frames} reference images required but only {n_ref_images} found.')
         exit()
     elif n_ref_images > n_frames:
-        logWarn(f'[Warning] reference images more than {n_frames}')
+        logWarn(f'[Warning] {n_ref_images} reference images found, more than required ({n_frames})')
 
+    # load reference images
     print(f'loading reference data from "{reference_path}"')
-
     reference_images = []
     try:
         reference_images = loadImageSequence(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
@@ -207,17 +267,12 @@ for iters, feedback, grad_iters in iter_params:
 
     # setup source folders
     source_folders: list[Path] = []
-    midpoints = [0.0, 0.05, 0.5, 1.0]
-    # steepnesses = ([0,] if selection_func=='Step' else [0.5, 1.0, 5.0, 50.0, 500.0, 5000.0])
-    steepnesses = ([0,] if selection_func=='Step' else [1.0, 10.0, 100.0])
-    # midpoints = [0.0, 0.01, 1.0]
-    # steepnesses = [0.5]
     for midpoint in midpoints:
         for steepness in steepnesses:
             if selection_func == 'Step':
-                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint})_GAlpha(0.2)_Norm(STANDARD_DEVIATION)_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint})_GAlpha(0.2)_Norm({normalization_mode.name})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
             else:
-                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint},{steepness})_GAlpha(0.2)_Norm(STANDARD_DEVIATION)_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint},{steepness})_GAlpha(0.2)_Norm({normalization_mode.name})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
             if (record_path/folder_name).exists():
                 source_folders.append(record_path/folder_name)
     source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)')
@@ -254,7 +309,7 @@ for iters, feedback, grad_iters in iter_params:
     ]
     results = xp.empty((len(source_folders), n_frames, len(fields)), dtype=np.float32)
     avg_results = xp.empty((len(source_folders), len(fields)), dtype=np.float32)
-    if PLOT_HISTO:
+    if plot_histo:
         err_bins = xp.array(list(10.0**np.arange(-5, 1, 0.5)) + [float('inf')])
         err_histograms = xp.zeros((len(steepnesses_ext), len(midpoints), n_frames, len(err_bins)-1), dtype=np.float32)
         print(f'err_bins = {err_bins}')
@@ -266,8 +321,8 @@ for iters, feedback, grad_iters in iter_params:
         print(f'# \"{folder.name}\"')
 
         # load from cache
-        loaded = {}
-        if not FORCE_RECALCULATE:
+        loaded = {field: False for field in fields}
+        if not force_recalculate:
             all_valid = True
             for field_index, field in enumerate(fields): # check if all data exists and are modified later than metadata
                 load_path = folder/f'{field}_{err_type}.txt'
@@ -306,28 +361,34 @@ for iters, feedback, grad_iters in iter_params:
 
             xp = cp.get_array_module(reference_image)
 
-            if 'mean' in loaded and not loaded['mean']:
-                err = xp.linalg.norm(reference_image - source_image, axis=-1, ord=err_type.value)
+            if err_type == ErrorType.L1:
+                err = xp.sum(xp.abs(reference_image - source_image), axis=-1)
+            elif err_type == ErrorType.L2:
+                err = xp.linalg.norm(reference_image - source_image, axis=-1, ord=2)
+            elif err_type == ErrorType.REL_MSE:
+                err = xp.sum((reference_image - source_image)**2, axis=-1) / (xp.sum(reference_image**2, axis=-1) + REL_MSE_EPSILON)
+
+            if 'mean' in fields and not loaded['mean']:
                 results[folder_index, i, fields.index('mean')] = xp.mean(err)
 
-            if '25-th percentile' in loaded and not loaded['25-th percentile']:
+            if '25-th percentile' in fields and not loaded['25-th percentile']:
                 percentiles = xp.percentile(err, [25, 50, 75, 99])
                 results[folder_index, i, [fields.index(f) for f in fields if 'percentile' in f]] = percentiles
 
-            if 'top-1-percent' in loaded and not loaded['top-1-percent']:
+            if 'top-1-percent' in fields and not loaded['top-1-percent']:
                 top_1_percent = xp.mean(err[xp.where(err > percentiles[-1])])
                 results[folder_index, i, fields.index('top-1-percent')] = top_1_percent
 
-            if 'ssim' in loaded and not loaded['ssim']:
+            if 'ssim' in fields and not loaded['ssim']:
                 mssim = ssim(reference_images[i], _source_image,
                              gaussian_weights = True,
                              sigma = 1.5,
                              use_sample_covariance = False,
-                             data_range = 100,
+                             data_range = 1000,
                              channel_axis = -1)
                 results[folder_index, i, fields.index('ssim')] = mssim
 
-            if PLOT_HISTO:
+            if plot_histo:
                 err_histograms[r, c, i, :] = xp.histogram(err, bins=err_bins)[0]
 
 
@@ -365,11 +426,22 @@ for iters, feedback, grad_iters in iter_params:
         print(tables[field_index].to_csv(sep='\t', lineterminator='\n'))
 
     # write tables to file
-    save_path = Path(f'{scene_name}_iters({iters},{feedback},{grad_iters})_fps({fps})_t({record_seconds})_{selection_func}_ErrorMeasure.txt')
+    save_path = Path(f'{scene_name}_iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Err({err_type.name}).txt')
     with open(save_path, 'w') as f:
         f.write(f'# {scene_name}\n')
         for folder in source_folders:
             f.write(f'{folder.name}\n')
+        f.write('\n')
+        f.write(f'# reference\n')
+        f.write(f'{reference_path}\n')
+        f.write('\n')
+        f.write(f'# parameters\n')
+        f.write(f'iters: {iters},{feedback},{grad_iters}\n')
+        f.write(f'fps: {fps}\n')
+        f.write(f'duration: {duration}\n')
+        f.write(f'selection_func: {selection_func}\n')
+        f.write(f'err_type: {err_type.name}\n')
+        f.write(f'normalization_mode: {normalization_mode.name}\n')
         f.write('\n')
         for field_index, field in enumerate(fields):
             f.write(f'# {field}\n')
@@ -378,7 +450,7 @@ for iters, feedback, grad_iters in iter_params:
         print(f'Tables are saved to \"{save_path.absolute()}\"')
 
     # plot error histograms
-    if PLOT_HISTO:
+    if plot_histo:
         nrows = len(steepnesses_ext)
         ncols = len(midpoints)
         fig, axs = plt.subplots(nrows, ncols, sharex=True, sharey=True)
@@ -403,7 +475,7 @@ for iters, feedback, grad_iters in iter_params:
                 ax.grid(True)
         plt.show()
 
-    if PLOT_ERROR_OVER_TIME:
+    if plot_error_over_time:
         nrows = len(fields)
         ncols = 1
 

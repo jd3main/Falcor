@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import *
+import gc
 
 def install(package):
     python_path = Path(sys.executable).parent/'Python/python.exe'
@@ -23,6 +24,7 @@ loadRenderPassLibrary('BlitPass.dll')
 loadRenderPassLibrary('CSM.dll')
 loadRenderPassLibrary('DebugPasses.dll')
 loadRenderPassLibrary('PathTracer.dll')
+loadRenderPassLibrary('PathTracerEx.dll')
 loadRenderPassLibrary('DepthPass.dll')
 loadRenderPassLibrary('DynamicWeightingSVGF.dll')
 loadRenderPassLibrary('ErrorMeasurePass.dll')
@@ -238,6 +240,15 @@ def loadMetadata(path) -> dict:
         print(f'cannot load metadata from {path/"metadata.txt"}')
     return data
 
+def countImages(path, filename_pattern:str) -> int:
+    path = Path(path)
+    frame_id = 1
+    while True:
+        img_path = path/filename_pattern.format(frame_id)
+        if not img_path.exists():
+            break
+        frame_id += 1
+    return frame_id - 1
 
 scene_name: str = ''
 
@@ -251,7 +262,7 @@ def normalizeGraphParams(graph_params: dict) -> dict:
         elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.UNWEIGHTED:
             graph_params['grad_iters'] = 0
         elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.WEIGHTED:
-            graph_params['grad_iters'] = 0
+            graph_params['grad_iters'] = graph_params['feedback'] + 1
             graph_params['dynamic_weighting_params'] = {
                 'SelectionMode': SelectionMode.WEIGHTED,
             }
@@ -339,7 +350,9 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
             print(f"[Warning] Found existing record at \"{output_path}\".\nForce continue recording.")
         else:
             g_params = normalizeGraphParams(loadMetadata(output_path))
-            if g_params == graph_params:
+            n_frames = int(record_params['fps'] * (record_params['end_time'] - record_params['start_time']))
+            existing_frame_count = countImages(output_path, f'{record_params["fps"]}fps.SVGFPass.Filtered image.{{}}.exr')
+            if g_params == graph_params and n_frames == existing_frame_count:
                 print(f"[Warning] Found existing record with same parameters at \"{output_path}\".\nSkip recording.")
                 return
             else:
@@ -362,6 +375,7 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     storeMetadata(output_path, normalizeGraphParams({**graph_params}))
 
     m.removeGraph(g)
+    gc.collect()
 
 
 # scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
@@ -398,22 +412,25 @@ foveated_params_override = {
     'foveaMoveDirection': 0,
 }
 
+gt_sample_Count = 96
+
 # iters, feedback, grad_iters
 iter_params = [
     (2, -1, 0),
     # (2, 0, 1),
     # (2, 1, 2),
-    # (3, -1, 0),
-    # (3, 0, 1),
-    # (3, 1, 2),
 ]
+midpoints = [0, 0.05, 0.5, 1.0]
+steepnesses = [0.1, 1, 10]
+
+force_record_selections =  False
+force_record_step = False
+force_record_unweighted = False
+force_record_weighted = False
+force_record_ground_truth = False
 
 for iters, feedback, grad_iters in iter_params:
     # Try different parameters with dynamic weighting
-    # midpoints = [0.0, 0.0001, 0.001, 0.01, 0.1, 1.0]
-    # steepnesses = [0.5, 1.0, 5.0, 50.0, 500.0]
-    midpoints = [0.5]
-    steepnesses = [1.0]
     for midpoint in midpoints:
         for steepness in steepnesses:
             run(graph_params_override = {
@@ -427,7 +444,7 @@ for iters, feedback, grad_iters in iter_params:
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
                         'SampleCountOverride': -1,
-                        'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
+                        'NormalizationMode': NormalizationMode.VARIANCE,
                     },
                     'foveated_pass_enabled': True,
                     'foveated_pass_params': foveated_params_override,
@@ -436,7 +453,7 @@ for iters, feedback, grad_iters in iter_params:
                 record_params_override={
                     **common_record_params,
                 },
-                force_record=False)
+                force_record=force_record_selections)
 
 
     # for midpoint in midpoints:
@@ -460,7 +477,7 @@ for iters, feedback, grad_iters in iter_params:
     #         record_params_override={
     #             **common_record_params,
     #         },
-    #         force_record=False)
+    #         force_record=force_record_step)
 
     # Unweighted
     print("Run Unweighted")
@@ -480,7 +497,7 @@ for iters, feedback, grad_iters in iter_params:
         record_params_override={
             **common_record_params,
         },
-        force_record=True
+        force_record=force_record_unweighted
     )
 
     # Weighted
@@ -500,7 +517,7 @@ for iters, feedback, grad_iters in iter_params:
         record_params_override={
             **common_record_params,
         },
-        force_record=False
+        force_record=force_record_weighted
     )
 
 
@@ -508,18 +525,18 @@ for iters, feedback, grad_iters in iter_params:
     print("Run Ground Truth")
     run(graph_params_override = {
             'iters': iters,
-            'feedback': -1,
+            'feedback': feedback,
             'grad_iters': iters,
             'dynamic_weighting_enabled': False,
             'foveated_pass_enabled': False,
-            'sample_count': DEFAULT_GT_SAMPLE_COUNT,
+            'sample_count': gt_sample_Count,
             **common_graph_params
         },
         record_params_override={
             **common_record_params,
         },
-        force_record=False
+        force_record=force_record_ground_truth
     )
 
-    print("All Done")
+print("All Done")
 exit()

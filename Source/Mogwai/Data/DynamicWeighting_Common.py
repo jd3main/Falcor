@@ -23,3 +23,7 @@ class NormalizationMode(IntEnum):
     LUMINANCE = auto()
     VARIANCE = auto()
     STANDARD_DEVIATION = auto()
+
+    LUM = LUMINANCE
+    VAR = VARIANCE
+    STD = STANDARD_DEVIATION
