@@ -686,7 +686,8 @@ namespace ImGui {
 
         }
 
-        const bool isMouseDraggingForScrolling = ImGui::IsMouseDragging(2, 0.0f);
+        const bool isMouseDraggingForScrolling = ImGui::IsMouseDragging(2, 0.0f)
+            || (ImGui::IsMouseDragging(0, 0.0f) && ImGui::GetIO().KeyAlt);
 
         if (ImGui::BeginChild("GraphNodeChildWindow", ImVec2(0, 0), true)) {
 
