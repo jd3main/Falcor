@@ -81,7 +81,7 @@ namespace
     // Internal buffers
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
     const char kInternalBufferPreviousGradient[] = "Previous Gradient";
-    const char kInternalBufferVariance[] = "Variance";
+    const char kInternalBufferVariance[] = "Internal_Variance";
     const char kInternalBufferPreviousUnweightedIllumination[] = "PrevUnweightedIllumination";
     const char kInternalBufferPreviousWeightedIllumination[] = "PrevWeightedIllumination";
 
@@ -97,6 +97,7 @@ namespace
     const char kOutputPingPong[] = "PingPong";
     const char kOutputGradient[] = "OutGradient";
     const char kOutputGamma[] = "OutGamma";
+    const char kOutputVariance[] = "Variance";
     const ChannelList kOutputChannels =
     {
         /* { name, texname, description, optional, format } */
@@ -111,6 +112,7 @@ namespace
         { kOutputPingPong,                      "_",   "PingPong",                        false,  ResourceFormat::RGBA16Float },
         { kOutputGradient,                      "_",   "Gradient",                        false,  ResourceFormat::RGBA32Float },
         { kOutputGamma,                         "_",   "Gamma",                           false,  ResourceFormat::RGBA32Float },
+        { kOutputVariance,                      "_",   "Variance",                        false,  ResourceFormat::R32Float },
     };
 
     enum TemporalFilterOutFields
@@ -291,6 +293,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pOutputWeightedFilteredIllumination = renderData.getTexture(kOutputWeightedFilteredIllumination);
     Texture::SharedPtr pOutputGradient = renderData.getTexture(kOutputGradient);
     Texture::SharedPtr pOutputGamma = renderData.getTexture(kOutputGamma);
+    Texture::SharedPtr pOutputVariance = renderData.getTexture(kOutputVariance);
 
 
     if (!mpPackLinearZAndNormal || mRecompile)
@@ -384,6 +387,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
             FALCOR_PROFILE("[debug] blit weight");
             pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields::WeightedHistoryWeight)->getSRV(), pOutputWeightedHistoryWeight->getRTV());
         }
+        pRenderContext->blit(mpVarianceTexture->getSRV(), pOutputVariance->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurTemporalFilterFbo, mpPrevTemporalFilterFbo);

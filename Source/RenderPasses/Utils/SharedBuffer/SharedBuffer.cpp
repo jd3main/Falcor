@@ -35,8 +35,6 @@ namespace
     const std::string kOutputBuffer = "buffer";
 }
 
-
-
 SharedBuffer::SharedPtr SharedBuffer::create(RenderContext* pRenderContext, const Dictionary& dict)
 {
     SharedPtr pPass = SharedPtr(new SharedBuffer());
@@ -54,8 +52,8 @@ RenderPassReflection SharedBuffer::reflect(const CompileData& compileData)
 
     RenderPassReflection reflector;
     reflector.addOutput(kOutputBuffer, "buffer")
-        .bindFlags(ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess)
-        .format(ResourceFormat::R32Float)
+        .bindFlags(ResourceBindFlags::ShaderResource | ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess)
+        .format(ResourceFormat::Unknown)
         .texture2D(sz.x, sz.y)
         ;
 
@@ -64,8 +62,6 @@ RenderPassReflection SharedBuffer::reflect(const CompileData& compileData)
 
 void SharedBuffer::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    // renderData holds the requested resources
-    // auto& pTexture = renderData.getTexture("src");
 }
 
 void SharedBuffer::renderUI(Gui::Widgets& widget)
