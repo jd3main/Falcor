@@ -28,14 +28,13 @@
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/BasePasses/FullScreenPass.h"
-#include "Utils/Algorithm/ComputeParallelReduction.h"
 
 using namespace Falcor;
 
-class AdaptiveSampling : public RenderPass
+class ReprojectionPass : public RenderPass
 {
 public:
-    using SharedPtr = std::shared_ptr<AdaptiveSampling>;
+    using SharedPtr = std::shared_ptr<ReprojectionPass>;
 
     static const Info kInfo;
 
@@ -51,46 +50,34 @@ public:
     virtual void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
-    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override {};
+    virtual void setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene) override {}
     virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
-    AdaptiveSampling(const Dictionary& dict);
+    ReprojectionPass(const Dictionary& dict);
 
-    void allocateResources();
+    void allocateResources(uint2 dim, RenderContext* pRenderContext);
     void clearBuffers(RenderContext* pRenderContext, const RenderData& renderData);
-    void runWeightEstimationPass(RenderContext* pRenderContext, const RenderData& renderData);
-    void runReductionPass(RenderContext* pRenderContext, const RenderData& renderData);
-    void runNormalizeWeightPass(RenderContext* pRenderContext, const RenderData& renderData);
 
+    void computeLinearZAndNormal(RenderContext* pRenderContext, Texture::SharedPtr pLinearZTexture,
+        Texture::SharedPtr pWorldNormalTexture);
+    void computeReprojection(RenderContext* pRendercontext, const RenderData& renderData,
+        Texture::SharedPtr pLinearZTexture,
+        Texture::SharedPtr pMotionoTexture,
+        Texture::SharedPtr pPositionNormalFwidthTexture);
+
+    // Utility functions
     uint32_t getReprojectStructSize();
 
-    // Compute programs and state
-    ComputeProgram::SharedPtr mpWeightEstimationProgram;
-    ComputeVars::SharedPtr mpWeightEstimationVars;
-    ComputeState::SharedPtr mpWeightEstimationState;
+    // Shaders
+    FullScreenPass::SharedPtr mpPackLinearZAndNormal;
+    FullScreenPass::SharedPtr mpReproject;
 
-    ComputeProgram::SharedPtr mpNormalizationProgram;
-    ComputeVars::SharedPtr mpNormalizationVars;
-    ComputeState::SharedPtr mpNormalizationState;
+    // Intermediate buffers
+    Fbo::SharedPtr mpReprojectionFbo;
+    Fbo::SharedPtr mpLinearZAndNormalFbo;
+    Texture::SharedPtr mpPrevLinearZAndNormalTexture;
 
     ComputePass::SharedPtr mpReflectTypes;  ///< Helper for reflecting structured buffer types.
-
-    // Internal buffers
-    Texture::SharedPtr mpDensityWeight = nullptr;
-
-    // Internal states
-    uint2 mFrameDim = uint2(0);
-    Scene::SharedPtr mpScene = nullptr;
-    ComputeParallelReduction::SharedPtr mpParallelReduction;
-    float mAverageWeight = 0.0f;
-    bool mBuffersNeedClear = true;
-
-    // Serialized parameters
-    bool mEnabled = true;
-    float mAverageSampleCountBudget = 2.0f;
-    float mMinVariance = 0.01f;
-    float mMaxVariance = 10.0f;
-    float mMinSamplePerPixel = 1.0f;
 };

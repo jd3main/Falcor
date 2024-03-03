@@ -14,7 +14,36 @@ from enum import IntEnum, auto
 import json
 from typing import Union
 import numpy as np
-from DynamicWeighting_Common import *
+# from DynamicWeighting_Common import *
+
+class FoveaShape(IntEnum):
+    UNIFORM = 0
+    CIRCLE = auto()
+    SPLIT_HORIZONTALLY = auto()
+    SPLIT_VERTICALLY = auto()
+
+class FoveaInputType(IntEnum):
+    NONE = 0
+    SHM = auto()
+    MOUSE = auto()
+
+class SelectionMode(IntEnum):
+    UNWEIGHTED = 0
+    WEIGHTED = auto()
+    LINEAR = auto()
+    STEP = auto()
+    LOGISTIC = auto()
+
+class NormalizationMode(IntEnum):
+    NONE = 0
+    LUMINANCE = auto()
+    VARIANCE = auto()
+    STANDARD_DEVIATION = auto()
+
+    LUM = LUMINANCE
+    VAR = VARIANCE
+    STD = STANDARD_DEVIATION
+
 
 loadRenderPassLibrary('DLSSPass.dll')
 loadRenderPassLibrary('AccumulatePass.dll')
@@ -54,6 +83,8 @@ loadRenderPassLibrary('TestPasses.dll')
 loadRenderPassLibrary('ToneMapper.dll')
 loadRenderPassLibrary('TwoHistorySVGFPass.dll')
 loadRenderPassLibrary('Utils.dll')
+loadRenderPassLibrary('AdaptiveSampling.dll')
+loadRenderPassLibrary('ReprojectionPass.dll')
 
 DEFAULT_GT_SAMPLE_COUNT = 64
 DEFAULT_OUTPUT_PATH = Path(__file__).parent/"Output"
@@ -75,7 +106,7 @@ class AllFrames:
 
 def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
                    dynamic_weighting_enabled=False, dynamic_weighting_params:dict={},
-                   foveated_pass_enabled=False, foveated_pass_params:dict={},
+                   adaptive_pass_enabled=False, adaptive_pass_params:dict={},
                    output_sample_count=False,
                    sample_count=DEFAULT_GT_SAMPLE_COUNT,
                    debug_tag_enabled=False):
@@ -87,24 +118,26 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
     Composite = createPass('Composite', {'mode': CompositeMode.Add, 'scaleA': 0.5, 'scaleB': 0.5, 'outputFormat': ResourceFormat.RGBA32Float})
     g.addPass(Composite, 'Composite')
 
-    if foveated_pass_enabled:
-        FoveatedPass = createPass('FoveatedPass', {
-            'shape': FoveaShape.SPLIT_HORIZONTALLY,   # SplitHorizontally
-            'foveaInputType': FoveaInputType.SHM,    # SMH
-            'useHistory': False,
-            'alpha': alpha,
-            'foveaRadius': 200.0,
-            'foveaSampleCount': 8.0,
-            'periphSampleCount': 1.0,
-            'foveaMoveRadius': 300.0,
-            'foveaMoveFreq': 0.5,
-            'foveaMoveDirection': 0,
-            'useRealTime': False,
-            'flickerEnabled': False,
-            'flickerBrightDurationMs': 1.0,
-            'flickerDarkDurationMs': 1.0,
-            **foveated_pass_params})
-        g.addPass(FoveatedPass, 'FoveatedPass')
+    if adaptive_pass_enabled:
+        AdaptiveSampling = createPass('AdaptiveSampling', {
+            'Enabled': True,
+            'AverageSampleCountBudget': 2.0,
+            'MinVariance': 0.01,
+            'MaxVariance': 10.0,
+            'MinSamplePerPixel': 1.0,
+            **adaptive_pass_params})
+        g.addPass(AdaptiveSampling, 'AdaptiveSampling')
+
+        BlitToInputBuffer_Var = createPass('BlitToInputBuffer')
+        g.addPass(BlitToInputBuffer_Var, 'BlitToInputBuffer_Var')
+        SharedBuffer_Var = createPass('SharedBuffer')
+        g.addPass(SharedBuffer_Var, 'SharedBuffer_Var')
+
+        BlitToInputBuffer_HistLen = createPass('BlitToInputBuffer')
+        g.addPass(BlitToInputBuffer_HistLen, 'BlitToInputBuffer_HistLen')
+        SharedBuffer_HistLen = createPass('SharedBuffer')
+        g.addPass(SharedBuffer_HistLen, 'SharedBuffer_HistLen')
+
         PathTracer = createPass('PathTracer', {'samplesPerPixel': 1, 'maxSurfaceBounces': 10, 'maxDiffuseBounces': 3, 'maxSpecularBounces': 3, 'maxTransmissionBounces': 10, 'sampleGenerator': 0, 'useBSDFSampling': True, 'useRussianRoulette': False, 'useNEE': True, 'useMIS': True, 'misHeuristic': MISHeuristic.Balance, 'misPowerExponent': 2.0, 'emissiveSampler': EmissiveLightSamplerType.LightBVH, 'lightBVHOptions': LightBVHSamplerOptions(buildOptions=LightBVHBuilderOptions(splitHeuristicSelection=SplitHeuristic.BinnedSAOH, maxTriangleCountPerLeaf=10, binCount=16, volumeEpsilon=0.0010000000474974513, splitAlongLargest=False, useVolumeOverSA=False, useLeafCreationCost=True, createLeavesASAP=True, allowRefitting=True, usePreintegration=True, useLightingCones=True), useBoundingCone=True, useLightingCone=True, disableNodeFlux=False, useUniformTriangleSampling=True, solidAngleBoundMethod=SolidAngleBoundMethod.Sphere), 'useRTXDI': False, 'RTXDIOptions': RTXDIOptions(mode=RTXDIMode.SpatiotemporalResampling, presampledTileCount=128, presampledTileSize=1024, storeCompactLightInfo=True, localLightCandidateCount=24, infiniteLightCandidateCount=8, envLightCandidateCount=8, brdfCandidateCount=1, brdfCutoff=0.0, testCandidateVisibility=True, biasCorrection=RTXDIBiasCorrection.Basic, depthThreshold=0.10000000149011612, normalThreshold=0.5, samplingRadius=30.0, spatialSampleCount=1, spatialIterations=5, maxHistoryLength=20, boilingFilterStrength=0.0, rayEpsilon=0.0010000000474974513, useEmissiveTextures=False, enableVisibilityShortcut=False, enablePermutationSampling=False), 'useAlphaTest': True, 'adjustShadingNormals': False, 'maxNestedMaterials': 2, 'useLightsInDielectricVolumes': False, 'disableCaustics': False, 'specularRoughnessThreshold': 0.25, 'primaryLodMode': TexLODMode.Mip0, 'lodBias': 0.0, 'useNRDDemodulation': True, 'outputSize': IOSize.Default, 'colorFormat': ColorFormat.LogLuvHDR})
         g.addPass(PathTracer, 'PathTracer')
     else:
@@ -132,8 +165,9 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
         **dynamic_weighting_params})
     g.addPass(SVGFPass, 'SVGFPass')
 
-    Composite0 = createPass('Composite', {'mode': CompositeMode.Add, 'scaleA': 0.5, 'scaleB': 0.5, 'outputFormat': ResourceFormat.RGBA32Float})
-    g.addPass(Composite0, 'Composite0')
+    ReprojectionPass = createPass('ReprojectionPass')
+    g.addPass(ReprojectionPass, 'ReprojectionPass')
+
 
     g.addEdge('GBufferRaster.viewW', 'PathTracer.viewW')
     g.addEdge('GBufferRaster.vbuffer', 'PathTracer.vbuffer')
@@ -148,13 +182,31 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
     g.addEdge('GBufferRaster.pnFwidth', 'SVGFPass.PositionNormalFwidth')
     g.addEdge('GBufferRaster.posW', 'SVGFPass.WorldPosition')
     g.addEdge('GBufferRaster.normW', 'SVGFPass.WorldNormal')
-    if foveated_pass_enabled:
-        g.addEdge('FoveatedPass.sampleCount', 'PathTracer.sampleCount')
-        g.addEdge('FoveatedPass.sampleCount', 'SVGFPass.SampleCount')
+
+    # Reprojection
+    g.addEdge('GBufferRaster.mvec', 'ReprojectionPass.MotionVec')
+    g.addEdge('GBufferRaster.linearZ', 'ReprojectionPass.LinearZ')
+    g.addEdge('GBufferRaster.pnFwidth', 'ReprojectionPass.PositionNormalFwidth')
+    g.addEdge('ReprojectionPass.Reprojection', 'SVGFPass.Reprojection')
+
+    # Adaptive Sampling
+    if adaptive_pass_enabled:
+        g.addEdge('SVGFPass.HistLength', 'BlitToInputBuffer_HistLen.src')
+        g.addEdge('SharedBuffer_HistLen.buffer', 'BlitToInputBuffer_HistLen.dst')
+        g.addEdge('SharedBuffer_HistLen.buffer', 'AdaptiveSampling.histLength')
+        g.addEdge('AdaptiveSampling', 'BlitToInputBuffer_HistLen')  # mark data dependency
+        g.addEdge('SVGFPass.Variance', 'BlitToInputBuffer_Var.src')
+        g.addEdge('SharedBuffer_Var.buffer', 'BlitToInputBuffer_Var.dst')
+        g.addEdge('SharedBuffer_Var.buffer', 'AdaptiveSampling.var')
+        g.addEdge('AdaptiveSampling', 'BlitToInputBuffer_Var')  # mark data dependency
+        g.addEdge('AdaptiveSampling.sampleCount', 'PathTracer.sampleCount')
+        g.addEdge('AdaptiveSampling.sampleCount', 'SVGFPass.SampleCount')
+        g.addEdge('ReprojectionPass.Reprojection', 'AdaptiveSampling.Reprojection')
 
     g.markOutput('SVGFPass.Filtered image')
-    if output_sample_count and foveated_pass_enabled:
-        g.markOutput('FoveatedPass.sampleCount')
+    if output_sample_count and adaptive_pass_enabled:
+        g.markOutput('AdaptiveSampling.sampleCount')
+
     # g.markOutput('SVGFPass.OutGradient')
     # g.markOutput('SVGFPass.Illumination_U')
     # g.markOutput('SVGFPass.Illumination_W')
@@ -310,11 +362,12 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
             folder_name_parts.append('Norm({})'.format(
                 NormalizationMode(graph_params['dynamic_weighting_params']['NormalizationMode']).name))
 
-    if graph_params['foveated_pass_enabled']:
-        folder_name_parts.append('Foveated({},{},{})'.format(
-            FoveaShape(graph_params['foveated_pass_params']['shape']).name,
-            FoveaInputType(graph_params['foveated_pass_params']['foveaInputType']).name,
-            graph_params['foveated_pass_params']['foveaSampleCount']))
+    if graph_params['adaptive_pass_enabled']:
+        folder_name_parts.append('adaptive({},{},{},{})'.format(
+            graph_params['adaptive_pass_params']['AverageSampleCountBudget'],
+            graph_params['adaptive_pass_params']['MinVariance'],
+            graph_params['adaptive_pass_params']['MaxVariance'],
+            graph_params['adaptive_pass_params']['MinSamplePerPixel']))
 
     folder_name = '_'.join(folder_name_parts)
     return folder_name
@@ -328,8 +381,8 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
         'alpha': 0.05,
         'dynamic_weighting_enabled': True,
         'dynamic_weighting_params': {},
-        'foveated_pass_enabled': False,
-        'foveated_pass_params': {},
+        'adaptive_pass_enabled': False,
+        'adaptive_pass_params': {},
         **graph_params_override
     }
     graph_params = normalizeGraphParams(graph_params)
@@ -378,8 +431,8 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     gc.collect()
 
 
-# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
-scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
+scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
@@ -395,7 +448,7 @@ except Exception as e:
 common_record_params = {
     'fps': 30,
     'start_time': 0,
-    'end_time': 10,
+    'end_time': 20,
 }
 
 common_graph_params = {
@@ -403,13 +456,11 @@ common_graph_params = {
     'debug_tag_enabled': False,
 }
 
-foveated_params_override = {
-    'shape': FoveaShape.SPLIT_HORIZONTALLY,
-    'foveaInputType': FoveaInputType.SHM,
-    'foveaSampleCount': 8.0,
-    'foveaMoveRadius': 300.0,
-    'foveaMoveFreq': 0.5,
-    'foveaMoveDirection': 0,
+adaptive_params_override = {
+    'AverageSampleCountBudget': 2.0,
+    'MinVariance': 0.01,
+    'MaxVariance': 10.0,
+    'MinSamplePerPixel': 1.0
 }
 
 gt_sample_Count = 96
@@ -444,10 +495,10 @@ for iters, feedback, grad_iters in iter_params:
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
                         'SampleCountOverride': -1,
-                        'NormalizationMode': NormalizationMode.VARIANCE,
+                        'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
                     },
-                    'foveated_pass_enabled': True,
-                    'foveated_pass_params': foveated_params_override,
+                    'adaptive_pass_enabled': True,
+                    'adaptive_pass_params': adaptive_params_override,
                     **common_graph_params
                 },
                 record_params_override={
@@ -470,8 +521,8 @@ for iters, feedback, grad_iters in iter_params:
     #                 'SampleCountOverride': -1,
     #                 'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
     #             },
-    #             'foveated_pass_enabled': True,
-    #             'foveated_pass_params': foveated_params_override,
+    #            'adaptive_pass_enabled': True,
+    #            'adaptive_pass_params': adaptive_params_override,
     #             **common_graph_params
     #         },
     #         record_params_override={
@@ -489,8 +540,8 @@ for iters, feedback, grad_iters in iter_params:
             'dynamic_weighting_params': {
                 'SelectionMode': SelectionMode.UNWEIGHTED,
             },
-            'foveated_pass_enabled': True,
-            'foveated_pass_params': foveated_params_override,
+            'adaptive_pass_enabled': True,
+            'adaptive_pass_params': adaptive_params_override,
             'output_sample_count': True,
             **common_graph_params
         },
@@ -510,8 +561,8 @@ for iters, feedback, grad_iters in iter_params:
             'dynamic_weighting_params': {
                 'SelectionMode': SelectionMode.WEIGHTED,
             },
-            'foveated_pass_enabled': True,
-            'foveated_pass_params': foveated_params_override,
+            'adaptive_pass_enabled': True,
+            'adaptive_pass_params': adaptive_params_override,
             **common_graph_params
         },
         record_params_override={
@@ -522,21 +573,20 @@ for iters, feedback, grad_iters in iter_params:
 
 
     # Generate ground truth
-    print("Run Ground Truth")
-    run(graph_params_override = {
-            'iters': iters,
-            'feedback': feedback,
-            'grad_iters': iters,
-            'dynamic_weighting_enabled': False,
-            'foveated_pass_enabled': False,
-            'sample_count': gt_sample_Count,
-            **common_graph_params
-        },
-        record_params_override={
-            **common_record_params,
-        },
-        force_record=force_record_ground_truth
-    )
+    # print("Run Ground Truth")
+    # run(graph_params_override = {
+    #         'iters': iters,
+    #         'feedback': feedback,
+    #         'grad_iters': iters,
+    #         'dynamic_weighting_enabled': False,
+    #         'sample_count': gt_sample_Count,
+    #         **common_graph_params
+    #     },
+    #     record_params_override={
+    #         **common_record_params,
+    #     },
+    #     force_record=force_record_ground_truth
+    # )
 
 print("All Done")
 exit()

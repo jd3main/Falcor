@@ -18,6 +18,9 @@ target_sources(Utils PRIVATE
 
     SharedBuffer/SharedBuffer.cpp
     SharedBuffer/SharedBuffer.h
+
+    BlitToInputBuffer/BlitToInputBuffer.cpp
+    BlitToInputBuffer/BlitToInputBuffer.h
 )
 
 target_copy_shaders(Utils RenderPasses/Utils)

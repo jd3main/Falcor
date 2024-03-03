@@ -1,4 +1,4 @@
-import RenderPasses.DynamicWeightingSVGF.Common;
+import RenderPasses.ReprojectionPass.ReprojectionStruct;
 
 StructuredBuffer<Reprojection> reprojection;
 

@@ -1,7 +1,7 @@
 import Scene.ShadingData;
 import Utils.Color.ColorHelpers;
 import RenderPasses.SVGFPass.SVGFCommon;
-import RenderPasses.DynamicWeightingSVGF.Common;
+import RenderPasses.ReprojectionPass.ReprojectionStruct;
 
 #include "RenderPasses/DynamicWeightingSVGF/Enums.h"
 
@@ -48,12 +48,12 @@ struct History
 
 bool loadHistory(int2 ipos, out History h)
 {
-    const int2 imageDim = getTextureDims(gUnweightedIllumination, 0);
-    int idx = ipos.y * imageDim.x + ipos.x;
-    Reprojection reprojection = gReprojection[idx];
-
     h.gradient = float3(0, 0, 0);
     h.unweightedIllumination = float3(0, 0, 0);
+
+    const int2 imageDim = getTextureDims(gUnweightedIllumination, 0);
+    const int idx = ipos.y * imageDim.x + ipos.x;
+    const Reprojection reprojection = gReprojection[idx];
 
     if (reprojection.tapWidth == 2)
     {
@@ -111,8 +111,6 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     History h;
     bool success = loadHistory(ipos, h);
 
-    // TODO: take log or normalize by illumination
-
     float3 delta = success ? (unweightedIllumination - h.unweightedIllumination) : float3(0, 0, 0);
     delta = clamp(delta, -1, 1);
 
@@ -123,17 +121,19 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     // normalize
     if (gNormalizationMode == NormalizationMode::Luminance)
         gamma = gamma / luminance(unweightedIllumination);
-    if (gNormalizationMode == NormalizationMode::Variance)
+    else if (gNormalizationMode == NormalizationMode::Variance)
         gamma = gamma / max(variance, 1e-6f);
-    if (gNormalizationMode == NormalizationMode::StandardDeviation)
+    else if (gNormalizationMode == NormalizationMode::StandardDeviation)
         gamma = gamma / sqrt(max(variance, 1e-6f));
 
     switch (gSelectionMode)
     {
     case SelectionMode::Unweighted:
         gamma = 1.0f;
+        break;
     case SelectionMode::Weighted:
         gamma = 0.0f;
+        break;
     case SelectionMode::Linear:
         gamma = clamp(0.5 + (gamma-gGammaMidpoint) * gGammaSteepness, 0, 1);
         break;
@@ -146,11 +146,6 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     }
 
     float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
-
-    if (gSelectionMode == SelectionMode::Unweighted)
-        outIllumination = unweightedIllumination;
-    if (gSelectionMode == SelectionMode::Weighted)
-        outIllumination = weightedIllumination;
 
 #if _DEBUG_TAG_ENABLED
     if (ipos.x < 20 && ipos.y < 100)

@@ -25,28 +25,57 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-#include "Composite/Composite.h"
-#include "GaussianBlur/GaussianBlur.h"
+#include "BlitToInputBuffer.h"
 #include "RenderGraph/RenderPassLibrary.h"
-#include "SharedBuffer/SharedBuffer.h"
-#include "BlitToInputBuffer/BlitToInputBuffer.h"
-#include "CountToColor/CountToColor.h"
 
-// Don't remove this. it's required for hot-reload to function properly
-extern "C" FALCOR_API_EXPORT const char* getProjDir()
+const RenderPass::Info BlitToInputBuffer::kInfo { "BlitToInputBuffer", "Blit input src to input dst" };
+
+namespace
 {
-    return PROJECT_DIR;
+    const char kInputSrc[] = "src";
+    const char kInputDst[] = "dst";
 }
 
-extern "C" FALCOR_API_EXPORT void getPasses(Falcor::RenderPassLibrary& lib)
+BlitToInputBuffer::SharedPtr BlitToInputBuffer::create(RenderContext* pRenderContext, const Dictionary& dict)
 {
-    lib.registerPass(Composite::kInfo, Composite::create);
-    ScriptBindings::registerBinding(Composite::registerBindings);
+    SharedPtr pPass = SharedPtr(new BlitToInputBuffer());
+    return pPass;
+}
 
-    lib.registerPass(GaussianBlur::kInfo, GaussianBlur::create);
-    ScriptBindings::registerBinding(GaussianBlur::registerBindings);
+Dictionary BlitToInputBuffer::getScriptingDictionary()
+{
+    return Dictionary();
+}
 
-    lib.registerPass(SharedBuffer::kInfo, SharedBuffer::create);
-    lib.registerPass(BlitToInputBuffer::kInfo, BlitToInputBuffer::create);
-    lib.registerPass(CountToColor::kInfo, CountToColor::create);
+RenderPassReflection BlitToInputBuffer::reflect(const CompileData& compileData)
+{
+    const uint2 sz = compileData.defaultTexDims;
+
+    RenderPassReflection reflector;
+
+    reflector.addInput(kInputSrc, "Source buffer")
+        .bindFlags(ResourceBindFlags::ShaderResource)
+        .format(ResourceFormat::Unknown)
+        ;
+
+    reflector.addInput(kInputDst, "Destination buffer")
+        .bindFlags(ResourceBindFlags::RenderTarget)
+        .format(ResourceFormat::Unknown)
+        ;
+
+    return reflector;
+}
+
+void BlitToInputBuffer::execute(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE("BlitToInputBuffer");
+
+    auto pSrc = renderData[kInputSrc];
+    auto pDst = renderData[kInputDst]->asTexture();
+
+    pRenderContext->blit(pSrc->getSRV(), pDst->getRTV());
+}
+
+void BlitToInputBuffer::renderUI(Gui::Widgets& widget)
+{
 }

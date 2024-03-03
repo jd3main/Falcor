@@ -5,12 +5,8 @@ target_sources(DynamicWeightingSVGF PRIVATE
     DynamicWeightingSVGF.h
     Enums.h
 
-    Common.slang
-
     DynamicWeighting.ps.slang
-    Reprojection.ps.slang
     TemporalFilter.ps.slang
-    ReflectTypes.cs.slang
     Atrous.ps.slang
 )
 

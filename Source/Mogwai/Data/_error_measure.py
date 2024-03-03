@@ -148,14 +148,14 @@ DEFAULT_PLOT_HISTO = False
 DEFAULT_PLOT_ERROR_OVER_TIME = False
 DEFAULT_FORCE_RECALCULATE = False
 
-# DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
-DEFAULT_SCENE_NAME = 'BistroExterior'
+DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+# DEFAULT_SCENE_NAME = 'BistroExterior'
 # DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
 # DEFAULT_SCENE_NAME = 'SunTemple'
 
 DEFAULT_RECORD_PATH = Path(__file__).parents[4]/'Record'
 DEFAULT_FPS = 30
-DEFAULT_RECORD_SECONDS = 10
+DEFAULT_RECORD_SECONDS = 20
 DEFAULT_ERR_TYPE = ErrorType.REL_MSE
 REL_MSE_EPSILON = 1e-2
 
@@ -163,9 +163,9 @@ DEFAULT_SELECTION_FUNC = "Linear"
 # DEFAULT_SELECTION_FUNC = "Step"
 # DEFAULT_SELECTION_FUNC = "Logistic"
 
-# DEFAULT_NORMALZATION_MODE = NormalizationMode.STANDARD_DEVIATION
+DEFAULT_NORMALZATION_MODE = NormalizationMode.STANDARD_DEVIATION
 # DEFAULT_NORMALZATION_MODE = NormalizationMode.NONE
-DEFAULT_NORMALZATION_MODE = NormalizationMode.LUMINANCE
+# DEFAULT_NORMALZATION_MODE = NormalizationMode.LUMINANCE
 
 DEFAULT_ITER_PARAMS = [
     (2, -1, 0),
@@ -175,6 +175,9 @@ DEFAULT_ITER_PARAMS = [
 
 DEFAULT_MIDPOINTS = [0.0, 0.05, 0.5, 1.0]
 DEFAULT_STEEPNESSES = [0.1, 1.0, 10.0]
+
+# DEFAULT_SAMPLING_METHOD = 'Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+DEFAULT_SAMPLING_METHOD = 'adaptive(2.0,0.01,10.0,1.0)'
 
 ### Argument parsing
 parser = argparse.ArgumentParser(description='Calculate errors')
@@ -188,6 +191,7 @@ parser.add_argument('--midpoints', type=str, help='midpoints of selection functi
 parser.add_argument('--steepnesses', type=str, help='steepnesses of selection function')
 parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
 parser.add_argument('-e', '--err_type', type=str, default=DEFAULT_ERR_TYPE.name, help='error type')
+parser.add_argument('--sampling', type=str, default=DEFAULT_SAMPLING_METHOD, help='sampling method and params')
 parser.add_argument('--force', action='store_true', help='force recalculate')
 parser.add_argument('--plot_histo', action='store_true', help='plot histogram')
 parser.add_argument('--plot_error_over_time', action='store_true', help='plot error over time')
@@ -217,6 +221,7 @@ else:
 
 normalization_mode = NormalizationMode[args.norm_mode.upper()]
 err_type = ErrorType[args.err_type.upper()]
+sampling = args.sampling
 force_recalculate = args.force
 plot_histo = args.plot_histo
 plot_error_over_time = args.plot_error_over_time
@@ -230,6 +235,7 @@ print(f'err_type:           {err_type.name}')
 print(f'iter_params:        {iter_params}')
 print(f'midpoints:          {midpoints}')
 print(f'steepnesses:        {steepnesses}')
+print(f'sampling:           {sampling}')
 
 
 for iters, feedback, grad_iters in iter_params:
@@ -270,13 +276,13 @@ for iters, feedback, grad_iters in iter_params:
     for midpoint in midpoints:
         for steepness in steepnesses:
             if selection_func == 'Step':
-                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint})_GAlpha(0.2)_Norm({normalization_mode.name})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint})_GAlpha(0.2)_Norm({normalization_mode.name})_{sampling}'
             else:
-                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint},{steepness})_GAlpha(0.2)_Norm({normalization_mode.name})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint},{steepness})_GAlpha(0.2)_Norm({normalization_mode.name})_{sampling}'
             if (record_path/folder_name).exists():
                 source_folders.append(record_path/folder_name)
-    source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)')
-    source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Weighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)')
+    source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_{sampling}')
+    source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Weighted_{sampling}')
     print(f'found {len(source_folders)} source folders')
 
     records_params:list[RecordParams] = [RecordParams.parse(folder.name, scene_name) for folder in source_folders]
@@ -384,7 +390,7 @@ for iters, feedback, grad_iters in iter_params:
                              gaussian_weights = True,
                              sigma = 1.5,
                              use_sample_covariance = False,
-                             data_range = 1000,
+                             data_range = 10,
                              channel_axis = -1)
                 results[folder_index, i, fields.index('ssim')] = mssim
 
@@ -426,7 +432,7 @@ for iters, feedback, grad_iters in iter_params:
         print(tables[field_index].to_csv(sep='\t', lineterminator='\n'))
 
     # write tables to file
-    save_path = Path(f'{scene_name}_iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Err({err_type.name}).txt')
+    save_path = Path(f'{scene_name}_iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Err({err_type.name})_{sampling}.txt')
     with open(save_path, 'w') as f:
         f.write(f'# {scene_name}\n')
         for folder in source_folders:
@@ -442,6 +448,7 @@ for iters, feedback, grad_iters in iter_params:
         f.write(f'selection_func: {selection_func}\n')
         f.write(f'err_type: {err_type.name}\n')
         f.write(f'normalization_mode: {normalization_mode.name}\n')
+        f.write(f'sampling: {sampling}\n')
         f.write('\n')
         for field_index, field in enumerate(fields):
             f.write(f'# {field}\n')

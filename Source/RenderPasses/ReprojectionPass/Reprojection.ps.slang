@@ -3,7 +3,7 @@ import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
 import Utils.Color.ColorMap;
 import RenderPasses.SVGFPass.SVGFCommon;
-import RenderPasses.DynamicWeightingSVGF.Common;
+import RenderPasses.ReprojectionPass.ReprojectionStruct;
 
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
@@ -14,7 +14,6 @@ bool isNaN(float f)
 
 cbuffer PerImageCB
 {
-    Texture2D gColor;
     Texture2D gPositionNormalFwidth;
     Texture2D gLinearZAndNormal;
     Texture2D gPrevLinearZAndNormal;
@@ -25,7 +24,7 @@ cbuffer PerImageCB
 
 bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal)
 {
-    const int2 imageDim = getTextureDims(gColor, 0);
+    const int2 imageDim = getTextureDims(gPositionNormalFwidth, 0);
 
     // check whether reprojected pixel is inside of the screen
     if (any(coord < int2(1, 1)) || any(coord > imageDim - int2(1, 1))) return false;
@@ -42,7 +41,7 @@ bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal
 Reprojection reproject(float2 posH)
 {
     const int2 ipos = posH;
-    const float2 imageDim = float2(getTextureDims(gColor, 0));
+    const float2 imageDim = float2(getTextureDims(gPositionNormalFwidth, 0));
 
     const float2 motion = gMotion[ipos].xy;
     const float normalFwidth = gPositionNormalFwidth[ipos].y;
@@ -152,7 +151,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     const int2 ipos = posH.xy;
     Reprojection reprojection = reproject(posH.xy);
 
-    const int2 imageDim = getTextureDims(gColor, 0);
+    const int2 imageDim = getTextureDims(gPositionNormalFwidth, 0);
     int idx = ipos.y * imageDim.x + ipos.x;
     gReprojection[idx] = reprojection;
 

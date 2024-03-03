@@ -27,10 +27,10 @@ namespace
     const char kTemporalFilterShader[] = "RenderPasses/DynamicWeightingSVGF/TemporalFilter.ps.slang";
     const char kAtrousShader[] = "RenderPasses/DynamicWeightingSVGF/Atrous.ps.slang";
     const char kFilterMomentShader[] = "RenderPasses/SVGFPass/SVGFFilterMoments.ps.slang";
-    const char kReprojectShader[] = "RenderPasses/DynamicWeightingSVGF/Reprojection.ps.slang";
+    const char kReprojectShader[] = "RenderPasses/ReprojectionPass/Reprojection.ps.slang";
     const char kDynamicWeightingShader[] = "RenderPasses/DynamicWeightingSVGF/DynamicWeighting.ps.slang";
     const char kFinalModulateShader[] = "RenderPasses/SVGFPass/SVGFFinalModulate.ps.slang";
-    const char kReflectTypesShader[] = "RenderPasses/DynamicWeightingSVGF/ReflectTypes.cs.slang";
+    const char kReflectTypesShader[] = "RenderPasses/ReprojectionPass/ReflectTypes.cs.slang";
 
     // Names of valid entries in the parameter dictionary.
     const char kEnabled[] = "Enabled";
@@ -49,6 +49,7 @@ namespace
     const char kSelectionMode[] = "SelectionMode";
     const char kSampleCountOverride[] = "SampleCountOverride";
     const char kNormalizationMode[] = "NormalizationMode";
+    const char kUseInputReprojection[] = "UseInputReprojection";
     const char kOutputPingPongAfterIters[] = "OutputPingPongAfterIters";
     const char kOutputPingPongIdx[] = "OutputPingPongIdx";
     const char kEnableDebugTag[] = "EnableDebugTag";
@@ -64,6 +65,7 @@ namespace
     const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
     const char kInputBufferLinearZ[] = "LinearZ";
     const char kInputBufferMotionVector[] = "MotionVec";
+    const char kInputBufferReprojection[] = "Reprojection";
     const ChannelList kInputChannels =
     {
         { kInputBufferAlbedo,           "_",   "Albedo",          false, ResourceFormat::Unknown},
@@ -184,6 +186,7 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kSelectionMode) mSelectionMode = value;
         else if (key == kSampleCountOverride) mSampleCountOverride = value;
         else if (key == kNormalizationMode) mNormalizationMode = value;
+        else if (key == kUseInputReprojection) mUseInputReprojection = value;
         else if (key == kOutputPingPongAfterIters) mOutputPingPongAfterIters = value;
         else if (key == kOutputPingPongIdx) mOutputPingPongIdx = value;
         else if (key == kEnableDebugTag) mEnableDebugTag = value;
@@ -214,6 +217,7 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kSelectionMode] = mSelectionMode;
     dict[kSampleCountOverride] = mSampleCountOverride;
     dict[kNormalizationMode] = mNormalizationMode;
+    dict[kUseInputReprojection] = mUseInputReprojection;
     dict[kOutputPingPongAfterIters] = mOutputPingPongAfterIters;
     dict[kOutputPingPongIdx] = mOutputPingPongIdx;
     dict[kEnableDebugTag] = mEnableDebugTag;
@@ -234,11 +238,30 @@ a-trous:
   - returns: final color
 */
 
+
+uint32_t DynamicWeightingSVGF::getReprojectStructSize()
+{
+    auto rootVar = mpReflectTypes->getRootVar();
+    auto reflectionType = rootVar["reprojection"].getType().get();
+    const ReflectionResourceType* pResourceType = reflectionType->unwrapArray()->asResourceType();
+    uint32_t structSize = pResourceType->getSize();
+    FALCOR_ASSERT(structSize == 48);
+    return structSize;
+}
+
 RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
 
     addRenderPassInputs(reflector, kInputChannels);
+
+    reflector.addField(RenderPassReflection::Field())
+        .rawBuffer(getReprojectStructSize() * compileData.defaultTexDims.x * compileData.defaultTexDims.y)
+        .name(kInputBufferReprojection)
+        .desc("Reprojection Buffer")
+        .visibility(RenderPassReflection::Field::Visibility::Input)
+        .flags(RenderPassReflection::Field::Flags::Optional)
+        .bindFlags(Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
 
     reflector.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(ResourceFormat::RGBA32Float)
@@ -281,6 +304,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
     Texture::SharedPtr pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
     Texture::SharedPtr pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
+    Buffer::SharedPtr pReprojection = renderData.getResource(kInputBufferReprojection)->asBuffer();
 
     // Output Textures
     Texture::SharedPtr pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
@@ -353,7 +377,15 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
                 pOutputWeightedHistoryIllumination->getRTV());
         }
 
-        computeReprojection(pRenderContext, pColorTexture, pLinearZTexture, pMotionVectorTexture, pPosNormalFwidthTexture);
+        if (mUseInputReprojection)
+        {
+            FALCOR_ASSERT(pReprojection);
+            mpReprojectionBuffer = pReprojection;
+        }
+        else
+        {
+            computeReprojection(pRenderContext, pColorTexture, pLinearZTexture, pMotionVectorTexture, pPosNormalFwidthTexture);
+        }
 
         // Do a first cross-bilateral filtering of the illumination and
         // estimate its variance, storing the result into a float4 in
@@ -514,7 +546,6 @@ void DynamicWeightingSVGF::computeReprojection(RenderContext* pRendercontext,
 
     auto perImageCB = mpReproject["PerImageCB"];
     perImageCB["gMotion"] = pMotionoTexture;
-    perImageCB["gColor"] = pColorTexture;
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = mpPrevLinearZAndNormalTexture;
@@ -816,6 +847,8 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
             widget.text("gamma(0) = " + std::to_string(gamma0));
         }
     }
+
+    widget.checkbox("Use Input Reprojection", mUseInputReprojection);
 
     widget.text("");
     widget.text("Debug");

@@ -4,8 +4,9 @@ cbuffer PerImageCB
 {
     // Parameters
     uint2 gResolution;
-    float gAverageWeight;
-    float gAverageSampleCountBudget;
+    float gMinSamplePerPixel;
+    float gMinVariance;
+    float gScale;
 };
 
 // Input buffers
@@ -19,9 +20,9 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (any(dispatchThreadId.xy >= gResolution)) return;
     const uint2 pixelPos = dispatchThreadId.xy;
 
-    const float sampleDensityWeight = gInputDensityWeight[pixelPos].x;
+    const float weight = gInputDensityWeight[pixelPos].x;
 
-    float sampleCount = gAverageSampleCountBudget * sampleDensityWeight / gAverageWeight;
+    const float sampleCount = gMinSamplePerPixel + (weight - gMinVariance) * gScale;
 
     gOutputSampleCount[pixelPos] = max((uint)floor(sampleCount), 1u);
 }

@@ -1,6 +1,6 @@
 $Env:FALCOR_DEVMODE = 1
 $BinPath = "..\..\..\build\windows-ninja-msvc-d3d12\bin\Debug\"
-$ScriptPath = "..\..\..\Source\Mogwai\Data\DynamicWeightingSVGF_experiment.py"
+$ScriptPath = "..\..\..\Source\Mogwai\Data\DynamicWeightingSVGF_exp_adaptive.py"
 # $ScenePath = "..\..\..\..\Scenes\VeachAjar\VeachAjarAnimated.pyscene"
 
 $MogwaiPath = $BinPath+"Mogwai.exe"

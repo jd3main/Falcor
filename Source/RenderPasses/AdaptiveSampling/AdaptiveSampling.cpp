@@ -36,16 +36,16 @@ namespace
 {
     const char kWeightEstimationShaderFile[] = "RenderPasses/AdaptiveSampling/WeightEstimation.cs.slang";
     const char kNormalizationShaderFile[] = "RenderPasses/AdaptiveSampling/Normalization.cs.slang";
+    const char kReflectTypesShader[] = "RenderPasses/ReprojectionPass/ReflectTypes.cs.slang";
 
     // Input channels
     const char kInputVariance[] = "var";
     const char kInputHistoryLength[] = "histLength";
-    const char kInputSampleCountSharedBuffer[] = "sampleCountSharedBuffer";
+    const char kInputBufferReprojection[] = "Reprojection";
     const ChannelList kInputChannels =
     {
-        { kInputVariance,       "_", "Variance",                            false, ResourceFormat::R32Float},
-        { kInputHistoryLength,  "_", "History Length",                      false, ResourceFormat::R32Float},
-        { kInputSampleCountSharedBuffer, "_", "Sample Count Shared Buffer", false, ResourceFormat::R8Uint},
+        { kInputHistoryLength,              "_", "History Length",              false, ResourceFormat::R32Float },
+        { kInputVariance,                   "_", "Variance",                    false, ResourceFormat::R32Float },
     };
 
     // Output channels
@@ -53,14 +53,16 @@ namespace
     const char kOutputDensityWeight[] = "densityWeight";
     const ChannelList kOutputChannels =
     {
-        { kOutputSampleCount,   "_", "The number of samples per pixel",     false, ResourceFormat::R8Uint},
+        { kOutputSampleCount,   "_", "The number of samples per pixel",     false, ResourceFormat::R8Uint },
         { kOutputDensityWeight, "_", "Unnormalized density",                false, ResourceFormat::R32Float },
     };
 
     // Serialized parameters
-    const char kMaxVariance[] = "MaxVariance";
-    const char kAverageSampleCountBudget[] = "AverageSampleCountBudget";
     const char kEnabled[] = "Enabled";
+    const char kAverageSampleCountBudget[] = "AverageSampleCountBudget";
+    const char kMinVariance[] = "MinVariance";
+    const char kMaxVariance[] = "MaxVariance";
+    const char kMinSamplePerPixel[] = "MinSamplePerPixel";
 }
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -79,11 +81,14 @@ AdaptiveSampling::AdaptiveSampling(const Dictionary& dict)
 {
     for (const auto& [key, value] : dict)
     {
-        if (key == kMaxVariance) mMaxVariance = value;
+        if (key == kEnabled) mEnabled = value;
         else if (key == kAverageSampleCountBudget) mAverageSampleCountBudget = value;
-        else if (key == kEnabled) mEnabled = value;
+        else if (key == kMinVariance) mMinVariance = value;
+        else if (key == kMaxVariance) mMaxVariance = value;
+        else if (key == kMinSamplePerPixel) mMinSamplePerPixel = value;
         else logWarning("Unknown field '" + key + "' in a AdaptiveSampling dictionary");
     }
+    mpReflectTypes = ComputePass::create(kReflectTypesShader);
 }
 
 AdaptiveSampling::SharedPtr AdaptiveSampling::create(RenderContext* pRenderContext, const Dictionary& dict)
@@ -95,10 +100,22 @@ AdaptiveSampling::SharedPtr AdaptiveSampling::create(RenderContext* pRenderConte
 Dictionary AdaptiveSampling::getScriptingDictionary()
 {
     Dictionary dict;
-    dict[kMaxVariance] = mMaxVariance;
-    dict[kAverageSampleCountBudget] = mAverageSampleCountBudget;
     dict[kEnabled] = mEnabled;
+    dict[kAverageSampleCountBudget] = mAverageSampleCountBudget;
+    dict[kMinVariance] = mMinVariance;
+    dict[kMaxVariance] = mMaxVariance;
+    dict[kMinSamplePerPixel] = mMinSamplePerPixel;
     return dict;
+}
+
+uint32_t AdaptiveSampling::getReprojectStructSize()
+{
+    auto rootVar = mpReflectTypes->getRootVar();
+    auto reflectionType = rootVar["reprojection"].getType().get();
+    const ReflectionResourceType* pResourceType = reflectionType->unwrapArray()->asResourceType();
+    uint32_t structSize = pResourceType->getSize();
+    FALCOR_ASSERT(structSize == 48);
+    return structSize;
 }
 
 RenderPassReflection AdaptiveSampling::reflect(const CompileData& compileData)
@@ -106,8 +123,14 @@ RenderPassReflection AdaptiveSampling::reflect(const CompileData& compileData)
     // Define the required resources here
     RenderPassReflection reflector;
     addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassOutputs(reflector, kOutputChannels,
-        ResourceBindFlags::ShaderResource | ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess);
+    addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess);
+
+    reflector.addField(RenderPassReflection::Field())
+        .rawBuffer(getReprojectStructSize() * compileData.defaultTexDims.x * compileData.defaultTexDims.y)
+        .name(kInputBufferReprojection)
+        .desc("Reprojection Buffer")
+        .visibility(RenderPassReflection::Field::Visibility::Input)
+        .bindFlags(ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
 
     return reflector;
 }
@@ -116,6 +139,21 @@ void AdaptiveSampling::compile(RenderContext* pRenderContext, const CompileData&
 {
     mFrameDim = compileData.defaultTexDims;
     allocateResources();
+
+    {
+        Program::DefineList defines;
+
+        mpWeightEstimationProgram = ComputeProgram::createFromFile(kWeightEstimationShaderFile, "main", defines, Shader::CompilerFlags::TreatWarningsAsErrors);
+        mpWeightEstimationVars = ComputeVars::create(mpWeightEstimationProgram->getReflector());
+        mpWeightEstimationState = ComputeState::create();
+
+        mpParallelReduction = ComputeParallelReduction::create();
+
+        mpNormalizationProgram = ComputeProgram::createFromFile(kNormalizationShaderFile, "main", defines, Shader::CompilerFlags::TreatWarningsAsErrors);
+        mpNormalizationVars = ComputeVars::create(mpNormalizationProgram->getReflector());
+        mpNormalizationState = ComputeState::create();
+    }
+
     mBuffersNeedClear = true;
 }
 
@@ -153,7 +191,7 @@ void AdaptiveSampling::execute(RenderContext* pRenderContext, const RenderData& 
 
     if (!mEnabled)
     {
-        pRenderContext->clearTexture(renderData.getTexture(kInputSampleCountSharedBuffer).get(), float4(1.0f, 1.0f, 1.0f, 1.0f));
+        runNormalizeWeightPass(pRenderContext, renderData);
         return;
     }
 
@@ -178,14 +216,20 @@ void AdaptiveSampling::runWeightEstimationPass(RenderContext* pRenderContext, co
 {
     Texture::SharedPtr pInputVariance = renderData.getTexture(kInputVariance);
     Texture::SharedPtr pInputHistoryLength = renderData.getTexture(kInputHistoryLength);
+    Buffer::SharedPtr pInputBufferReprojection = renderData.getResource(kInputBufferReprojection)->asBuffer();
+
     Texture::SharedPtr pOutputDensityWeight = renderData.getTexture(kOutputDensityWeight);
+
+    FALCOR_ASSERT(pInputBufferReprojection);
 
     // Set shader parameters
     auto perImageCB = mpWeightEstimationVars["PerImageCB"];
+    perImageCB["gInputReprojection"] = pInputBufferReprojection;
     perImageCB["gInputVariance"] = pInputVariance;
     perImageCB["gInputHistoryLength"] = pInputHistoryLength;
     perImageCB["gOutputSampleDensityWeight"] = mpDensityWeight;
     perImageCB["gResolution"] = mFrameDim;
+    perImageCB["gMinVariance"] = mMinVariance;
     perImageCB["gMaxVariance"] = mMaxVariance;
 
     uint3 numGroups = div_round_up(uint3(mFrameDim.x, mFrameDim.y, 1u), mpWeightEstimationProgram->getReflector()->getThreadGroupSize());
@@ -208,13 +252,15 @@ void AdaptiveSampling::runReductionPass(RenderContext* pRenderContext, const Ren
 
 void AdaptiveSampling::runNormalizeWeightPass(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    Texture::SharedPtr pInputSampleCountSharedBuffer = renderData.getTexture(kInputSampleCountSharedBuffer);
     Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
+
+    float scale = (mAverageWeight - mMinVariance) / (mAverageSampleCountBudget - mMinSamplePerPixel);
 
     auto perImageCB = mpNormalizationVars["PerImageCB"];
     perImageCB["gResolution"] = mFrameDim;
-    perImageCB["gAverageWeight"] = mAverageWeight;
-    perImageCB["gAverageSampleCountBudget"] = mAverageSampleCountBudget;
+    perImageCB["gMinSamplePerPixel"] = mMinSamplePerPixel;
+    perImageCB["gMinVariance"] = mMinVariance;
+    perImageCB["gScale"] = mEnabled ? scale : 0.0f;
     mpNormalizationVars["gInputDensityWeight"] = mpDensityWeight;
     mpNormalizationVars["gOutputSampleCount"] = pOutputSampleCount;
 
@@ -223,21 +269,20 @@ void AdaptiveSampling::runNormalizeWeightPass(RenderContext* pRenderContext, con
 
     mpNormalizationState->setProgram(mpNormalizationProgram);
     pRenderContext->dispatch(mpNormalizationState.get(), mpNormalizationVars.get(), numGroups);
-
-    pRenderContext->blit(pOutputSampleCount->getSRV(), pInputSampleCountSharedBuffer->getRTV());
 }
 
-void AdaptiveSampling::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
-{
-    mpScene = pScene;
-    if (mpScene)
-        mpWeightEstimationProgram->addDefines(mpScene->getSceneDefines());
-}
+// void AdaptiveSampling::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
+// {
+//     mpScene = pScene;
+//     if (mpScene)
+//         mpWeightEstimationProgram->addDefines(mpScene->getSceneDefines());
+// }
 
 
 void AdaptiveSampling::renderUI(Gui::Widgets& widget)
 {
     widget.checkbox("Enabled", mEnabled);
+    widget.var("Min Variance", mMinVariance, 0.0f, 1.0f);
     widget.var("Max Variance", mMaxVariance, 0.0f, 100.0f);
     widget.var("Average Sample Count Budget", mAverageSampleCountBudget, 1.0f, 16.0f);
     widget.text(std::string("Current average weight: ") + std::to_string(mAverageWeight));

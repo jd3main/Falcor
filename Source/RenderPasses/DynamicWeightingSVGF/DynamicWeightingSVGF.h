@@ -31,7 +31,6 @@ private:
 
     void computeLinearZAndNormal(RenderContext* pRenderContext, Texture::SharedPtr pLinearZTexture,
         Texture::SharedPtr pWorldNormalTexture);
-    void computeReprojection(RenderContext* pRendercontext);
     void computeTemporalFilter(RenderContext* pRenderContext,
         const RenderData& renderData,
         Texture::SharedPtr pAlbedoTexture,
@@ -40,7 +39,7 @@ private:
         Texture::SharedPtr pEmissionTexture,
         Texture::SharedPtr pMotionVectorTexture,
         Texture::SharedPtr pPositionNormalFwidthTexture);
-    void DynamicWeightingSVGF::computeReprojection(RenderContext* pRendercontext,
+    void computeReprojection(RenderContext* pRendercontext,
         Texture::SharedPtr pColorTexture,
         Texture::SharedPtr pLinearZTexture,
         Texture::SharedPtr pMotionoTexture,
@@ -55,13 +54,17 @@ private:
         Texture::SharedPtr pWeightedIlluminationTexture,
         Fbo::SharedPtr pOutputFbo);
 
+    // Utility functions
+    uint32_t getReprojectStructSize();
+
+    // Internal states
     bool mBuffersNeedClear = false;
     bool mRecompile = true;
 
     // static params
     uint2   mFrameDim;
 
-    // SVGF parameters
+    // parameters
     bool    mFilterEnabled = true;
     bool    mDynamicWeighingEnabled = true;
     int32_t mFilterIterations = 4;
@@ -78,6 +81,7 @@ private:
     float   mGammaSteepness = 100;
     uint32_t mSelectionMode = (uint32_t)SelectionMode::Logistic;
     uint32_t mNormalizationMode = (uint32_t)NormalizationMode::None;
+    bool    mUseInputReprojection = true;
 
     // Debug parameters
     bool mEnableDebugOutput = false;
