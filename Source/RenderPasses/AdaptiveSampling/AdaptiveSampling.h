@@ -85,6 +85,7 @@ private:
     Scene::SharedPtr mpScene = nullptr;
     ComputeParallelReduction::SharedPtr mpParallelReduction;
     float mAverageWeight = 0.0f;
+    Buffer::SharedPtr mpTotalWeightBuffer;
     bool mBuffersNeedClear = true;
 
     // Serialized parameters

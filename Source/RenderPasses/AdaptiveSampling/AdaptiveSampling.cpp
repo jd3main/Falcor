@@ -167,22 +167,6 @@ void AdaptiveSampling::execute(RenderContext* pRenderContext, const RenderData& 
         allocateResources();
     }
 
-    // Compile shaders
-    if (!mpWeightEstimationProgram)
-    {
-        Program::DefineList defines;
-
-        mpWeightEstimationProgram = ComputeProgram::createFromFile(kWeightEstimationShaderFile, "main", defines, Shader::CompilerFlags::TreatWarningsAsErrors);
-        mpWeightEstimationVars = ComputeVars::create(mpWeightEstimationProgram->getReflector());
-        mpWeightEstimationState = ComputeState::create();
-
-        mpParallelReduction = ComputeParallelReduction::create();
-
-        mpNormalizationProgram = ComputeProgram::createFromFile(kNormalizationShaderFile, "main", defines, Shader::CompilerFlags::TreatWarningsAsErrors);
-        mpNormalizationVars = ComputeVars::create(mpNormalizationProgram->getReflector());
-        mpNormalizationState = ComputeState::create();
-    }
-
     if (mBuffersNeedClear)
     {
         clearBuffers(pRenderContext, renderData);
@@ -191,7 +175,7 @@ void AdaptiveSampling::execute(RenderContext* pRenderContext, const RenderData& 
 
     if (!mEnabled)
     {
-        runNormalizeWeightPass(pRenderContext, renderData);
+        pRenderContext->clearUAV(renderData.getTexture(kOutputSampleCount)->getUAV().get(), uint4((int)mAverageSampleCountBudget));
         return;
     }
 
@@ -204,6 +188,8 @@ void AdaptiveSampling::allocateResources()
 {
     mpDensityWeight = Texture::create2D(mFrameDim.x, mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
         ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource | ResourceBindFlags::RenderTarget);
+
+    mpTotalWeightBuffer = Buffer::create(sizeof(float4), Buffer::BindFlags::UnorderedAccess | Buffer::BindFlags::ShaderResource, Buffer::CpuAccess::None, nullptr);
 }
 
 void AdaptiveSampling::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
@@ -214,6 +200,8 @@ void AdaptiveSampling::clearBuffers(RenderContext* pRenderContext, const RenderD
 
 void AdaptiveSampling::runWeightEstimationPass(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    FALCOR_PROFILE("runWeightEstimationPass");
+
     Texture::SharedPtr pInputVariance = renderData.getTexture(kInputVariance);
     Texture::SharedPtr pInputHistoryLength = renderData.getTexture(kInputHistoryLength);
     Buffer::SharedPtr pInputBufferReprojection = renderData.getResource(kInputBufferReprojection)->asBuffer();
@@ -243,24 +231,24 @@ void AdaptiveSampling::runWeightEstimationPass(RenderContext* pRenderContext, co
 
 void AdaptiveSampling::runReductionPass(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    float4 totalWeight;
-    mpParallelReduction->execute(pRenderContext, mpDensityWeight, ComputeParallelReduction::Type::Sum, &totalWeight);
+    FALCOR_PROFILE("runReductionPass");
 
-    const float pixelCountf = static_cast<float>(mpDensityWeight->getWidth() * mpDensityWeight->getHeight());
-    mAverageWeight = totalWeight.x / pixelCountf;
+    float4 totalWeight;
+    mpParallelReduction->execute(pRenderContext, mpDensityWeight, ComputeParallelReduction::Type::Sum, (float4*)nullptr, mpTotalWeightBuffer, 0);
 }
 
 void AdaptiveSampling::runNormalizeWeightPass(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
+    FALCOR_PROFILE("runNormalizeWeightPass");
 
-    float scale = (mAverageWeight - mMinVariance) / (mAverageSampleCountBudget - mMinSamplePerPixel);
+    Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
 
     auto perImageCB = mpNormalizationVars["PerImageCB"];
     perImageCB["gResolution"] = mFrameDim;
+    perImageCB["gAverageSampleCountBudget"] = mAverageSampleCountBudget;
     perImageCB["gMinSamplePerPixel"] = mMinSamplePerPixel;
-    perImageCB["gMinVariance"] = mMinVariance;
-    perImageCB["gScale"] = mEnabled ? scale : 0.0f;
+    perImageCB["gMinWeight"] = mMinVariance;
+    perImageCB["gTotalWeight"] = mpTotalWeightBuffer;
     mpNormalizationVars["gInputDensityWeight"] = mpDensityWeight;
     mpNormalizationVars["gOutputSampleCount"] = pOutputSampleCount;
 
