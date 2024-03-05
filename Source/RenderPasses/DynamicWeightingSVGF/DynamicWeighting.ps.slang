@@ -4,6 +4,7 @@ import RenderPasses.SVGFPass.SVGFCommon;
 import RenderPasses.ReprojectionPass.ReprojectionStruct;
 
 #include "RenderPasses/DynamicWeightingSVGF/Enums.h"
+#include "RenderPasses/DynamicWeightingSVGF/Configs.h"
 
 #ifndef _DEBUG_TAG_ENABLED
 #define _DEBUG_TAG_ENABLED 0
@@ -29,7 +30,6 @@ cbuffer PerImageCB
     Texture2D gUnweightedIllumination;
     Texture2D gWeightedIllumination;
     Texture2D gPrevGradient;
-    Texture2D<float> gVariance;
     StructuredBuffer<Reprojection> gReprojection;
 
     // Parameters
@@ -95,13 +95,14 @@ bool loadHistory(int2 ipos, out History h)
 struct PS_OUT
 {
     float4 color        : SV_Target0;
+#if DEBUG_OUTPUT_ENABLED
     float4 gradient     : SV_Target1;
     float gamma         : SV_Target2;
+#endif
 };
 
 PS_OUT main(FullScreenPassVsOut vsOut)
 {
-
     const int2 ipos = int2(vsOut.posH.xy);
 
     const float3 unweightedIllumination = gUnweightedIllumination[ipos].rgb;
@@ -157,8 +158,10 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
     PS_OUT psOut;
     psOut.color = float4(outIllumination, variance);
+#if DEBUG_OUTPUT_ENABLED
     psOut.gradient = float4(gradient, 0);
     psOut.gamma = gamma;
+#endif
 
     return psOut;
 }

@@ -29,6 +29,7 @@
 #include "Falcor.h"
 #include "RenderGraph/BasePasses/FullScreenPass.h"
 #include "Utils/Algorithm/ComputeParallelReduction.h"
+#include "Configs.h"
 
 using namespace Falcor;
 
@@ -93,5 +94,6 @@ private:
     float mAverageSampleCountBudget = 2.0f;
     float mMinVariance = 0.01f;
     float mMaxVariance = 10.0f;
-    float mMinSamplePerPixel = 1.0f;
+    uint32_t mMinSamplePerPixel = 1;
+    uint32_t mMaxSamplePerPixel = 16;
 };

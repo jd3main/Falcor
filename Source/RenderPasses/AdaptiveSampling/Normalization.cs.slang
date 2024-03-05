@@ -1,11 +1,14 @@
 #include "Enums.h"
 
+#define EPS 1e-4f
+
 cbuffer PerImageCB
 {
     // Parameters
     uint2 gResolution;
     float gAverageSampleCountBudget;
-    float gMinSamplePerPixel;
+    uint gMinSamplePerPixel;
+    uint gMaxSamplePerPixel;
     float gMinWeight;
     Buffer<float> gTotalWeight;
 };
@@ -24,9 +27,11 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     const float weight = gInputDensityWeight[pixelPos].x;
     const float totalWeight = gTotalWeight[0];
     const float averageWeight = totalWeight / (gResolution.x * gResolution.y);
-    const float scale = (averageWeight - gMinWeight) / (gAverageSampleCountBudget - gMinSamplePerPixel);
+    const float averageExtraSampleCount = (gAverageSampleCountBudget - gMinSamplePerPixel);
+    const float averageExtraWeight = (averageWeight - gMinWeight);
+    const float extraSampleCountPerExtraWeight = averageExtraSampleCount / (averageExtraWeight + EPS);
 
-    const float sampleCount = gMinSamplePerPixel + (weight - gMinWeight) * scale;
+    const float sampleCount = gMinSamplePerPixel + extraSampleCountPerExtraWeight * (weight - gMinWeight);
 
-    gOutputSampleCount[pixelPos] = max((uint)floor(sampleCount), 1u);
+    gOutputSampleCount[pixelPos] = clamp((uint)floor(sampleCount), gMinSamplePerPixel, gMaxSamplePerPixel);
 }

@@ -86,7 +86,7 @@ loadRenderPassLibrary('Utils.dll')
 loadRenderPassLibrary('AdaptiveSampling.dll')
 loadRenderPassLibrary('ReprojectionPass.dll')
 
-DEFAULT_GT_SAMPLE_COUNT = 64
+DEFAULT_GT_SAMPLE_COUNT = 96
 DEFAULT_OUTPUT_PATH = Path(__file__).parent/"Output"
 DEFAULT_BASE_FILENAME = "Mogwai"
 
@@ -109,7 +109,8 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
                    adaptive_pass_enabled=False, adaptive_pass_params:dict={},
                    output_sample_count=False,
                    sample_count=DEFAULT_GT_SAMPLE_COUNT,
-                   debug_tag_enabled=False):
+                   debug_tag_enabled=False,
+                   **kwargs):
     g = RenderGraph('g')
 
     GBufferRaster = createPass('GBufferRaster', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack})
@@ -123,8 +124,9 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
             'Enabled': True,
             'AverageSampleCountBudget': 2.0,
             'MinVariance': 0.01,
-            'MaxVariance': 10.0,
-            'MinSamplePerPixel': 1.0,
+            'MaxVariance': 100.0,
+            'MinSamplePerPixel': 1,
+            'MaxSamplePerPixel': 16,
             **adaptive_pass_params})
         g.addPass(AdaptiveSampling, 'AdaptiveSampling')
 
@@ -318,9 +320,17 @@ def normalizeGraphParams(graph_params: dict) -> dict:
             graph_params['dynamic_weighting_params'] = {
                 'SelectionMode': SelectionMode.WEIGHTED,
             }
-    if 'foveated_pass_enabled' in graph_params:
-        if not graph_params['foveated_pass_enabled']:
-            graph_params['foveated_pass_params'] = {}
+
+    if 'foveated_pass_enabled' not in graph_params:
+        graph_params['foveated_pass_enabled'] = False
+    if not graph_params['foveated_pass_enabled']:
+        graph_params['foveated_pass_params'] = {}
+
+    if 'adaptive_pass_enabled' not in graph_params:
+        graph_params['adaptive_pass_enabled'] = False
+    if not graph_params['adaptive_pass_enabled']:
+        graph_params['adaptive_pass_params'] = {}
+
     return graph_params
 
 def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
@@ -363,10 +373,11 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
                 NormalizationMode(graph_params['dynamic_weighting_params']['NormalizationMode']).name))
 
     if graph_params['adaptive_pass_enabled']:
-        folder_name_parts.append('adaptive({},{},{},{})'.format(
+        folder_name_parts.append('Adaptive({},{},{},{},{})'.format(
             graph_params['adaptive_pass_params']['AverageSampleCountBudget'],
             graph_params['adaptive_pass_params']['MinVariance'],
             graph_params['adaptive_pass_params']['MaxVariance'],
+            graph_params['adaptive_pass_params']['MinSamplePerPixel'],
             graph_params['adaptive_pass_params']['MinSamplePerPixel']))
 
     folder_name = '_'.join(folder_name_parts)
@@ -431,8 +442,8 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     gc.collect()
 
 
-scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
-# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
+scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
@@ -447,7 +458,7 @@ except Exception as e:
 
 common_record_params = {
     'fps': 30,
-    'start_time': 0,
+    'start_time': 15.9,
     'end_time': 20,
 }
 
@@ -457,10 +468,11 @@ common_graph_params = {
 }
 
 adaptive_params_override = {
-    'AverageSampleCountBudget': 2.0,
+    'AverageSampleCountBudget': 1.0,
     'MinVariance': 0.01,
-    'MaxVariance': 10.0,
-    'MinSamplePerPixel': 1.0
+    'MaxVariance': 100.0,
+    'MinSamplePerPixel': 1,
+    'MaxSamplePerPixel': 16,
 }
 
 gt_sample_Count = 96
@@ -474,7 +486,7 @@ iter_params = [
 midpoints = [0, 0.05, 0.5, 1.0]
 steepnesses = [0.1, 1, 10]
 
-force_record_selections =  False
+force_record_selections =  True
 force_record_step = False
 force_record_unweighted = False
 force_record_weighted = False
@@ -573,20 +585,20 @@ for iters, feedback, grad_iters in iter_params:
 
 
     # Generate ground truth
-    # print("Run Ground Truth")
-    # run(graph_params_override = {
-    #         'iters': iters,
-    #         'feedback': feedback,
-    #         'grad_iters': iters,
-    #         'dynamic_weighting_enabled': False,
-    #         'sample_count': gt_sample_Count,
-    #         **common_graph_params
-    #     },
-    #     record_params_override={
-    #         **common_record_params,
-    #     },
-    #     force_record=force_record_ground_truth
-    # )
+    print("Run Ground Truth")
+    run(graph_params_override = {
+            'iters': iters,
+            'feedback': feedback,
+            'grad_iters': iters,
+            'dynamic_weighting_enabled': False,
+            'sample_count': gt_sample_Count,
+            **common_graph_params
+        },
+        record_params_override={
+            **common_record_params,
+        },
+        force_record=force_record_ground_truth
+    )
 
 print("All Done")
 exit()

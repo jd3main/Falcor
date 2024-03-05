@@ -31,6 +31,8 @@ import Utils.Color.ColorHelpers;
 import Utils.Color.ColorMap;
 import RenderPasses.SVGFPass.SVGFCommon;
 
+#include "RenderPasses/DynamicWeightingSVGF/Configs.h"
+
 #define MAX_HISTORY_LENGTH 32
 
 #define DW_ENABLED _DW_ENABLED

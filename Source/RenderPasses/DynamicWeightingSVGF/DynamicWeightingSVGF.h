@@ -3,6 +3,7 @@
 #include "RenderGraph/BasePasses/FullScreenPass.h"
 #include "RenderGraph/BasePasses/ComputePass.h"
 #include "Enums.h"
+#include "Configs.h"
 
 using namespace Falcor;
 
@@ -81,7 +82,7 @@ private:
     float   mGammaSteepness = 100;
     uint32_t mSelectionMode = (uint32_t)SelectionMode::Logistic;
     uint32_t mNormalizationMode = (uint32_t)NormalizationMode::None;
-    bool    mUseInputReprojection = true;
+    bool    mUseInputReprojection = false;
 
     // Debug parameters
     bool mEnableDebugOutput = false;
@@ -115,7 +116,6 @@ private:
     // Intermediate textures
     Texture::SharedPtr mpPrevLinearZAndNormalTexture;
     Texture::SharedPtr mpPrevGradientTexture;
-    Texture::SharedPtr mpVarianceTexture;
     Texture::SharedPtr mpPrevUnweightedIllumination;
     Texture::SharedPtr mpPrevWeightedIllumination;
 

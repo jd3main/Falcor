@@ -432,7 +432,9 @@ for iters, feedback, grad_iters in iter_params:
         print(tables[field_index].to_csv(sep='\t', lineterminator='\n'))
 
     # write tables to file
-    save_path = Path(f'{scene_name}_iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Err({err_type.name})_{sampling}.txt')
+    output_dir = Path(f'{sampling}/{scene_name}')
+    ensurePath(output_dir)
+    save_path = output_dir/Path(f'iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Err({err_type.name}).txt')
     with open(save_path, 'w') as f:
         f.write(f'# {scene_name}\n')
         for folder in source_folders:

@@ -4,6 +4,7 @@ target_sources(AdaptiveSampling PRIVATE
     AdaptiveSampling.cpp
     AdaptiveSampling.h
     Enums.h
+    Configs.h
 
     WeightEstimation.cs.slang
     Normalization.cs.slang

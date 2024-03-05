@@ -4,6 +4,7 @@ target_sources(DynamicWeightingSVGF PRIVATE
     DynamicWeightingSVGF.cpp
     DynamicWeightingSVGF.h
     Enums.h
+    Configs.h
 
     DynamicWeighting.ps.slang
     TemporalFilter.ps.slang

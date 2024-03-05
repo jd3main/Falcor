@@ -26,6 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "AdaptiveSampling.h"
+#include "Configs.h"
 
 #include "RenderGraph/RenderPassLibrary.h"
 #include "RenderGraph/RenderPassHelpers.h"
@@ -50,11 +51,15 @@ namespace
 
     // Output channels
     const char kOutputSampleCount[] = "sampleCount";
+#if DEBUG_OUTPUT_ENABLED
     const char kOutputDensityWeight[] = "densityWeight";
+#endif
     const ChannelList kOutputChannels =
     {
         { kOutputSampleCount,   "_", "The number of samples per pixel",     false, ResourceFormat::R8Uint },
+#if DEBUG_OUTPUT_ENABLED
         { kOutputDensityWeight, "_", "Unnormalized density",                false, ResourceFormat::R32Float },
+#endif
     };
 
     // Serialized parameters
@@ -63,6 +68,7 @@ namespace
     const char kMinVariance[] = "MinVariance";
     const char kMaxVariance[] = "MaxVariance";
     const char kMinSamplePerPixel[] = "MinSamplePerPixel";
+    const char kMaxSamplePerPixel[] = "MaxSamplePerPixel";
 }
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -86,6 +92,7 @@ AdaptiveSampling::AdaptiveSampling(const Dictionary& dict)
         else if (key == kMinVariance) mMinVariance = value;
         else if (key == kMaxVariance) mMaxVariance = value;
         else if (key == kMinSamplePerPixel) mMinSamplePerPixel = value;
+        else if (key == kMaxSamplePerPixel) mMaxSamplePerPixel = value;
         else logWarning("Unknown field '" + key + "' in a AdaptiveSampling dictionary");
     }
     mpReflectTypes = ComputePass::create(kReflectTypesShader);
@@ -105,6 +112,7 @@ Dictionary AdaptiveSampling::getScriptingDictionary()
     dict[kMinVariance] = mMinVariance;
     dict[kMaxVariance] = mMaxVariance;
     dict[kMinSamplePerPixel] = mMinSamplePerPixel;
+    dict[kMaxSamplePerPixel] = mMaxSamplePerPixel;
     return dict;
 }
 
@@ -206,7 +214,9 @@ void AdaptiveSampling::runWeightEstimationPass(RenderContext* pRenderContext, co
     Texture::SharedPtr pInputHistoryLength = renderData.getTexture(kInputHistoryLength);
     Buffer::SharedPtr pInputBufferReprojection = renderData.getResource(kInputBufferReprojection)->asBuffer();
 
+#if DEBUG_OUTPUT_ENABLED
     Texture::SharedPtr pOutputDensityWeight = renderData.getTexture(kOutputDensityWeight);
+#endif
 
     FALCOR_ASSERT(pInputBufferReprojection);
 
@@ -225,7 +235,9 @@ void AdaptiveSampling::runWeightEstimationPass(RenderContext* pRenderContext, co
     mpWeightEstimationState->setProgram(mpWeightEstimationProgram);
     pRenderContext->dispatch(mpWeightEstimationState.get(), mpWeightEstimationVars.get(), numGroups);
 
+#if DEBUG_OUTPUT_ENABLED
     pRenderContext->blit(mpDensityWeight->getSRV(), pOutputDensityWeight->getRTV());
+#endif
 }
 
 
@@ -247,6 +259,7 @@ void AdaptiveSampling::runNormalizeWeightPass(RenderContext* pRenderContext, con
     perImageCB["gResolution"] = mFrameDim;
     perImageCB["gAverageSampleCountBudget"] = mAverageSampleCountBudget;
     perImageCB["gMinSamplePerPixel"] = mMinSamplePerPixel;
+    perImageCB["gMaxSamplePerPixel"] = mMaxSamplePerPixel;
     perImageCB["gMinWeight"] = mMinVariance;
     perImageCB["gTotalWeight"] = mpTotalWeightBuffer;
     mpNormalizationVars["gInputDensityWeight"] = mpDensityWeight;
@@ -273,5 +286,7 @@ void AdaptiveSampling::renderUI(Gui::Widgets& widget)
     widget.var("Min Variance", mMinVariance, 0.0f, 1.0f);
     widget.var("Max Variance", mMaxVariance, 0.0f, 100.0f);
     widget.var("Average Sample Count Budget", mAverageSampleCountBudget, 1.0f, 16.0f);
+    widget.var("Min Sample Per Pixel", mMinSamplePerPixel, 0u, 16u, 1u);
+    widget.var("Max Sample Per Pixel", mMaxSamplePerPixel, 1u, 16u, 1u);
     widget.text(std::string("Current average weight: ") + std::to_string(mAverageWeight));
 }

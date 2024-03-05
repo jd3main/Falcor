@@ -39,7 +39,7 @@ struct History
     float variance;
 };
 
-int loadReprojectedHistory(int2 ipos, out History h)
+bool loadReprojectedHistory(int2 ipos, out History h)
 {
     h.length = 0;
     h.variance = 0;
@@ -93,8 +93,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     History history;
     const bool valid = loadReprojectedHistory(pixelPos, history);
-    float variance = (!valid) ? gMaxVariance : max(history.variance, gMaxVariance / history.length);
-    variance = clamp(variance, gMinVariance, gMaxVariance);
-    const float weight = variance;
+    const float variance = (!valid) ? gMaxVariance : max(history.variance, gMaxVariance / history.length);
+    const float weight = clamp(variance, gMinVariance, gMaxVariance);
     gOutputSampleDensityWeight[pixelPos] = weight;
 }

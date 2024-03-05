@@ -263,9 +263,17 @@ def normalizeGraphParams(graph_params: dict) -> dict:
             graph_params['dynamic_weighting_params'] = {
                 'SelectionMode': SelectionMode.WEIGHTED,
             }
-    if 'foveated_pass_enabled' in graph_params:
-        if not graph_params['foveated_pass_enabled']:
-            graph_params['foveated_pass_params'] = {}
+
+    if 'foveated_pass_enabled' not in graph_params:
+        graph_params['foveated_pass_enabled'] = False
+    if not graph_params['foveated_pass_enabled']:
+        graph_params['foveated_pass_params'] = {}
+
+    if 'adaptive_pass_enabled' not in graph_params:
+        graph_params['adaptive_pass_enabled'] = False
+    if not graph_params['adaptive_pass_enabled']:
+        graph_params['adaptive_pass_params'] = {}
+
     return graph_params
 
 def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
