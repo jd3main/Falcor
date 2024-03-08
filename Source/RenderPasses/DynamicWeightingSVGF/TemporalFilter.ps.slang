@@ -63,7 +63,6 @@ cbuffer PerImageCB
     Texture2D gPrevUnweightedHistoryWeight;
     Texture2D gPrevWeightedHistoryWeight;
 
-    RWTexture2D<float> gVariance;
 
     float gAlpha;
     float gMomentsAlpha;
@@ -255,6 +254,7 @@ struct PS_OUT
     float OutUnweightedHistoryWeight        : SV_TARGET3;
     float4 OutWeightedHistoryIllumination   : SV_TARGET4;
     float OutWeightedHistoryWeight          : SV_TARGET5;
+    float OutVariance                       : SV_TARGET6;
 };
 
 // PS_OUT main(FullScreenPassVsOut vsOut)
@@ -312,8 +312,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutWeightedHistoryWeight = weightedHistoryWeight;
     psOut.OutWeightedHistoryIllumination = float4(outWeightedIllumination, variance);
 #endif
-
-    gVariance[ipos] = variance;
+    psOut.OutVariance = variance;
 
     return psOut;
 }

@@ -1,6 +1,11 @@
 import RenderPasses.ReprojectionPass.ReprojectionStruct;
 
+namespace FullScreenPass
+{
+    #include "RenderGraph/BasePasses/FullScreenPass.vs.slang"
+}
 #include "Enums.h"
+
 
 int2 getTextureDims(Texture2D tex, uint mip)
 {
@@ -44,7 +49,8 @@ bool loadReprojectedHistory(int2 ipos, out History h)
     h.length = 0;
     h.variance = 0;
 
-    const int2 imageDim = getTextureDims(gInputHistoryLength, 0);
+    const int2 imageDim = getTextureDims(gInputVariance, 0);
+    // const int2 imageDim = 1280*720;
     const int idx = ipos.y * imageDim.x + ipos.x;
     const Reprojection reprojection = gInputReprojection[idx];
 
@@ -68,32 +74,35 @@ bool loadReprojectedHistory(int2 ipos, out History h)
             {
                 i++;
                 const int2 loc = reprojection.iposPrev + int2(xx, yy);
-                if (reprojection.w[i] != 0)
-                {
-                    h.length += gInputHistoryLength[loc].x * reprojection.w[i];
-                    h.variance += gInputVariance[loc].x * reprojection.w[i];
-                }
+                h.length += gInputHistoryLength[loc].x * reprojection.w[i];
+                h.variance += gInputVariance[loc].x * reprojection.w[i];
             }
         }
     }
 
-    if (isNaN(h.length))
+    if (isNaN(h.length) || isinf(h.length))
         h.length = 0;
-    if (isNaN(h.variance))
+    if (isNaN(h.variance) || isinf(h.variance))
         h.variance = 0;
 
     return reprojection.tapWidth > 0;
 }
 
-[numthreads(16, 16, 1)]
-void main(uint3 dispatchThreadId : SV_DispatchThreadID)
+struct PS_OUT
 {
-    if (any(dispatchThreadId.xy >= gResolution)) return;
-    const uint2 pixelPos = dispatchThreadId.xy;
+    float weight : SV_Target0;
+};
+
+PS_OUT main(FullScreenPass.VsOut vsOut)
+{
+    const int2 ipos = int2(vsOut.posH.xy);
 
     History history;
-    const bool valid = loadReprojectedHistory(pixelPos, history);
-    const float variance = (!valid) ? gMaxVariance : max(history.variance, gMaxVariance / history.length);
+    const bool valid = loadReprojectedHistory(ipos, history);
+    const float variance = (history.length >= 1) ? max(history.variance, gMaxVariance / history.length) : gMaxVariance;
     const float weight = clamp(variance, gMinVariance, gMaxVariance);
-    gOutputSampleDensityWeight[pixelPos] = weight;
+
+    PS_OUT psOut;
+    psOut.weight = weight;
+    return psOut;
 }

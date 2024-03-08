@@ -39,7 +39,8 @@ private:
         Texture::SharedPtr pSampleCount,
         Texture::SharedPtr pEmissionTexture,
         Texture::SharedPtr pMotionVectorTexture,
-        Texture::SharedPtr pPositionNormalFwidthTexture);
+        Texture::SharedPtr pPositionNormalFwidthTexture,
+        Texture::SharedPtr pOutputVarianceTexture);
     void computeReprojection(RenderContext* pRendercontext,
         Texture::SharedPtr pColorTexture,
         Texture::SharedPtr pLinearZTexture,

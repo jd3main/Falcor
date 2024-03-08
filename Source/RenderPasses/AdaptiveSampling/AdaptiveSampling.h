@@ -59,7 +59,7 @@ public:
 private:
     AdaptiveSampling(const Dictionary& dict);
 
-    void allocateResources();
+    void allocateResources(uint2 dim, RenderContext* pRenderContext);
     void clearBuffers(RenderContext* pRenderContext, const RenderData& renderData);
     void runWeightEstimationPass(RenderContext* pRenderContext, const RenderData& renderData);
     void runReductionPass(RenderContext* pRenderContext, const RenderData& renderData);
@@ -68,18 +68,14 @@ private:
     uint32_t getReprojectStructSize();
 
     // Compute programs and state
-    ComputeProgram::SharedPtr mpWeightEstimationProgram;
-    ComputeVars::SharedPtr mpWeightEstimationVars;
-    ComputeState::SharedPtr mpWeightEstimationState;
-
-    ComputeProgram::SharedPtr mpNormalizationProgram;
-    ComputeVars::SharedPtr mpNormalizationVars;
-    ComputeState::SharedPtr mpNormalizationState;
+    FullScreenPass::SharedPtr mpWeightEstimationPass;
+    FullScreenPass::SharedPtr mpNormalizationPass;
 
     ComputePass::SharedPtr mpReflectTypes;  ///< Helper for reflecting structured buffer types.
 
     // Internal buffers
-    Texture::SharedPtr mpDensityWeight = nullptr;
+    Fbo::SharedPtr mpWeightEstimationFbo;
+    Fbo::SharedPtr mpNormalizationFbo;
 
     // Internal states
     uint2 mFrameDim = uint2(0);

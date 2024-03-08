@@ -6,8 +6,8 @@ target_sources(AdaptiveSampling PRIVATE
     Enums.h
     Configs.h
 
-    WeightEstimation.cs.slang
-    Normalization.cs.slang
+    WeightEstimation.ps.slang
+    Normalization.ps.slang
 )
 
 target_source_group(AdaptiveSampling "RenderPasses")

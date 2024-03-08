@@ -35,8 +35,8 @@ const RenderPass::Info AdaptiveSampling::kInfo { "AdaptiveSampling", "Insert pas
 
 namespace
 {
-    const char kWeightEstimationShaderFile[] = "RenderPasses/AdaptiveSampling/WeightEstimation.cs.slang";
-    const char kNormalizationShaderFile[] = "RenderPasses/AdaptiveSampling/Normalization.cs.slang";
+    const char kWeightEstimationShaderFile[] = "RenderPasses/AdaptiveSampling/WeightEstimation.ps.slang";
+    const char kNormalizationShaderFile[] = "RenderPasses/AdaptiveSampling/Normalization.ps.slang";
     const char kReflectTypesShader[] = "RenderPasses/ReprojectionPass/ReflectTypes.cs.slang";
 
     // Input channels
@@ -130,7 +130,7 @@ RenderPassReflection AdaptiveSampling::reflect(const CompileData& compileData)
 {
     // Define the required resources here
     RenderPassReflection reflector;
-    addRenderPassInputs(reflector, kInputChannels);
+    addRenderPassInputs(reflector, kInputChannels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess);
 
     reflector.addField(RenderPassReflection::Field())
@@ -146,23 +146,14 @@ RenderPassReflection AdaptiveSampling::reflect(const CompileData& compileData)
 void AdaptiveSampling::compile(RenderContext* pRenderContext, const CompileData& compileData)
 {
     mFrameDim = compileData.defaultTexDims;
-    allocateResources();
+    allocateResources(mFrameDim, pRenderContext);
 
     {
         Program::DefineList defines;
-
-        mpWeightEstimationProgram = ComputeProgram::createFromFile(kWeightEstimationShaderFile, "main", defines, Shader::CompilerFlags::TreatWarningsAsErrors);
-        mpWeightEstimationVars = ComputeVars::create(mpWeightEstimationProgram->getReflector());
-        mpWeightEstimationState = ComputeState::create();
-
         mpParallelReduction = ComputeParallelReduction::create();
-
-        mpNormalizationProgram = ComputeProgram::createFromFile(kNormalizationShaderFile, "main", defines, Shader::CompilerFlags::TreatWarningsAsErrors);
-        mpNormalizationVars = ComputeVars::create(mpNormalizationProgram->getReflector());
-        mpNormalizationState = ComputeState::create();
+        mpWeightEstimationPass = FullScreenPass::create(kWeightEstimationShaderFile);
+        mpNormalizationPass = FullScreenPass::create(kNormalizationShaderFile);
     }
-
-    mBuffersNeedClear = true;
 }
 
 void AdaptiveSampling::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -172,7 +163,7 @@ void AdaptiveSampling::execute(RenderContext* pRenderContext, const RenderData& 
     if (resolution != mFrameDim)
     {
         mFrameDim = resolution;
-        allocateResources();
+        allocateResources(mFrameDim, pRenderContext);
     }
 
     if (mBuffersNeedClear)
@@ -192,17 +183,27 @@ void AdaptiveSampling::execute(RenderContext* pRenderContext, const RenderData& 
     runNormalizeWeightPass(pRenderContext, renderData);
 }
 
-void AdaptiveSampling::allocateResources()
+void AdaptiveSampling::allocateResources(uint2 dim, RenderContext* pRenderContext)
 {
-    mpDensityWeight = Texture::create2D(mFrameDim.x, mFrameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
-        ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource | ResourceBindFlags::RenderTarget);
-
     mpTotalWeightBuffer = Buffer::create(sizeof(float4), Buffer::BindFlags::UnorderedAccess | Buffer::BindFlags::ShaderResource, Buffer::CpuAccess::None, nullptr);
+
+    {
+        Fbo::Desc desc;
+        desc.setColorTarget(0, ResourceFormat::R32Float);
+        mpWeightEstimationFbo = Fbo::create2D(dim.x, dim.y, desc);
+    }
+
+    {
+        Fbo::Desc desc;
+        desc.setColorTarget(0, ResourceFormat::R32Float);
+        mpNormalizationFbo = Fbo::create2D(dim.x, dim.y, desc);
+    }
 }
 
 void AdaptiveSampling::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    pRenderContext->clearTexture(mpDensityWeight.get(), float4(0.0f, 0.0f, 0.0f, 0.0f));
+    pRenderContext->clearFbo(mpWeightEstimationFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpNormalizationFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     mBuffersNeedClear = false;
 }
 
@@ -218,25 +219,21 @@ void AdaptiveSampling::runWeightEstimationPass(RenderContext* pRenderContext, co
     Texture::SharedPtr pOutputDensityWeight = renderData.getTexture(kOutputDensityWeight);
 #endif
 
-    FALCOR_ASSERT(pInputBufferReprojection);
+    // FALCOR_ASSERT(pInputBufferReprojection);
 
     // Set shader parameters
-    auto perImageCB = mpWeightEstimationVars["PerImageCB"];
+    auto perImageCB = mpWeightEstimationPass["PerImageCB"];
     perImageCB["gInputReprojection"] = pInputBufferReprojection;
     perImageCB["gInputVariance"] = pInputVariance;
     perImageCB["gInputHistoryLength"] = pInputHistoryLength;
-    perImageCB["gOutputSampleDensityWeight"] = mpDensityWeight;
     perImageCB["gResolution"] = mFrameDim;
     perImageCB["gMinVariance"] = mMinVariance;
     perImageCB["gMaxVariance"] = mMaxVariance;
 
-    uint3 numGroups = div_round_up(uint3(mFrameDim.x, mFrameDim.y, 1u), mpWeightEstimationProgram->getReflector()->getThreadGroupSize());
-
-    mpWeightEstimationState->setProgram(mpWeightEstimationProgram);
-    pRenderContext->dispatch(mpWeightEstimationState.get(), mpWeightEstimationVars.get(), numGroups);
+    mpWeightEstimationPass->execute(pRenderContext, mpWeightEstimationFbo);
 
 #if DEBUG_OUTPUT_ENABLED
-    pRenderContext->blit(mpDensityWeight->getSRV(), pOutputDensityWeight->getRTV());
+    pRenderContext->blit(mpWeightEstimationFbo->getColorTexture(0)->getSRV(), pOutputDensityWeight->getRTV());
 #endif
 }
 
@@ -246,7 +243,8 @@ void AdaptiveSampling::runReductionPass(RenderContext* pRenderContext, const Ren
     FALCOR_PROFILE("runReductionPass");
 
     float4 totalWeight;
-    mpParallelReduction->execute(pRenderContext, mpDensityWeight, ComputeParallelReduction::Type::Sum, (float4*)nullptr, mpTotalWeightBuffer, 0);
+    mpParallelReduction->execute<float4>(pRenderContext, mpWeightEstimationFbo->getColorTexture(0), ComputeParallelReduction::Type::Sum, nullptr, mpTotalWeightBuffer, 0);
+    mAverageWeight = totalWeight.x / (mFrameDim.x * mFrameDim.y);
 }
 
 void AdaptiveSampling::runNormalizeWeightPass(RenderContext* pRenderContext, const RenderData& renderData)
@@ -255,21 +253,18 @@ void AdaptiveSampling::runNormalizeWeightPass(RenderContext* pRenderContext, con
 
     Texture::SharedPtr pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
 
-    auto perImageCB = mpNormalizationVars["PerImageCB"];
+    auto perImageCB = mpNormalizationPass["PerImageCB"];
+    perImageCB["gInputWeight"] = mpWeightEstimationFbo->getColorTexture(0);
     perImageCB["gResolution"] = mFrameDim;
     perImageCB["gAverageSampleCountBudget"] = mAverageSampleCountBudget;
-    perImageCB["gMinSamplePerPixel"] = mMinSamplePerPixel;
-    perImageCB["gMaxSamplePerPixel"] = mMaxSamplePerPixel;
     perImageCB["gMinWeight"] = mMinVariance;
     perImageCB["gTotalWeight"] = mpTotalWeightBuffer;
-    mpNormalizationVars["gInputDensityWeight"] = mpDensityWeight;
-    mpNormalizationVars["gOutputSampleCount"] = pOutputSampleCount;
+    perImageCB["gMinSamplePerPixel"] = mMinSamplePerPixel;
+    perImageCB["gMaxSamplePerPixel"] = mMaxSamplePerPixel;
 
+    mpNormalizationPass->execute(pRenderContext, mpNormalizationFbo);
 
-    uint3 numGroups = div_round_up(uint3(mFrameDim.x, mFrameDim.y, 1u), mpNormalizationProgram->getReflector()->getThreadGroupSize());
-
-    mpNormalizationState->setProgram(mpNormalizationProgram);
-    pRenderContext->dispatch(mpNormalizationState.get(), mpNormalizationVars.get(), numGroups);
+    pRenderContext->blit(mpNormalizationFbo->getColorTexture(0)->getSRV(), pOutputSampleCount->getRTV());
 }
 
 // void AdaptiveSampling::setScene(RenderContext* pRenderContext, const Scene::SharedPtr& pScene)
@@ -282,11 +277,14 @@ void AdaptiveSampling::runNormalizeWeightPass(RenderContext* pRenderContext, con
 
 void AdaptiveSampling::renderUI(Gui::Widgets& widget)
 {
-    widget.checkbox("Enabled", mEnabled);
-    widget.var("Min Variance", mMinVariance, 0.0f, 1.0f);
-    widget.var("Max Variance", mMaxVariance, 0.0f, 100.0f);
-    widget.var("Average Sample Count Budget", mAverageSampleCountBudget, 1.0f, 16.0f);
-    widget.var("Min Sample Per Pixel", mMinSamplePerPixel, 0u, 16u, 1u);
-    widget.var("Max Sample Per Pixel", mMaxSamplePerPixel, 1u, 16u, 1u);
-    widget.text(std::string("Current average weight: ") + std::to_string(mAverageWeight));
+    bool dirty = false;
+    dirty |= widget.checkbox("Enabled", mEnabled);
+    dirty |= widget.var("Average Sample Count Budget", mAverageSampleCountBudget, 1.0f, 16.0f);
+    dirty |= widget.var("Min Variance", mMinVariance, 0.0f, 1.0f);
+    dirty |= widget.var("Max Variance", mMaxVariance, 0.0f, 100.0f);
+    dirty |= widget.var("Min Sample Per Pixel", mMinSamplePerPixel, 0u, 16u, 1u);
+    dirty |= widget.var("Max Sample Per Pixel", mMaxSamplePerPixel, 1u, 16u, 1u);
+    widget.text("Average Weight: " + std::to_string(mAverageWeight));
+
+    if (dirty) mBuffersNeedClear = true;
 }

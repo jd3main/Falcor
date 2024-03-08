@@ -90,6 +90,7 @@ namespace
     // Output buffers
     const char kOutputBufferFilteredImage[] = "Filtered image";
     const char kOutputHistoryLength[] = "HistLength";
+    const char kOutputVariance[] = "Variance";
 #if DEBUG_OUTPUT_ENABLED
     const char kOutputUnweightedHistoryWeight[] = "Weight_U";
     const char kOutputWeightedHistoryWeight[] = "Weight_W";
@@ -101,12 +102,11 @@ namespace
     const char kOutputGradient[] = "OutGradient";
     const char kOutputGamma[] = "OutGamma";
 #endif
-    const char kOutputVariance[] = "Variance";
     const ChannelList kOutputChannels =
     {
         /* { name, texname, description, optional, format } */
         { kOutputBufferFilteredImage,           "_",   "Filtered image",                  false,  ResourceFormat::RGBA16Float },
-        { kOutputHistoryLength,                 "_",   "History Length",                  false,  ResourceFormat::R32Float },
+        // { kOutputHistoryLength,                 "_",   "History Length",                  false,  ResourceFormat::R32Float },
 #if DEBUG_OUTPUT_ENABLED
         { kOutputUnweightedHistoryWeight,       "_",   "Unweighted History Weight",       false,  ResourceFormat::R32Float },
         { kOutputWeightedHistoryWeight,         "_",   "Weighted History Weight",         false,  ResourceFormat::R32Float },
@@ -128,6 +128,7 @@ namespace
         UnweightedHistoryWeight,
         WeightedHistoryIllumination,
         WeightedHistoryWeight,
+        Variance,
     };
 
     enum class DynamicWeightingOutFields
@@ -281,6 +282,11 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
 
     addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::RenderTarget);
+
+    reflector.addOutput(kOutputHistoryLength, "History Length")
+        .format(ResourceFormat::R32Float)
+        .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+
     reflector.addOutput(kOutputVariance, "Variance")
         .format(ResourceFormat::R32Float)
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
@@ -311,6 +317,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     // Output Textures
     Texture::SharedPtr pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
     Texture::SharedPtr pOutputHistoryLength = renderData.getTexture(kOutputHistoryLength);
+    Texture::SharedPtr pOutputVariance = renderData.getTexture(kOutputVariance);
 #if DEBUG_OUTPUT_ENABLED
     Texture::SharedPtr pOutputUnweightedHistoryWeight = renderData.getTexture(kOutputUnweightedHistoryWeight);
     Texture::SharedPtr pOutputWeightedHistoryWeight = renderData.getTexture(kOutputWeightedHistoryWeight);
@@ -321,7 +328,6 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pOutputGradient = renderData.getTexture(kOutputGradient);
     Texture::SharedPtr pOutputGamma = renderData.getTexture(kOutputGamma);
 #endif
-    Texture::SharedPtr pOutputVariance = renderData.getTexture(kOutputVariance);
 
     if (!mpPackLinearZAndNormal || mRecompile)
     {
@@ -372,7 +378,8 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
             pSampleCountTexture,
             pEmissionTexture,
             pMotionVectorTexture,
-            pPosNormalFwidthTexture);
+            pPosNormalFwidthTexture,
+            pOutputVariance);
 
 #if DEBUG_OUTPUT_ENABLED
         if (mEnableDebugOutput)
@@ -424,16 +431,17 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         computeFinalModulate(pRenderContext, pAlbedoTexture, pEmissionTexture);
 
         // Blit into the output texture.
-        pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
-        pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture((uint32_t)TemporalFilterOutFields::HistoryLength)->getSRV(), pOutputHistoryLength->getRTV());
+        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture((uint32_t)TemporalFilterOutFields::HistoryLength)->getSRV(), pOutputHistoryLength->getRTV());
+        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture((uint32_t)TemporalFilterOutFields::Variance)->getSRV(), pOutputVariance->getRTV());
 #if DEBUG_OUTPUT_ENABLED
-        pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture((uint32_t)TemporalFilterOutFields::UnweightedHistoryWeight)->getSRV(), pOutputUnweightedHistoryWeight->getRTV());
+        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture((uint32_t)TemporalFilterOutFields::UnweightedHistoryWeight)->getSRV(), pOutputUnweightedHistoryWeight->getRTV());
         if (mDynamicWeighingEnabled)
         {
             FALCOR_PROFILE("[debug] blit weight");
-            pRenderContext->blit(mpPrevTemporalFilterFbo->getColorTexture((uint32_t)TemporalFilterOutFields::WeightedHistoryWeight)->getSRV(), pOutputWeightedHistoryWeight->getRTV());
+            pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture((uint32_t)TemporalFilterOutFields::WeightedHistoryWeight)->getSRV(), pOutputWeightedHistoryWeight->getRTV());
         }
 #endif
+        pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
 
         // Swap resources so we're ready for next frame.
         std::swap(mpCurTemporalFilterFbo, mpPrevTemporalFilterFbo);
@@ -462,6 +470,7 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
         desc.setColorTarget((uint32_t)TemporalFilterOutFields::UnweightedHistoryWeight, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget((uint32_t)TemporalFilterOutFields::WeightedHistoryIllumination, Falcor::ResourceFormat::RGBA32Float);
         desc.setColorTarget((uint32_t)TemporalFilterOutFields::WeightedHistoryWeight, Falcor::ResourceFormat::R32Float);
+        desc.setColorTarget((uint32_t)TemporalFilterOutFields::Variance, Falcor::ResourceFormat::R32Float);
         mpCurTemporalFilterFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpPrevTemporalFilterFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
@@ -578,13 +587,13 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     Texture::SharedPtr pSampleCountTexture,
     Texture::SharedPtr pEmissionTexture,
     Texture::SharedPtr pMotionVectorTexture,
-    Texture::SharedPtr pPositionNormalFwidthTexture)
+    Texture::SharedPtr pPositionNormalFwidthTexture,
+    Texture::SharedPtr pOutputVarianceTexture)
 {
     FALCOR_PROFILE("computeTemporalFilter");
 
     mpPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
     mpPrevGradientTexture = renderData.getTexture(kInternalBufferPreviousGradient);
-    Texture::SharedPtr pOutputVarianceTexture = renderData.getTexture(kOutputVariance);
 
     auto perImageCB = mpTemporalFilter["PerImageCB"];
 
@@ -612,9 +621,6 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
         perImageCB["gPrevWeightedHistoryWeight"] = mpPrevTemporalFilterFbo->getColorTexture((uint32_t)TemporalFilterOutFields::WeightedHistoryWeight);
         perImageCB["gPrevWeightedIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
     }
-
-    // Outputs
-    perImageCB["gVariance"] = pOutputVarianceTexture;
 
     // Parameters
     perImageCB["gAlpha"] = mAlpha;

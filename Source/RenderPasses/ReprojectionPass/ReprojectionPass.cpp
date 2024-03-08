@@ -121,7 +121,7 @@ RenderPassReflection ReprojectionPass::reflect(const CompileData& compileData)
         .name(kOutputBufferReprojection)
         .desc("Reprojection Buffer")
         .visibility(RenderPassReflection::Field::Visibility::Output)
-        .bindFlags(Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess | Resource::BindFlags::RenderTarget);
+        .bindFlags(Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
 
     reflector.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(ResourceFormat::RGBA32Float)
