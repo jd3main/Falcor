@@ -25,7 +25,9 @@ bool isNaN(float f)
 cbuffer PerImageCB
 {
     // Input buffers
-    StructuredBuffer<Reprojection> gInputReprojection;
+    Texture2D<int4> gInputReprojectionTapWidthAndPrevPos;
+    Texture2D gInputReprojectionW0123;
+    Texture2D gInputReprojectionW4567;
     Texture2D gInputHistoryLength;
     Texture2D gInputVariance;
 
@@ -49,10 +51,11 @@ bool loadReprojectedHistory(int2 ipos, out History h)
     h.length = 0;
     h.variance = 0;
 
-    const int2 imageDim = getTextureDims(gInputVariance, 0);
-    // const int2 imageDim = 1280*720;
-    const int idx = ipos.y * imageDim.x + ipos.x;
-    const Reprojection reprojection = gInputReprojection[idx];
+    const int4 reprojectionTapWidthAndPrevPos = gInputReprojectionTapWidthAndPrevPos[ipos];
+    const float4 reprojectionW0123 = gInputReprojectionW0123[ipos];
+    const float4 reprojectionW4567 = gInputReprojectionW4567[ipos];
+
+    const Reprojection reprojection = toReprojectionStruct(reprojectionTapWidthAndPrevPos, reprojectionW0123, reprojectionW4567);
 
     if (reprojection.tapWidth == 2)
     {

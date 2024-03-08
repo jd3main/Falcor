@@ -18,8 +18,6 @@ cbuffer PerImageCB
     Texture2D gLinearZAndNormal;
     Texture2D gPrevLinearZAndNormal;
     Texture2D gMotion;
-
-    RWStructuredBuffer<Reprojection> gReprojection;
 };
 
 bool isReprjValid(int2 coord, float Z, float Zprev, float fwidthZ, float3 normal, float3 normalPrev, float fwidthNormal)
@@ -145,7 +143,7 @@ Reprojection reproject(float2 posH)
     return reprojection;
 }
 
-float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
+ReprojectionPsOut main(FullScreenPassVsOut vsOut)
 {
     const float4 posH = vsOut.posH;
     const int2 ipos = posH.xy;
@@ -153,7 +151,10 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 
     const int2 imageDim = getTextureDims(gPositionNormalFwidth, 0);
     int idx = ipos.y * imageDim.x + ipos.x;
-    gReprojection[idx] = reprojection;
 
-    return float4(0, 0, 0, 0);
+    ReprojectionPsOut psOut;
+    psOut.tapWidthAndPrevPos.xyz = int3(reprojection.tapWidth, reprojection.iposPrev.x, reprojection.iposPrev.y);
+    psOut.w0123 = float4(reprojection.w[0], reprojection.w[1], reprojection.w[2], reprojection.w[3]);
+    psOut.w4567 = float4(reprojection.w[4], reprojection.w[5], reprojection.w[6], reprojection.w[7]);
+    return psOut;
 }

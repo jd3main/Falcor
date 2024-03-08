@@ -70,12 +70,15 @@ private:
     // Compute programs and state
     FullScreenPass::SharedPtr mpWeightEstimationPass;
     FullScreenPass::SharedPtr mpNormalizationPass;
+    FullScreenPass::SharedPtr mpReprojectionPass;
 
     ComputePass::SharedPtr mpReflectTypes;  ///< Helper for reflecting structured buffer types.
 
     // Internal buffers
     Fbo::SharedPtr mpWeightEstimationFbo;
     Fbo::SharedPtr mpNormalizationFbo;
+    Fbo::SharedPtr mpReprojectionFbo;
+    Buffer::SharedPtr mpReprojectionBuffer;
 
     // Internal states
     uint2 mFrameDim = uint2(0);

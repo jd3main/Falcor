@@ -53,6 +53,15 @@ namespace
 
     // Output buffers
     const char kOutputBufferReprojection[] = "Reprojection";
+    const char kOutputBufferTapWidthAndPrevPos[] = "TapWidthAndPrevPos";
+    const char kOutputBufferW0123[] = "W0123";
+    const char kOutputBufferW4567[] = "W4567";
+    const ChannelList kOutputChannels =
+    {
+        { kOutputBufferTapWidthAndPrevPos,  "_", "TapWidthAndPrevPos",  false, ResourceFormat::RGBA32Int},
+        { kOutputBufferW0123,               "_", "W0123",               false, ResourceFormat::RGBA32Float},
+        { kOutputBufferW4567,               "_", "W4567",               false, ResourceFormat::RGBA32Float},
+    };
 
     // Internal buffers
     const char kInternalBufferPreviousLinearZAndNormal[] = "PreviousLinearZAndNormal";
@@ -61,6 +70,14 @@ namespace
     const char kVarianceEpsilon[] = "VarianceEpsilon";
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
+
+    // Fbo Fields
+    enum ReprojectionFboFields
+    {
+        REPROJECTION_FBO_FIELDS_TAP_WIDTH_AND_PREV_POS,
+        REPROJECTION_FBO_FIELDS_W0123,
+        REPROJECTION_FBO_FIELDS_W4567,
+    };
 }
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -98,30 +115,11 @@ Dictionary ReprojectionPass::getScriptingDictionary()
     return dict;
 }
 
-uint32_t ReprojectionPass::getReprojectStructSize()
-{
-    auto rootVar = mpReflectTypes->getRootVar();
-    auto reflectionType = rootVar["reprojection"].getType().get();
-    const ReflectionResourceType* pResourceType = reflectionType->unwrapArray()->asResourceType();
-    uint32_t structSize = pResourceType->getSize();
-    return structSize;
-}
-
 RenderPassReflection ReprojectionPass::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
     addRenderPassInputs(reflector, kInputChannels);
-
-    uint32_t structSize = getReprojectStructSize();
-    FALCOR_ASSERT(structSize > 0);
-    std::cerr << "structSize: " << structSize << std::endl;
-    uint32_t bufferSize = compileData.defaultTexDims.x * compileData.defaultTexDims.y * structSize;
-    reflector.addField(RenderPassReflection::Field())
-        .rawBuffer(bufferSize)
-        .name(kOutputBufferReprojection)
-        .desc("Reprojection Buffer")
-        .visibility(RenderPassReflection::Field::Visibility::Output)
-        .bindFlags(Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
+    addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess);
 
     reflector.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(ResourceFormat::RGBA32Float)
@@ -145,7 +143,11 @@ void ReprojectionPass::allocateResources(uint2 dim, RenderContext *pRenderContex
     }
 
     {
-        mpReprojectionFbo = Fbo::create2D(dim.x, dim.y, Falcor::ResourceFormat::RGBA32Float);
+        Fbo::Desc desc;
+        desc.setColorTarget(REPROJECTION_FBO_FIELDS_TAP_WIDTH_AND_PREV_POS, Falcor::ResourceFormat::RGBA32Int);
+        desc.setColorTarget(REPROJECTION_FBO_FIELDS_W0123, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(REPROJECTION_FBO_FIELDS_W4567, Falcor::ResourceFormat::RGBA32Float);
+        mpReprojectionFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
 }
 
@@ -154,7 +156,13 @@ void ReprojectionPass::execute(RenderContext* pRenderContext, const RenderData& 
     Texture::SharedPtr pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
     Texture::SharedPtr pMotionoTexture = renderData.getTexture(kInputBufferMotionVector);
     Texture::SharedPtr pPositionNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
-    Buffer::SharedPtr pReprojectionBuffer = renderData.getResource(kOutputBufferReprojection)->asBuffer();
+
+    Texture::SharedPtr pTapWidthAndPrevPosTexture = renderData.getTexture(kOutputBufferTapWidthAndPrevPos);
+    Texture::SharedPtr pW0123Texture = renderData.getTexture(kOutputBufferW0123);
+    Texture::SharedPtr pW4567Texture = renderData.getTexture(kOutputBufferW4567);
+
+    FALCOR_ASSERT(pLinearZTexture && pMotionoTexture && pPositionNormalFwidthTexture);
+    FALCOR_ASSERT(pTapWidthAndPrevPosTexture && pW0123Texture && pW4567Texture);
 
     mpPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
 
@@ -166,6 +174,14 @@ void ReprojectionPass::execute(RenderContext* pRenderContext, const RenderData& 
 
     computeLinearZAndNormal(pRenderContext, pLinearZTexture, pPositionNormalFwidthTexture);
     computeReprojection(pRenderContext, renderData, pLinearZTexture, pMotionoTexture, pPositionNormalFwidthTexture);
+
+    // blit to prev
+    pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), mpPrevLinearZAndNormalTexture->getRTV());
+
+    // blit to output
+    pRenderContext->blit(mpReprojectionFbo->getColorTexture(REPROJECTION_FBO_FIELDS_TAP_WIDTH_AND_PREV_POS)->getSRV(), pTapWidthAndPrevPosTexture->getRTV());
+    pRenderContext->blit(mpReprojectionFbo->getColorTexture(REPROJECTION_FBO_FIELDS_W0123)->getSRV(), pW0123Texture->getRTV());
+    pRenderContext->blit(mpReprojectionFbo->getColorTexture(REPROJECTION_FBO_FIELDS_W4567)->getSRV(), pW4567Texture->getRTV());
 }
 
 void ReprojectionPass::computeLinearZAndNormal(
@@ -190,18 +206,13 @@ void ReprojectionPass::computeReprojection(
     Texture::SharedPtr pPositionNormalFwidthTexture)
 {
     FALCOR_PROFILE("computeReprojection");
-
-    Buffer::SharedPtr pReprojectionBuffer = renderData.getResource(kOutputBufferReprojection)->asBuffer();
-
     auto perImageCB = mpReproject["PerImageCB"];
     perImageCB["gMotion"] = pMotionoTexture;
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = mpPrevLinearZAndNormalTexture;
-    perImageCB["gReprojection"] = pReprojectionBuffer;
-    mpReproject->execute(pRendercontext, mpReprojectionFbo);
 
-    pRendercontext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), mpPrevLinearZAndNormalTexture->getRTV());
+    mpReproject->execute(pRendercontext, mpReprojectionFbo);
 }
 
 

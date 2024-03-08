@@ -163,6 +163,7 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
         'SelectionMode': SelectionMode.LOGISTIC,
         'SampleCountOverride': -1,
         'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
+        'UseInputReprojection': False,
         'EnableDebugTag': debug_tag_enabled,
         **dynamic_weighting_params})
     g.addPass(SVGFPass, 'SVGFPass')
@@ -189,21 +190,31 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
     g.addEdge('GBufferRaster.mvec', 'ReprojectionPass.MotionVec')
     g.addEdge('GBufferRaster.linearZ', 'ReprojectionPass.LinearZ')
     g.addEdge('GBufferRaster.pnFwidth', 'ReprojectionPass.PositionNormalFwidth')
-    g.addEdge('ReprojectionPass.Reprojection', 'SVGFPass.Reprojection')
+
+    # g.addEdge('ReprojectionPass.TapWidthAndPrevPos', 'SVGFPass.TapWidthAndPrevPos')
+    # g.addEdge('ReprojectionPass.W0123', 'SVGFPass.W0123')
+    # g.addEdge('ReprojectionPass.W4567', 'SVGFPass.W4567')
+
 
     # Adaptive Sampling
     if adaptive_pass_enabled:
+        g.addEdge('SharedBuffer_HistLen.buffer', 'AdaptiveSampling.histLength')
         g.addEdge('SVGFPass.HistLength', 'BlitToInputBuffer_HistLen.src')
         g.addEdge('SharedBuffer_HistLen.buffer', 'BlitToInputBuffer_HistLen.dst')
-        g.addEdge('SharedBuffer_HistLen.buffer', 'AdaptiveSampling.histLength')
         g.addEdge('AdaptiveSampling', 'BlitToInputBuffer_HistLen')  # mark data dependency
+
+        g.addEdge('SharedBuffer_Var.buffer', 'AdaptiveSampling.var')
         g.addEdge('SVGFPass.Variance', 'BlitToInputBuffer_Var.src')
         g.addEdge('SharedBuffer_Var.buffer', 'BlitToInputBuffer_Var.dst')
-        g.addEdge('SharedBuffer_Var.buffer', 'AdaptiveSampling.var')
         g.addEdge('AdaptiveSampling', 'BlitToInputBuffer_Var')  # mark data dependency
+
         g.addEdge('AdaptiveSampling.sampleCount', 'PathTracer.sampleCount')
         g.addEdge('AdaptiveSampling.sampleCount', 'SVGFPass.SampleCount')
-        g.addEdge('ReprojectionPass.Reprojection', 'AdaptiveSampling.Reprojection')
+
+        g.addEdge('ReprojectionPass.TapWidthAndPrevPos', 'AdaptiveSampling.TapWidthAndPrevPos')
+        g.addEdge('ReprojectionPass.W0123', 'AdaptiveSampling.W0123')
+        g.addEdge('ReprojectionPass.W4567', 'AdaptiveSampling.W4567')
+
 
     g.markOutput('SVGFPass.Filtered image')
     if output_sample_count and adaptive_pass_enabled:
@@ -425,8 +436,6 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     base_filename = '{fps}fps'.format(
         fps = record_params['fps'])
 
-    # import DynamicWeightingSVGF_err2
-    # g = DynamicWeightingSVGF_err2.render_graph_g(graph_params['iters'], graph_params['feedback'], graph_params['grad_iters'])
     g = render_graph_g(**graph_params)
     try:
         m.addGraph(g)
@@ -443,9 +452,9 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
 
 
 # scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
-scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
-# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
+scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
 
 try:
@@ -458,8 +467,8 @@ except Exception as e:
 
 common_record_params = {
     'fps': 30,
-    'start_time': 15.9,
-    'end_time': 20,
+    'start_time': 0,
+    'end_time': 10,
 }
 
 common_graph_params = {
@@ -468,11 +477,12 @@ common_graph_params = {
 }
 
 adaptive_params_override = {
-    'AverageSampleCountBudget': 1.0,
-    'MinVariance': 0.01,
-    'MaxVariance': 100.0,
+    'Enabled': True,
+    'AverageSampleCountBudget': 2.0,
+    'MinVariance': 0.0,
+    'MaxVariance': 10.0,
     'MinSamplePerPixel': 1,
-    'MaxSamplePerPixel': 16,
+    'MaxSamplePerPixel': 8,
 }
 
 gt_sample_Count = 96
@@ -485,8 +495,10 @@ iter_params = [
 ]
 midpoints = [0, 0.05, 0.5, 1.0]
 steepnesses = [0.1, 1, 10]
+# midpoints = [0.05]
+# steepnesses = [1]
 
-force_record_selections =  True
+force_record_selections =  False
 force_record_step = False
 force_record_unweighted = False
 force_record_weighted = False
@@ -519,28 +531,28 @@ for iters, feedback, grad_iters in iter_params:
                 force_record=force_record_selections)
 
 
-    # for midpoint in midpoints:
-    #     run(graph_params_override = {
-    #             'iters': iters,
-    #             'feedback': feedback,
-    #             'grad_iters': grad_iters,
-    #             'dynamic_weighting_enabled': True,
-    #             'dynamic_weighting_params': {
-    #                 'GradientAlpha': 0.2,
-    #                 'GradientMidpoint': float(midpoint),
-    #                 'GammaSteepness': float('inf'),
-    #                 'SelectionMode': SelectionMode.STEP,
-    #                 'SampleCountOverride': -1,
-    #                 'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
-    #             },
-    #            'adaptive_pass_enabled': True,
-    #            'adaptive_pass_params': adaptive_params_override,
-    #             **common_graph_params
-    #         },
-    #         record_params_override={
-    #             **common_record_params,
-    #         },
-    #         force_record=force_record_step)
+    for midpoint in midpoints:
+        run(graph_params_override = {
+                'iters': iters,
+                'feedback': feedback,
+                'grad_iters': grad_iters,
+                'dynamic_weighting_enabled': True,
+                'dynamic_weighting_params': {
+                    'GradientAlpha': 0.2,
+                    'GradientMidpoint': float(midpoint),
+                    'GammaSteepness': float('inf'),
+                    'SelectionMode': SelectionMode.STEP,
+                    'SampleCountOverride': -1,
+                    'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
+                },
+               'adaptive_pass_enabled': True,
+               'adaptive_pass_params': adaptive_params_override,
+                **common_graph_params
+            },
+            record_params_override={
+                **common_record_params,
+            },
+            force_record=force_record_step)
 
     # Unweighted
     print("Run Unweighted")

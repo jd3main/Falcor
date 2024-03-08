@@ -5,8 +5,8 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/BasePasses/FullScreenPass.h"
 
-using std::string;
 using std::vector;
+using std::string;
 using std::cerr;
 using std::endl;
 
@@ -66,7 +66,9 @@ namespace
     const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
     const char kInputBufferLinearZ[] = "LinearZ";
     const char kInputBufferMotionVector[] = "MotionVec";
-    const char kInputBufferReprojection[] = "Reprojection";
+    const char kInputReprojectionTapWidthAndPrevPos[] = "TapWidthAndPrevPos";
+    const char kInputReprojectionW0123[] = "W0123";
+    const char kInputReprojectionW4567[] = "W4567";
     const ChannelList kInputChannels =
     {
         { kInputBufferAlbedo,           "_",   "Albedo",          false, ResourceFormat::Unknown},
@@ -78,6 +80,9 @@ namespace
         { kInputBufferPosNormalFwidth,  "_",   "PosNormalFwidth", false, ResourceFormat::Unknown},
         { kInputBufferLinearZ,          "_",   "Linear Z",        false, ResourceFormat::Unknown},
         { kInputBufferMotionVector,     "_",   "Motion Vector",   false, ResourceFormat::Unknown},
+        { kInputReprojectionTapWidthAndPrevPos, "_", "Reprojection Tap Width and Prev Pos", true, ResourceFormat::Unknown},
+        { kInputReprojectionW0123,      "_",   "Reprojection W0123", true, ResourceFormat::Unknown},
+        { kInputReprojectionW4567,      "_",   "Reprojection W4567", true, ResourceFormat::Unknown},
     };
 
 
@@ -259,14 +264,6 @@ RenderPassReflection DynamicWeightingSVGF::reflect(const CompileData& compileDat
 
     addRenderPassInputs(reflector, kInputChannels);
 
-    reflector.addField(RenderPassReflection::Field())
-        .rawBuffer(getReprojectStructSize() * compileData.defaultTexDims.x * compileData.defaultTexDims.y)
-        .name(kInputBufferReprojection)
-        .desc("Reprojection Buffer")
-        .visibility(RenderPassReflection::Field::Visibility::Input)
-        .flags(RenderPassReflection::Field::Flags::Optional)
-        .bindFlags(Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess);
-
     reflector.addInternal(kInternalBufferPreviousLinearZAndNormal, "Previous Linear Z and Packed Normal")
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(Resource::BindFlags::RenderTarget | Resource::BindFlags::ShaderResource);
@@ -313,6 +310,9 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
     Texture::SharedPtr pLinearZTexture = renderData.getTexture(kInputBufferLinearZ);
     Texture::SharedPtr pMotionVectorTexture = renderData.getTexture(kInputBufferMotionVector);
+    Texture::SharedPtr pReprjectionTapWidthAndPrevPos = renderData.getTexture(kInputReprojectionTapWidthAndPrevPos);
+    Texture::SharedPtr pReprojectionW0123 = renderData.getTexture(kInputReprojectionW0123);
+    Texture::SharedPtr pReprojectionW4567 = renderData.getTexture(kInputReprojectionW4567);
 
     // Output Textures
     Texture::SharedPtr pOutputTexture = renderData.getTexture(kOutputBufferFilteredImage);
@@ -328,6 +328,11 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
     Texture::SharedPtr pOutputGradient = renderData.getTexture(kOutputGradient);
     Texture::SharedPtr pOutputGamma = renderData.getTexture(kOutputGamma);
 #endif
+
+    if (mUseInputReprojection)
+    {
+        FALCOR_ASSERT(pReprjectionTapWidthAndPrevPos && pReprojectionW0123 && pReprojectionW4567);
+    }
 
     if (!mpPackLinearZAndNormal || mRecompile)
     {
@@ -396,9 +401,9 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
 
         if (mUseInputReprojection)
         {
-            Buffer::SharedPtr pReprojection = renderData.getResource(kInputBufferReprojection)->asBuffer();
-            FALCOR_ASSERT(pReprojection);
-            mpReprojectionBuffer = pReprojection;
+            mpReprojectionTapWidthAndPrevPosTexture = pReprjectionTapWidthAndPrevPos;
+            mpReprojectionW0123Texture = pReprojectionW0123;
+            mpReprojectionW4567Texture = pReprojectionW4567;
         }
         else
         {
@@ -457,8 +462,6 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
 
 void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 {
-    std::cerr << "allocateFbos" << std::endl;
-
     {
         // Screen-size FBOs with 3 MRTs: one that is RGBA32F, one that is
         // RG32F for the luminance moments, and one that is R16F.
@@ -484,14 +487,11 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
 
     if (!mUseInputReprojection)
     {
-        mpReprojectionFbo = Fbo::create2D(dim.x, dim.y, Falcor::ResourceFormat::RGBA32Float);
-
-        const uint32_t sampleCount = dim.x * dim.y;
-        auto var = mpReflectTypes->getRootVar();
-        mpReprojectionBuffer = Buffer::createStructured(var["reprojection"], sampleCount,
-            Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess,
-            Buffer::CpuAccess::None,
-            nullptr, false);
+        Fbo::Desc desc;
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Int);
+        desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(2, Falcor::ResourceFormat::RGBA32Float);
+        mpReprojectionFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
 
     {
@@ -503,7 +503,6 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
             mpFilteredPastFbo[i] = Fbo::create2D(dim.x, dim.y, desc);
         }
         mpSpatialFilteredFbo = Fbo::create2D(dim.x, dim.y, desc);
-        std::cerr << "mpSpatialFilteredFbo = " << mpSpatialFilteredFbo.get() << std::endl;
         mpFinalFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
 
@@ -524,7 +523,6 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
 
 void DynamicWeightingSVGF::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    cerr << "clearBuffers\n";
     // Clear the FBOs
     for (int i=0; i<4; i++)
         pRenderContext->clearFbo(mpPingPongFbo[i].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
@@ -576,8 +574,11 @@ void DynamicWeightingSVGF::computeReprojection(RenderContext* pRendercontext,
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = mpPrevLinearZAndNormalTexture;
-    perImageCB["gReprojection"] = mpReprojectionBuffer;
     mpReproject->execute(pRendercontext, mpReprojectionFbo);
+
+    mpReprojectionTapWidthAndPrevPosTexture = mpReprojectionFbo->getColorTexture(0);
+    mpReprojectionW0123Texture = mpReprojectionFbo->getColorTexture(1);
+    mpReprojectionW4567Texture = mpReprojectionFbo->getColorTexture(2);
 }
 
 void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
@@ -596,8 +597,6 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     mpPrevGradientTexture = renderData.getTexture(kInternalBufferPreviousGradient);
 
     auto perImageCB = mpTemporalFilter["PerImageCB"];
-
-    // Setup textures for our reprojection shader pass
 
     // From input channels
     perImageCB["gAlbedo"] = pAlbedoTexture;
@@ -800,7 +799,10 @@ void DynamicWeightingSVGF::dynamicWeighting(
     perImageCB["gUnweightedIllumination"] = pUnweightedIlluminationTexture;
     perImageCB["gWeightedIllumination"] = pWeightedIlluminationTexture;
     perImageCB["gPrevGradient"] = mpPrevGradientTexture;
-    perImageCB["gReprojection"] = mpReprojectionBuffer;
+
+    perImageCB["gInputReprojectionTapWidthAndPrevPos"] = mpReprojectionTapWidthAndPrevPosTexture;
+    perImageCB["gInputReprojectionW0123"] = mpReprojectionW0123Texture;
+    perImageCB["gInputReprojectionW4567"] = mpReprojectionW0123Texture;
 
     // Parameters
     perImageCB["gGradientAlpha"] = mGradientAlpha;

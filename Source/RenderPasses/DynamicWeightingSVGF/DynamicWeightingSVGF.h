@@ -121,6 +121,8 @@ private:
     Texture::SharedPtr mpPrevWeightedIllumination;
 
     // Intermediate buffers
-    Buffer::SharedPtr mpReprojectionBuffer;
+    Texture::SharedPtr mpReprojectionTapWidthAndPrevPosTexture;
+    Texture::SharedPtr mpReprojectionW0123Texture;
+    Texture::SharedPtr mpReprojectionW4567Texture;
     Fbo::SharedPtr mpReprojectionFbo;
 };

@@ -30,7 +30,9 @@ cbuffer PerImageCB
     Texture2D gUnweightedIllumination;
     Texture2D gWeightedIllumination;
     Texture2D gPrevGradient;
-    StructuredBuffer<Reprojection> gReprojection;
+    Texture2D<int4> gInputReprojectionTapWidthAndPrevPos;
+    Texture2D gInputReprojectionW0123;
+    Texture2D gInputReprojectionW4567;
 
     // Parameters
     float gGradientAlpha;
@@ -51,9 +53,10 @@ bool loadHistory(int2 ipos, out History h)
     h.gradient = float3(0, 0, 0);
     h.unweightedIllumination = float3(0, 0, 0);
 
-    const int2 imageDim = getTextureDims(gUnweightedIllumination, 0);
-    const int idx = ipos.y * imageDim.x + ipos.x;
-    const Reprojection reprojection = gReprojection[idx];
+    const int4 tapWidthAndPrevPos = gInputReprojectionTapWidthAndPrevPos[ipos];
+    const float4 w0123 = gInputReprojectionW0123[ipos];
+    const float4 w4567 = gInputReprojectionW4567[ipos];
+    const Reprojection reprojection = toReprojectionStruct(tapWidthAndPrevPos, w0123, w4567);
 
     if (reprojection.tapWidth == 2)
     {

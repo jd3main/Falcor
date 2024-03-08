@@ -42,11 +42,19 @@ namespace
     // Input channels
     const char kInputVariance[] = "var";
     const char kInputHistoryLength[] = "histLength";
-    const char kInputBufferReprojection[] = "Reprojection";
+    const char kInputReprojectionTapWidthAndPrevPos[] = "TapWidthAndPrevPos";
+    const char kInputReprojectionW0123[] = "W0123";
+    const char kInputReprojectionW4567[] = "W4567";
     const ChannelList kInputChannels =
     {
         { kInputHistoryLength,              "_", "History Length",              false, ResourceFormat::R32Float },
         { kInputVariance,                   "_", "Variance",                    false, ResourceFormat::R32Float },
+    };
+    const ChannelList kInputChannelsUAV
+    {
+        { kInputReprojectionTapWidthAndPrevPos, "_", "Reprojection Tap Width and Previous Position", false, ResourceFormat::RGBA32Int },
+        { kInputReprojectionW0123,          "_", "Reprojection Weights 0123",   false, ResourceFormat::RGBA32Float },
+        { kInputReprojectionW4567,          "_", "Reprojection Weights 4567",   false, ResourceFormat::RGBA32Float },
     };
 
     // Output channels
@@ -130,16 +138,9 @@ RenderPassReflection AdaptiveSampling::reflect(const CompileData& compileData)
 {
     // Define the required resources here
     RenderPassReflection reflector;
-    addRenderPassInputs(reflector, kInputChannels, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    addRenderPassInputs(reflector, kInputChannels, ResourceBindFlags::ShaderResource);
+    addRenderPassInputs(reflector, kInputChannelsUAV, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::RenderTarget | ResourceBindFlags::UnorderedAccess);
-
-    reflector.addField(RenderPassReflection::Field())
-        .rawBuffer(getReprojectStructSize() * compileData.defaultTexDims.x * compileData.defaultTexDims.y)
-        .name(kInputBufferReprojection)
-        .desc("Reprojection Buffer")
-        .visibility(RenderPassReflection::Field::Visibility::Input)
-        .bindFlags(ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-
     return reflector;
 }
 
@@ -213,17 +214,19 @@ void AdaptiveSampling::runWeightEstimationPass(RenderContext* pRenderContext, co
 
     Texture::SharedPtr pInputVariance = renderData.getTexture(kInputVariance);
     Texture::SharedPtr pInputHistoryLength = renderData.getTexture(kInputHistoryLength);
-    Buffer::SharedPtr pInputBufferReprojection = renderData.getResource(kInputBufferReprojection)->asBuffer();
+    Texture::SharedPtr pInputReprojectionTapWidthAndPrevPos = renderData.getTexture(kInputReprojectionTapWidthAndPrevPos);
+    Texture::SharedPtr pInputReprojectionW0123 = renderData.getTexture(kInputReprojectionW0123);
+    Texture::SharedPtr pInputReprojectionW4567 = renderData.getTexture(kInputReprojectionW4567);
 
 #if DEBUG_OUTPUT_ENABLED
     Texture::SharedPtr pOutputDensityWeight = renderData.getTexture(kOutputDensityWeight);
 #endif
 
-    // FALCOR_ASSERT(pInputBufferReprojection);
-
     // Set shader parameters
     auto perImageCB = mpWeightEstimationPass["PerImageCB"];
-    perImageCB["gInputReprojection"] = pInputBufferReprojection;
+    perImageCB["gInputReprojectionTapWidthAndPrevPos"] = pInputReprojectionTapWidthAndPrevPos;
+    perImageCB["gInputReprojectionW0123"] = pInputReprojectionW0123;
+    perImageCB["gInputReprojectionW4567"] = pInputReprojectionW4567;
     perImageCB["gInputVariance"] = pInputVariance;
     perImageCB["gInputHistoryLength"] = pInputHistoryLength;
     perImageCB["gResolution"] = mFrameDim;
