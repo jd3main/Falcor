@@ -449,7 +449,7 @@ for iters, feedback, grad_iters in iter_params:
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
                         'SampleCountOverride': -1,
-                        'NormalizationMode': NormalizationMode.VARIANCE,
+                        'NormalizationMode': NormalizationMode.STD,
                     },
                     'foveated_pass_enabled': True,
                     'foveated_pass_params': foveated_params_override,

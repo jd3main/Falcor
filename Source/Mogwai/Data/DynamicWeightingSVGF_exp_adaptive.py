@@ -86,7 +86,6 @@ loadRenderPassLibrary('Utils.dll')
 loadRenderPassLibrary('AdaptiveSampling.dll')
 loadRenderPassLibrary('ReprojectionPass.dll')
 
-DEFAULT_GT_SAMPLE_COUNT = 96
 DEFAULT_OUTPUT_PATH = Path(__file__).parent/"Output"
 DEFAULT_BASE_FILENAME = "Mogwai"
 
@@ -108,7 +107,7 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
                    dynamic_weighting_enabled=False, dynamic_weighting_params:dict={},
                    adaptive_pass_enabled=False, adaptive_pass_params:dict={},
                    output_sample_count=False,
-                   sample_count=DEFAULT_GT_SAMPLE_COUNT,
+                   sample_count=64,
                    debug_tag_enabled=False,
                    **kwargs):
     g = RenderGraph('g')
@@ -485,7 +484,7 @@ adaptive_params_override = {
     'MaxSamplePerPixel': 8,
 }
 
-gt_sample_Count = 96
+gt_sample_Count = 64
 
 # iters, feedback, grad_iters
 iter_params = [
@@ -519,7 +518,7 @@ for iters, feedback, grad_iters in iter_params:
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
                         'SampleCountOverride': -1,
-                        'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
+                        'NormalizationMode': NormalizationMode.STD,
                     },
                     'adaptive_pass_enabled': True,
                     'adaptive_pass_params': adaptive_params_override,

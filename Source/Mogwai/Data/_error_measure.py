@@ -148,14 +148,14 @@ DEFAULT_PLOT_HISTO = False
 DEFAULT_PLOT_ERROR_OVER_TIME = False
 DEFAULT_FORCE_RECALCULATE = False
 
-DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+# DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
 # DEFAULT_SCENE_NAME = 'BistroExterior'
 # DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
-# DEFAULT_SCENE_NAME = 'SunTemple'
+DEFAULT_SCENE_NAME = 'SunTemple'
 
 DEFAULT_RECORD_PATH = Path(__file__).parents[4]/'Record'
 DEFAULT_FPS = 30
-DEFAULT_RECORD_SECONDS = 20
+DEFAULT_RECORD_SECONDS = 10
 DEFAULT_ERR_TYPE = ErrorType.REL_MSE
 REL_MSE_EPSILON = 1e-2
 
@@ -177,7 +177,7 @@ DEFAULT_MIDPOINTS = [0.0, 0.05, 0.5, 1.0]
 DEFAULT_STEEPNESSES = [0.1, 1.0, 10.0]
 
 # DEFAULT_SAMPLING_METHOD = 'Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-DEFAULT_SAMPLING_METHOD = 'adaptive(2.0,0.01,10.0,1.0)'
+DEFAULT_SAMPLING_METHOD = 'Adaptive(2.0,0.0,10.0,1,1)'
 
 ### Argument parsing
 parser = argparse.ArgumentParser(description='Calculate errors')
