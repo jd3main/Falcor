@@ -14,35 +14,14 @@ from enum import IntEnum, auto
 import json
 from typing import Union
 import numpy as np
-# from DynamicWeighting_Common import *
+from DynamicWeighting_Common import *
 
-class FoveaShape(IntEnum):
-    UNIFORM = 0
-    CIRCLE = auto()
-    SPLIT_HORIZONTALLY = auto()
-    SPLIT_VERTICALLY = auto()
 
-class FoveaInputType(IntEnum):
-    NONE = 0
-    SHM = auto()
-    MOUSE = auto()
-
-class SelectionMode(IntEnum):
-    UNWEIGHTED = 0
-    WEIGHTED = auto()
-    LINEAR = auto()
-    STEP = auto()
-    LOGISTIC = auto()
-
-class NormalizationMode(IntEnum):
-    NONE = 0
-    LUMINANCE = auto()
-    VARIANCE = auto()
-    STANDARD_DEVIATION = auto()
-
-    LUM = LUMINANCE
-    VAR = VARIANCE
-    STD = STANDARD_DEVIATION
+def __eq__(self, other):
+    """Overrides the default implementation"""
+    if isinstance(other, float2):
+        return self.x == other.x and self.y == other.y
+    return False
 
 
 loadRenderPassLibrary('DLSSPass.dll')
@@ -530,28 +509,28 @@ for iters, feedback, grad_iters in iter_params:
                 force_record=force_record_selections)
 
 
-    for midpoint in midpoints:
-        run(graph_params_override = {
-                'iters': iters,
-                'feedback': feedback,
-                'grad_iters': grad_iters,
-                'dynamic_weighting_enabled': True,
-                'dynamic_weighting_params': {
-                    'GradientAlpha': 0.2,
-                    'GradientMidpoint': float(midpoint),
-                    'GammaSteepness': float('inf'),
-                    'SelectionMode': SelectionMode.STEP,
-                    'SampleCountOverride': -1,
-                    'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
-                },
-               'adaptive_pass_enabled': True,
-               'adaptive_pass_params': adaptive_params_override,
-                **common_graph_params
-            },
-            record_params_override={
-                **common_record_params,
-            },
-            force_record=force_record_step)
+    # for midpoint in midpoints:
+    #     run(graph_params_override = {
+    #             'iters': iters,
+    #             'feedback': feedback,
+    #             'grad_iters': grad_iters,
+    #             'dynamic_weighting_enabled': True,
+    #             'dynamic_weighting_params': {
+    #                 'GradientAlpha': 0.2,
+    #                 'GradientMidpoint': float(midpoint),
+    #                 'GammaSteepness': float('inf'),
+    #                 'SelectionMode': SelectionMode.STEP,
+    #                 'SampleCountOverride': -1,
+    #                 'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
+    #             },
+    #            'adaptive_pass_enabled': True,
+    #            'adaptive_pass_params': adaptive_params_override,
+    #             **common_graph_params
+    #         },
+    #         record_params_override={
+    #             **common_record_params,
+    #         },
+    #         force_record=force_record_step)
 
     # Unweighted
     print("Run Unweighted")

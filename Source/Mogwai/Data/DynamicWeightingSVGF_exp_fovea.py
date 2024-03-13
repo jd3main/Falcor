@@ -2,6 +2,7 @@ import subprocess
 import sys
 from pathlib import *
 import gc
+import math
 
 def install(package):
     python_path = Path(sys.executable).parent/'Python/python.exe'
@@ -15,6 +16,30 @@ import json
 from typing import Union
 import numpy as np
 from DynamicWeighting_Common import *
+
+class FalcorEnoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, float2):
+            return { "__float2__": True, "x": o.x, "y": o.y }
+        return super().default(o)
+
+class FalcorDecoder(json.JSONDecoder):
+    def __init__(self, *args, **kwargs):
+        super().__init__(object_hook=self.object_hook, *args, **kwargs)
+
+    def object_hook(self, o):
+        if '__float2__' in o:
+            return float2(o['x'], o['y'])
+        return o
+
+def __eq__(self, other):
+    """Overrides the default implementation"""
+    if isinstance(other, float2):
+        print('is float2')
+        return self.x == other.x and self.y == other.y
+    return False
+
+float2.__eq__ = __eq__
 
 loadRenderPassLibrary('DLSSPass.dll')
 loadRenderPassLibrary('AccumulatePass.dll')
@@ -78,7 +103,8 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
                    foveated_pass_enabled=False, foveated_pass_params:dict={},
                    output_sample_count=False,
                    sample_count=DEFAULT_GT_SAMPLE_COUNT,
-                   debug_tag_enabled=False):
+                   debug_tag_enabled=False,
+                   **kwargs):
     g = RenderGraph('g')
 
     GBufferRaster = createPass('GBufferRaster', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack})
@@ -89,16 +115,19 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
 
     if foveated_pass_enabled:
         FoveatedPass = createPass('FoveatedPass', {
-            'shape': FoveaShape.SPLIT_HORIZONTALLY,   # SplitHorizontally
-            'foveaInputType': FoveaInputType.SHM,    # SMH
             'useHistory': False,
             'alpha': alpha,
-            'foveaRadius': 200.0,
+            'foveaRadius': 300.0,
             'foveaSampleCount': 8.0,
             'periphSampleCount': 1.0,
-            'foveaMoveRadius': 300.0,
-            'foveaMoveFreq': 0.5,
-            'foveaMoveDirection': 0,
+            'shape': FoveaShape.CIRCLE,
+            'foveaInputType': FoveaInputType.PROCEDURAL,
+            'foveaMovePattern': FoveaMovePattern.LISSAJOUS,
+            'foveaMoveRadius': float2(640.0, 360.0),
+            'foveaMoveFreq': float2(0.4, 0.5),
+            'foveaMovePhase': float2(math.pi/2, 0),
+            'foveaMoveSpeed': 1000.0,
+            'foveaMoveStayDuration': 0.5,
             'useRealTime': False,
             'flickerEnabled': False,
             'flickerBrightDurationMs': 1.0,
@@ -222,7 +251,7 @@ def storeMetadata(output_path: Union[str,Path], data):
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
     with open(output_path/'metadata.txt', 'w') as f:
-        json.dump(data, f)
+        json.dump(data, f, cls=FalcorEnoder, indent=4)
 
 def loadMetadata(path) -> dict:
     '''
@@ -232,7 +261,7 @@ def loadMetadata(path) -> dict:
     data = dict()
     try:
         with open(path/'metadata.txt', 'r') as f:
-            data = dict(**json.load(f))
+            data = dict(**json.load(f, cls=FalcorDecoder))
     except Exception as e:
         print(f'cannot load metadata from {path/"metadata.txt"}')
     return data
@@ -292,18 +321,19 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
             graph_params['iters'],  graph_params['feedback']))
 
     if graph_params['dynamic_weighting_enabled']:
-        selection_mode = graph_params['dynamic_weighting_params']['SelectionMode']
+        dw_params = graph_params['dynamic_weighting_params']
+        selection_mode = dw_params['SelectionMode']
         if selection_mode == SelectionMode.LINEAR:
             folder_name_parts.append('Linear({},{})'.format(
-                graph_params['dynamic_weighting_params']['GradientMidpoint'],
-                graph_params['dynamic_weighting_params']['GammaSteepness']))
+                dw_params['GradientMidpoint'],
+                dw_params['GammaSteepness']))
         elif selection_mode == SelectionMode.STEP:
             folder_name_parts.append('Step({})'.format(
-                graph_params['dynamic_weighting_params']['GradientMidpoint']))
+                dw_params['GradientMidpoint']))
         elif selection_mode == SelectionMode.LOGISTIC:
             folder_name_parts.append('Logistic({},{})'.format(
-                graph_params['dynamic_weighting_params']['GradientMidpoint'],
-                graph_params['dynamic_weighting_params']['GammaSteepness']))
+                dw_params['GradientMidpoint'],
+                dw_params['GammaSteepness']))
         elif selection_mode == SelectionMode.WEIGHTED:
             folder_name_parts.append('Weighted')
         elif selection_mode == SelectionMode.UNWEIGHTED:
@@ -311,15 +341,25 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
 
         if selection_mode not in [SelectionMode.UNWEIGHTED, SelectionMode.WEIGHTED]:
             folder_name_parts.append('GAlpha({})'.format(
-                graph_params['dynamic_weighting_params']['GradientAlpha']))
+                dw_params['GradientAlpha']))
             folder_name_parts.append('Norm({})'.format(
-                NormalizationMode(graph_params['dynamic_weighting_params']['NormalizationMode']).name))
+                NormalizationMode(dw_params['NormalizationMode']).name))
 
     if graph_params['foveated_pass_enabled']:
+        fovea_params = graph_params['foveated_pass_params']
+        assert fovea_params['foveaInputType'] == FoveaInputType.PROCEDURAL
         folder_name_parts.append('Foveated({},{},{})'.format(
-            FoveaShape(graph_params['foveated_pass_params']['shape']).name,
-            FoveaInputType(graph_params['foveated_pass_params']['foveaInputType']).name,
-            graph_params['foveated_pass_params']['foveaSampleCount']))
+            FoveaShape(fovea_params['shape']).name,
+            FoveaMovePattern(fovea_params['foveaMovePattern']).name,
+            fovea_params['foveaSampleCount']))
+        if fovea_params['foveaMovePattern'] == FoveaMovePattern.LISSAJOUS:
+            folder_name_parts.append('Lissajous({},{})'.format(
+                fovea_params['foveaMoveFreq'],
+                fovea_params['foveaMoveRadius']))
+        elif fovea_params['foveaMovePattern'] == FoveaMovePattern.MOVE_AND_STAY:
+            folder_name_parts.append('MoveAndStay({},{})'.format(
+                fovea_params['foveaMoveSpeed'],
+                fovea_params['foveaMoveStayDuration']))
 
     folder_name = '_'.join(folder_name_parts)
     return folder_name
@@ -362,6 +402,9 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
                 return
             else:
                 print(f"[Warning] Found existing record with different parameters at \"{output_path}\".\nContinue recording.")
+                print(g_params)
+                print(graph_params)
+                exit()
 
     base_filename = '{fps}fps'.format(
         fps = record_params['fps'])
@@ -389,6 +432,13 @@ scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
 
+animation_lengths = {
+    'VeachAjarAnimated': 20,
+    'BistroExterior': 100,
+    'EmeraldSquare_Day': 10,
+    'SunTemple': 20,
+}
+
 try:
     m.loadScene(scene_path)
 except Exception as e:
@@ -400,7 +450,8 @@ except Exception as e:
 common_record_params = {
     'fps': 30,
     'start_time': 0,
-    'end_time': 10,
+    'end_time': animation_lengths[scene_name],
+    # 'end_time': 30,
 }
 
 common_graph_params = {
@@ -409,15 +460,19 @@ common_graph_params = {
 }
 
 foveated_params_override = {
-    'shape': FoveaShape.SPLIT_HORIZONTALLY,
-    'foveaInputType': FoveaInputType.SHM,
+    'shape': FoveaShape.CIRCLE,
+    'foveaRadius': 300.0,
+    'foveaInputType': FoveaInputType.PROCEDURAL,
     'foveaSampleCount': 8.0,
-    'foveaMoveRadius': 300.0,
-    'foveaMoveFreq': 0.5,
-    'foveaMoveDirection': 0,
+    'foveaMovePattern': FoveaMovePattern.LISSAJOUS,
+    'foveaMoveRadius': float2(1280/2, 720/2),
+    'foveaMoveFreq': float2(0.4, 0.5),
+    'foveaMovePhase': float2(math.pi/2, 0),
+    'foveaMoveSpeed': 1000.0,
+    'foveaMoveStayDuration': 0.5,
 }
 
-gt_sample_Count = 96
+gt_sample_Count = 64
 
 # iters, feedback, grad_iters
 iter_params = [

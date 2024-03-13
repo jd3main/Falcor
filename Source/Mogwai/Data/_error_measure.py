@@ -51,6 +51,7 @@ class RecordParams:
 
     fovea_shape: FoveaShape = FoveaShape.UNIFORM
     fovea_input_type: FoveaInputType = FoveaInputType.NONE
+    fovea_move_pattern: FoveaMovePattern = FoveaMovePattern.LISSAJOUS
     fovea_sample_count: int = 1
 
     def parse(s: str, scene_name: str) -> 'RecordParams':
@@ -116,11 +117,11 @@ class RecordParams:
             params.norm_mode = NormalizationMode[groups[0].upper()]
 
         # parse foveation mode
-        pattern = r'foveated\((.+),(.+),(.+)\)'
+        pattern = r'foveated\(([^_]+),([^_]+),([^_]+)\)'
         groups = re.findall(pattern, s)
         if len(groups) > 0:
             params.fovea_shape = FoveaShape[groups[0][0].upper()]
-            params.fovea_input_type = FoveaInputType[groups[0][1].upper()]
+            params.fovea_move_pattern = FoveaMovePattern[groups[0][1].upper()]
             params.fovea_sample_count = int(float(groups[0][2]))
 
         return params
@@ -148,14 +149,14 @@ DEFAULT_PLOT_HISTO = False
 DEFAULT_PLOT_ERROR_OVER_TIME = False
 DEFAULT_FORCE_RECALCULATE = False
 
-# DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
 # DEFAULT_SCENE_NAME = 'BistroExterior'
 # DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
-DEFAULT_SCENE_NAME = 'SunTemple'
+# DEFAULT_SCENE_NAME = 'SunTemple'
 
 DEFAULT_RECORD_PATH = Path(__file__).parents[4]/'Record'
 DEFAULT_FPS = 30
-DEFAULT_RECORD_SECONDS = 10
+DEFAULT_RECORD_SECONDS = 20
 DEFAULT_ERR_TYPE = ErrorType.REL_MSE
 REL_MSE_EPSILON = 1e-2
 
@@ -177,7 +178,8 @@ DEFAULT_MIDPOINTS = [0.0, 0.05, 0.5, 1.0]
 DEFAULT_STEEPNESSES = [0.1, 1.0, 10.0]
 
 # DEFAULT_SAMPLING_METHOD = 'Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-DEFAULT_SAMPLING_METHOD = 'Adaptive(2.0,0.0,10.0,1,1)'
+# DEFAULT_SAMPLING_METHOD = 'Adaptive(2.0,0.0,10.0,1,1)'
+DEFAULT_SAMPLING_METHOD = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Lissajous([0.400000, 0.500000],[640.000000, 360.000000])'
 
 ### Argument parsing
 parser = argparse.ArgumentParser(description='Calculate errors')

@@ -5,7 +5,7 @@ static const uint kMaxSamplesPerPixel = 16; ///< Maximum sample count supported 
 
 cbuffer PerFrameCB
 {
-    Shape gShape;
+    FoveaShape gShape;
     bool gUseHistory;
     float gAlpha;
     uint2 gResolution;
@@ -42,16 +42,16 @@ void calculateSampleCount(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     switch (gShape)
     {
-    case Shape::Uniform:
+    case FoveaShape::FOVEA_SHAPE_UNIFORM:
         baseSampleCount = gInnerTargetQuality;
         break;
-    case Shape::Circle:
+    case FoveaShape::FOVEA_SHAPE_CIRCLE:
         baseSampleCount = (dist < gFoveaRadius) ? gInnerTargetQuality : gOuterTargetQuality;
         break;
-    case Shape::SplitHorizontally:
+    case FoveaShape::FOVEA_SHAPE_SPLITHORIZONTALLY:
         baseSampleCount = (pixelPos.y < gFoveaCenter.y) ? gInnerTargetQuality : gOuterTargetQuality;
         break;
-    case Shape::SplitVertically:
+    case FoveaShape::FOVEA_SHAPE_SPLITVERTICALLY:
         baseSampleCount = (pixelPos.x < gFoveaCenter.x) ? gInnerTargetQuality : gOuterTargetQuality;
         break;
     }

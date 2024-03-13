@@ -3,6 +3,7 @@ import cv2 as cv
 import numpy as np
 from colorama import Fore, Back, Style
 import sys
+import json
 
 def ensurePath(path: str) -> None:
     """Ensures that the path exists.
@@ -90,5 +91,6 @@ def fileModifiedLaterThan(file1: Path, file2: Path):
 RE_STRING = r"\w+"
 RE_FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"   # (?:...) non-capturing group
 RE_WHITESPACES = r"\s*"
+
 
 

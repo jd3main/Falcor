@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <random>
 
 #include "Falcor.h"
 #include "RenderGraph/RenderPassHelpers.h"
@@ -7,15 +8,31 @@
 
 using namespace Falcor;
 
+
+const float PI = 3.14159265358979323846f;
+const float TAU = PI*2;
+
 class FoveatedPass : public RenderPass
 {
 public:
 
-    enum FoveaMoveDirection
+    enum FoveaMovePattern
     {
-        Vertical,
-        Horizontal,
-        Both,
+        FOVEA_MOVE_PATTERN_LISSAJOUS,
+        FOVEA_MOVE_PATTERN_MOVE_AND_STAY,
+    };
+
+    struct LissajousParams
+    {
+        float2 radius = float2(200, 200);
+        float2 freq = float2(4, 5);
+        float2 phase = float2(PI/2, 0);
+    };
+
+    struct MoveAndStayParams
+    {
+        float speed;
+        float stayDuration;
     };
 
     using SharedPtr = std::shared_ptr<FoveatedPass>;
@@ -38,33 +55,42 @@ public:
     virtual bool onMouseEvent(const MouseEvent& mouseEvent);
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
-
     void reset();
 
 private:
     FoveatedPass(const Dictionary& dict);
+
+    void updateFovea(float t, float);
+    void updateFoveaLissajous(float t, float dt);
+    void updateFoveaMoveAndStay(float t, float dt);
+    uint2 randomFoveaPos();
+
     Scene::SharedPtr            mpScene;
     ComputeProgram::SharedPtr   mpProgram;
     ComputeState::SharedPtr     mpState;
     ComputeVars::SharedPtr      mpVars;
 
+    // Internal states
+    ResourceFormat mOutputFormat = ResourceFormat::R8Uint;
     uint2 mFrameDim;
-
-    ResourceFormat              mOutputFormat = ResourceFormat::R8Uint;
-
-    bool mBuffersNeedClear = false;
+    float2 mFoveaPos = float2(0, 0);
+    float2 mPrevStayPos = float2(0, 0);
+    float2 mNextStayPos;
+    float mLastStayStartTime = 0;
+    float mLastMoveStartTime = -1;
+    std::mt19937 mRng = std::mt19937(777);
 
     // Foveated rendering parameters
-    uint32_t mShape = Shape::Circle;
-    uint32_t mFoveaInputType = FoveaInputType::SHM;
+    uint32_t mShape = FOVEA_SHAPE_CIRCLE;
+    uint32_t mFoveaInputType = FOVEA_INPUT_TYPE_PROCEDURAL;
     bool mUseHistory = true;
-    float mAlpha = 0.2f;
+    float mAlpha = 0.05f;
     float mFoveaRadius = 200;
     float mFoveaSampleCount = 8;
-    float mPeriphSampleCount = 2;
-    float mFoveaMoveRadius = 300;
-    float mFoveaMoveFreq = 0.5;
-    uint32_t mFoveaMoveDirection = FoveaMoveDirection::Both;
+    float mPeriphSampleCount = 1;
+    uint32_t mFoveaMovePattern = FOVEA_MOVE_PATTERN_LISSAJOUS;
+    LissajousParams mLissajousParams;
+    MoveAndStayParams mMoveAndStayParams;
     bool mUseRealTime = false;
     bool mFlickerEnabled = false;
     float mFlickerBrightDuration = 1.0f;

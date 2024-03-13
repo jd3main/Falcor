@@ -8,8 +8,12 @@ class FoveaShape(IntEnum):
 
 class FoveaInputType(IntEnum):
     NONE = 0
-    SHM = auto()
+    PROCEDURAL = auto()
     MOUSE = auto()
+
+class FoveaMovePattern(IntEnum):
+    LISSAJOUS = 0
+    MOVE_AND_STAY = auto()
 
 class SelectionMode(IntEnum):
     UNWEIGHTED = 0

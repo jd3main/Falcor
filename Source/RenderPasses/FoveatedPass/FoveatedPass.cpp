@@ -2,16 +2,16 @@
 
 #include "Enums.h"
 #include "RenderGraph/RenderPassLibrary.h"
-//#include "RenderGraph/RenderPassHelpers.h"
-//#include "Utils/Math/FalcorMath.h"
+#include "RenderGraph/RenderPassHelpers.h"
+#include "Utils/Math/FalcorMath.h"
 
 #include <iostream>
 #include <chrono>
+#include <random>
 
+using namespace std;
 using namespace std::chrono;
 
-const float PI = 3.14159265358979323846f;
-const float TAU = PI*2;
 
 const RenderPass::Info FoveatedPass::kInfo { "FoveatedPass", "Generate texture representing number of samples required" };
 
@@ -29,9 +29,14 @@ namespace
     const std::string kFoveaSampleCount = "foveaSampleCount";
     const std::string kPeriphSampleCount = "periphSampleCount";
     const std::string kUniformSampleCount = "uniformSampleCount";
+
+    const std::string kFoveaMovePattern = "foveaMovePattern";
     const std::string kFoveaMoveRadius = "foveaMoveRadius";
     const std::string kFoveaMoveFreq = "foveaMoveFreq";
-    const std::string kFoveaMoveDirection = "foveaMoveDirection";
+    const std::string kFoveaMovePhase = "foveaMovePhase";
+    const std::string kFoveaMoveSpeed = "foveaMoveSpeed";
+    const std::string kFoveaMoveStayDuration = "foveaMoveStayDuration";
+
     const std::string kUseRealTime = "useRealTime";
     const std::string kFlickerEnabled = "flickerEnabled";
     const std::string kFlickerBrightDurationMs = "flickerBrightDurationMs";
@@ -46,22 +51,21 @@ namespace
 
     // UI
     Gui::DropdownList kShapeList = {
-        { (uint32_t)Shape::Uniform, "Uniform" },
-        { (uint32_t)Shape::Circle, "Circle" },
-        { (uint32_t)Shape::SplitHorizontally, "SplitHorizontally" },
-        { (uint32_t)Shape::SplitVertically, "SplitVertically" },
+        { (uint32_t)FOVEA_SHAPE_UNIFORM, "Uniform" },
+        { (uint32_t)FOVEA_SHAPE_CIRCLE, "Circle" },
+        { (uint32_t)FOVEA_SHAPE_SPLITHORIZONTALLY, "SplitHorizontally" },
+        { (uint32_t)FOVEA_SHAPE_SPLITVERTICALLY, "SplitVertically" },
     };
 
     Gui::DropdownList kFoveaInputTypeList = {
-        { (uint32_t)FoveaInputType::None, "None" },
-        { (uint32_t)FoveaInputType::SHM, "SMH" },
-        { (uint32_t)FoveaInputType::Mouse, "Mouse" },
+        { (uint32_t)FoveaInputType::FOVEA_INPUT_TYPE_NONE, "None" },
+        { (uint32_t)FoveaInputType::FOVEA_INPUT_TYPE_PROCEDURAL, "Procedural" },
+        { (uint32_t)FoveaInputType::FOVEA_INPUT_TYPE_MOUSE, "Mouse" },
     };
 
     Gui::DropdownList kFoveaMoveDirectionList = {
-        { (uint32_t)FoveatedPass::FoveaMoveDirection::Horizontal, "Horizontal" },
-        { (uint32_t)FoveatedPass::FoveaMoveDirection::Vertical, "Vertical" },
-        { (uint32_t)FoveatedPass::FoveaMoveDirection::Both, "Both" },
+        { (uint32_t)FoveatedPass::FoveaMovePattern::FOVEA_MOVE_PATTERN_LISSAJOUS, "Lissajous" },
+        { (uint32_t)FoveatedPass::FoveaMovePattern::FOVEA_MOVE_PATTERN_MOVE_AND_STAY, "Move and Stay" },
     };
 }
 
@@ -112,8 +116,11 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
     const auto& pOutputSampleCount = renderData.getTexture(kOutputSampleCount);
 
     const auto currentTime = high_resolution_clock::now();
-    float realtime = duration_cast<microseconds>(currentTime.time_since_epoch()).count() / 1'000'000.0f;
-    float t = mUseRealTime ? realtime : gpFramework->getGlobalClock().getTime();
+    float realTime = duration_cast<microseconds>(currentTime.time_since_epoch()).count() / 1'000'000.0f;
+    static float lastRealTime = realTime;
+    float t = mUseRealTime ? realTime : gpFramework->getGlobalClock().getTime();
+    float dt = mUseRealTime ? realTime - lastRealTime : gpFramework->getGlobalClock().getDelta();
+    lastRealTime = realTime;
     uint2 resolution = renderData.getDefaultTextureDims();
 
     // Reset accumulation when resolution changes.
@@ -126,32 +133,7 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
 
     if (mpScene)
     {
-        float2 foveaCenter;
-        switch (mFoveaInputType) {
-        case None:
-            foveaCenter = float2(resolution) / 2.0f;
-            break;
-        case SHM:
-            {
-            float dx = sin(t * TAU * mFoveaMoveFreq) * mFoveaMoveRadius;
-            float dy = cos(t * TAU * mFoveaMoveFreq) * mFoveaMoveRadius;
-            switch (mFoveaMoveDirection) {
-            case FoveaMoveDirection::Horizontal:
-                foveaCenter = float2(resolution) / 2.0f + float2(dx, 0);
-                break;
-            case FoveaMoveDirection::Vertical:
-                foveaCenter = float2(resolution) / 2.0f + float2(0,dy);
-                break;
-            case FoveaMoveDirection::Both:
-                foveaCenter = float2(resolution) / 2.0f + float2(dx,dy);
-                break;
-            }
-            break;
-            }
-        case Mouse:
-            foveaCenter = mMousePos * (float2)resolution;
-            break;
-        }
+        updateFovea(t, dt);
 
         auto CB = mpVars["PerFrameCB"];
         CB["gShape"] = (int)mShape;
@@ -159,7 +141,7 @@ void FoveatedPass::execute(RenderContext* pRenderContext, const RenderData& rend
         CB["gAlpha"] = mAlpha;
         CB["gInnerTargetQuality"] = mFoveaSampleCount;
         CB["gOuterTargetQuality"] = mPeriphSampleCount;
-        CB["gFoveaCenter"] = foveaCenter;
+        CB["gFoveaCenter"] = mFoveaPos;
         CB["gFoveaRadius"] = mFoveaRadius;
         CB["gResolution"] = resolution;
         CB["gFlickerEnabled"] = mFlickerEnabled;
@@ -189,7 +171,7 @@ void FoveatedPass::setScene(RenderContext* pRenderContext, const Scene::SharedPt
 
 bool FoveatedPass::onMouseEvent(const MouseEvent& mouseEvent)
 {
-    if (mFoveaInputType == FoveaInputType::Mouse)
+    if (mFoveaInputType == FoveaInputType::FOVEA_INPUT_TYPE_MOUSE)
     {
         if (mouseEvent.type == MouseEvent::Type::Move)
         {
@@ -211,15 +193,26 @@ FoveatedPass::FoveatedPass(const Dictionary& dict) : RenderPass(kInfo)
         else if (key == kFoveaRadius) mFoveaRadius = value;
         else if (key == kFoveaSampleCount) mFoveaSampleCount = value;
         else if (key == kPeriphSampleCount) mPeriphSampleCount = value;
-        else if (key == kFoveaMoveRadius) mFoveaMoveRadius = value;
-        else if (key == kFoveaMoveFreq) mFoveaMoveFreq = value;
-        else if (key == kFoveaMoveDirection) mFoveaMoveDirection = value;
+        else if (key == kFoveaMovePattern) mFoveaMovePattern = value;
+        else if (key == kFoveaMoveRadius) mLissajousParams.radius = value;
+        else if (key == kFoveaMoveFreq) mLissajousParams.freq = value;
+        else if (key == kFoveaMovePhase) mLissajousParams.phase = value;
+        else if (key == kFoveaMoveSpeed) mMoveAndStayParams.speed = value;
+        else if (key == kFoveaMoveStayDuration) mMoveAndStayParams.stayDuration = value;
         else if (key == kUseRealTime) mUseRealTime = value;
         else if (key == kFlickerEnabled) mFlickerEnabled = value;
         else if (key == kFlickerBrightDurationMs) mFlickerBrightDuration = value;
         else if (key == kFlickerDarkDurationMs) mFlickerDarkDuration = value;
         else logWarning("Unknown field '" + key + "' in a FoveatedPass dictionary");
     }
+
+    std::cerr << "FoveatedPass: Shape = " << mShape << std::endl;
+    std::cerr << "FoveatedPass: FoveaMovePattern = " << mFoveaMovePattern << std::endl;
+    std::cerr << "FoveatedPass: FoveaMoveRadius = " << to_string(mLissajousParams.radius) << std::endl;
+    std::cerr << "FoveatedPass: FoveaMoveFreq = " << to_string(mLissajousParams.freq) << std::endl;
+    std::cerr << "FoveatedPass: FoveaMovePhase = " << to_string(mLissajousParams.phase) << std::endl;
+    std::cerr << "FoveatedPass: FoveaMoveSpeed = " << to_string(mMoveAndStayParams.speed) << std::endl;
+    std::cerr << "FoveatedPass: FoveaMoveStayDuration = " << to_string(mMoveAndStayParams.stayDuration) << std::endl;
 
     Program::DefineList defines;
     mpProgram = ComputeProgram::createFromFile(kShaderFile, kShaderEntryPoint, defines, Shader::CompilerFlags::TreatWarningsAsErrors);
@@ -239,9 +232,12 @@ Dictionary FoveatedPass::getScriptingDictionary()
     d[kFoveaRadius] = mFoveaRadius;
     d[kFoveaSampleCount] = mFoveaSampleCount;
     d[kPeriphSampleCount] = mPeriphSampleCount;
-    d[kFoveaMoveRadius] = mFoveaMoveRadius;
-    d[kFoveaMoveFreq] = mFoveaMoveFreq;
-    d[kFoveaMoveDirection] = mFoveaMoveDirection;
+    d[kFoveaMovePattern] = mFoveaMovePattern;
+    d[kFoveaMoveRadius] = mLissajousParams.radius;
+    d[kFoveaMoveFreq] = mLissajousParams.freq;
+    d[kFoveaMovePhase] = mLissajousParams.phase;
+    d[kFoveaMoveSpeed] = mMoveAndStayParams.speed;
+    d[kFoveaMoveStayDuration] = mMoveAndStayParams.stayDuration;
     d[kUseRealTime] = mUseRealTime;
     d[kFlickerEnabled] = mFlickerEnabled;
     d[kFlickerBrightDurationMs] = mFlickerBrightDuration;
@@ -253,41 +249,113 @@ void FoveatedPass::renderUI(Gui::Widgets& widget)
 {
     int dirty = 0;
 
-    dirty |= (int)widget.dropdown("Fovea Shape", kShapeList, mShape);
-    dirty |= (int)widget.dropdown("Fovea Input Type", kFoveaInputTypeList, mFoveaInputType);
+    widget.text("Current position: " + to_string(mFoveaPos));
 
-    dirty |= (int)widget.checkbox("Use History", mUseHistory);
-    dirty |= (int)widget.var("Alpha", mAlpha);
-    if (mShape == Shape::Circle || mShape == Shape::SplitHorizontally || mShape == Shape::SplitVertically)
+    widget.dropdown("Fovea Shape", kShapeList, mShape);
+    widget.dropdown("Fovea Input Type", kFoveaInputTypeList, mFoveaInputType);
+
+    widget.checkbox("Use History", mUseHistory);
+    widget.var("Alpha", mAlpha);
+    if (mShape == FOVEA_SHAPE_CIRCLE || mShape == FOVEA_SHAPE_SPLITHORIZONTALLY || mShape == FOVEA_SHAPE_SPLITVERTICALLY)
     {
-        dirty |= (int)widget.var("Fovea Radius", mFoveaRadius);
-        dirty |= (int)widget.var("Fovea Sample Count", mFoveaSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
-        dirty |= (int)widget.var("Periph Sample Count", mPeriphSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
+        widget.var("Fovea Radius", mFoveaRadius);
+        widget.var("Fovea Sample Count", mFoveaSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
+        widget.var("Periph Sample Count", mPeriphSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
     }
     else
     {
-        dirty |= (int)widget.var("Sample Count", mFoveaSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
+        widget.var("Sample Count", mFoveaSampleCount, 0.0f, 128.0f, 1.0f, false, "%.0f");
     }
 
-    if (mFoveaInputType == FoveaInputType::SHM)
+    widget.text("Fovea Movement");
+
+    widget.dropdown("Move Pattern", kFoveaMoveDirectionList, mFoveaMovePattern);
+    if (mFoveaMovePattern == FoveaMovePattern::FOVEA_MOVE_PATTERN_LISSAJOUS)
     {
-        dirty |= (int)widget.var("Move Frequency", mFoveaMoveFreq);
-        dirty |= (int)widget.var("Move Radius", mFoveaMoveRadius);
-        dirty |= (int)widget.dropdown("Move Direction", kFoveaMoveDirectionList, mFoveaMoveDirection);
-        dirty |= (int)widget.checkbox("Use Real Time", mUseRealTime);
+        widget.var("Frequency", mLissajousParams.freq, 0.0f, 100.0f, 0.01f, false, "%.2f");
+        widget.var("Radius", mLissajousParams.radius, 0.0f, 1000.0f, 1.0f, false, "%.2f");
+    }
+    else if (mFoveaMovePattern == FoveaMovePattern::FOVEA_MOVE_PATTERN_MOVE_AND_STAY)
+    {
+        widget.var("Stay Duration", mMoveAndStayParams.stayDuration, 0.0f, 100.0f, 0.01f, false, "%.2f");
+        widget.tooltip("Duration to stay at a position before moving to the next. Unit: seconds.");
+        widget.var("Speed", mMoveAndStayParams.speed, 0.0f, 10000.0f, 1.0f, false, "%.0f");
+        widget.tooltip("Speed of movement. Unit: pixels per second.");
     }
 
-    dirty |= (int)widget.checkbox("Flicker", mFlickerEnabled);
+    widget.checkbox("Use Real Time", mUseRealTime);
+
+    widget.text("Flicker");
+    widget.checkbox("Flicker", mFlickerEnabled);
     if (mFlickerEnabled)
     {
-        dirty |= (int)widget.var("Bright Duration", mFlickerBrightDuration, 0.0f, 20.0f, 0.001f, false, "%.3f");
-        dirty |= (int)widget.var("Dark Duration", mFlickerDarkDuration, 0.0f, 20.0f, 0.001f, false, "%.3f");
+        widget.var("Bright Duration", mFlickerBrightDuration, 0.0f, 20.0f, 0.001f, false, "%.3f");
+        widget.var("Dark Duration", mFlickerDarkDuration, 0.0f, 20.0f, 0.001f, false, "%.3f");
     }
-
-    if (dirty) mBuffersNeedClear = true;
 }
 
 void FoveatedPass::reset()
 {
 }
 
+
+void FoveatedPass::updateFovea(float t, float dt)
+{
+    switch (mFoveaInputType) {
+    case FOVEA_INPUT_TYPE_NONE:
+        mFoveaPos = float2(mFrameDim) / 2.0f;
+        break;
+    case FOVEA_INPUT_TYPE_PROCEDURAL:
+        switch (mFoveaMovePattern) {
+        case FoveaMovePattern::FOVEA_MOVE_PATTERN_LISSAJOUS:
+            updateFoveaLissajous(t, dt);
+            break;
+        case FoveaMovePattern::FOVEA_MOVE_PATTERN_MOVE_AND_STAY:
+            updateFoveaMoveAndStay(t, dt);
+            break;
+        }
+        break;
+    case FOVEA_INPUT_TYPE_MOUSE:
+        mFoveaPos = mMousePos * float2(mFrameDim);
+        break;
+    }
+}
+
+void FoveatedPass::updateFoveaLissajous(float t, float dt)
+{
+    float2 displace = sin(t * TAU * mLissajousParams.freq + mLissajousParams.phase) * mLissajousParams.radius;
+    mFoveaPos = float2(mFrameDim) / 2.0f + displace;
+}
+
+void FoveatedPass::updateFoveaMoveAndStay(float t, float dt)
+{
+    // check if it's time to move
+    if (t - mLastStayStartTime > mMoveAndStayParams.stayDuration)
+    {
+        // check if we are just starting to move
+        if (mLastMoveStartTime < mLastStayStartTime)
+        {
+            mLastMoveStartTime = mLastStayStartTime + mMoveAndStayParams.stayDuration;
+            mPrevStayPos = mFoveaPos;
+            mNextStayPos = randomFoveaPos();
+        }
+
+        float2 targetDisplace = mNextStayPos - mPrevStayPos;
+        float2 moveDir = targetDisplace / length(targetDisplace);
+        float2 displace = moveDir * mMoveAndStayParams.speed * (t - mLastMoveStartTime);
+        if (length(displace) < length(targetDisplace))
+        {
+            mFoveaPos = mPrevStayPos + displace;
+        }
+        else
+        {
+            mFoveaPos = mNextStayPos;
+            mLastStayStartTime = t;
+        }
+    }
+}
+
+uint2 FoveatedPass::randomFoveaPos()
+{
+    return uint2(mRng() % mFrameDim.x, mRng() % mFrameDim.y);
+}

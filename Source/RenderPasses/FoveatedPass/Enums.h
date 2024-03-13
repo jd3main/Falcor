@@ -1,16 +1,16 @@
 #pragma once
 
-enum Shape
+enum FoveaShape
 {
-    Uniform,
-    Circle,
-    SplitHorizontally,
-    SplitVertically,
+    FOVEA_SHAPE_UNIFORM,
+    FOVEA_SHAPE_CIRCLE,
+    FOVEA_SHAPE_SPLITHORIZONTALLY,
+    FOVEA_SHAPE_SPLITVERTICALLY,
 };
 
 enum FoveaInputType
 {
-    None,
-    SHM,
-    Mouse,
+    FOVEA_INPUT_TYPE_NONE,
+    FOVEA_INPUT_TYPE_PROCEDURAL,
+    FOVEA_INPUT_TYPE_MOUSE,
 };
