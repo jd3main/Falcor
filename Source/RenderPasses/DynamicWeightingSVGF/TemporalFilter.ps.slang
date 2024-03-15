@@ -63,8 +63,8 @@ cbuffer PerImageCB
     Texture2D gPrevUnweightedHistoryWeight;
     Texture2D gPrevWeightedHistoryWeight;
 
-
     float gAlpha;
+    float gWeightedAlpha;
     float gMomentsAlpha;
 
     int gSampleCountOverride = -1;
@@ -298,8 +298,11 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float unweightedHistoryWeight = decay * h.unweightedWeight + 1;
     float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
 #if DW_ENABLED
-    float weightedAlpha = float(sampleCount) / (decay * h.weightedWeight + float(sampleCount));
-    float weightedHistoryWeight = decay * h.weightedWeight + sampleCount;
+    float weightedDecay = success ? (1.0f - gWeightedAlpha) : 0.0f;
+    if (curLength < 8)
+        weightedDecay = 1;
+    float weightedAlpha = float(sampleCount) / (weightedDecay * h.weightedWeight + float(sampleCount));
+    float weightedHistoryWeight = weightedDecay * h.weightedWeight + sampleCount;
     float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
 #endif
 

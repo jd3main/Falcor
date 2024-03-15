@@ -98,7 +98,7 @@ class AllFrames:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
 
-def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
+def render_graph_g(iters, feedback, grad_iters, alpha=0.05, weightedAlpha=0.05,
                    dynamic_weighting_enabled=False, dynamic_weighting_params:dict={},
                    foveated_pass_enabled=False, foveated_pass_params:dict={},
                    output_sample_count=False,
@@ -109,6 +109,9 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
 
     GBufferRaster = createPass('GBufferRaster', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack})
     g.addPass(GBufferRaster, 'GBufferRaster')
+
+    VBufferRT = createPass('VBufferRT', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack, 'useTraceRayInline': False, 'useDOF': True})
+    g.addPass(VBufferRT, 'VBufferRT')
 
     Composite = createPass('Composite', {'mode': CompositeMode.Add, 'scaleA': 0.5, 'scaleB': 0.5, 'outputFormat': ResourceFormat.RGBA32Float})
     g.addPass(Composite, 'Composite')
@@ -150,6 +153,7 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
         'PhiColor': 10.0,
         'PhiNormal': 128.0,
         'Alpha': alpha,
+        'WeightedAlpha': weightedAlpha,
         'MomentsAlpha': 0.2,
         'GradientAlpha': 0.2,
         'GradientMidpoint': 0.01,
@@ -162,7 +166,7 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
     g.addPass(SVGFPass, 'SVGFPass')
 
     g.addEdge('GBufferRaster.viewW', 'PathTracer.viewW')
-    g.addEdge('GBufferRaster.vbuffer', 'PathTracer.vbuffer')
+    g.addEdge('VBufferRT.vbuffer', 'PathTracer.vbuffer')
     g.addEdge('GBufferRaster.mvec', 'PathTracer.mvec')
     g.addEdge('PathTracer.albedo', 'Composite.A')
     g.addEdge('PathTracer.specularAlbedo', 'Composite.B')
@@ -303,6 +307,12 @@ def normalizeGraphParams(graph_params: dict) -> dict:
     if not graph_params['adaptive_pass_enabled']:
         graph_params['adaptive_pass_params'] = {}
 
+    if 'alpha' not in graph_params:
+        graph_params['alpha'] = 0.05
+
+    if 'weightedAlpha' not in graph_params and 'alpha' in graph_params:
+        graph_params['weightedAlpha'] = graph_params['alpha']
+
     return graph_params
 
 def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
@@ -345,6 +355,10 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
             folder_name_parts.append('Norm({})'.format(
                 NormalizationMode(dw_params['NormalizationMode']).name))
 
+        if graph_params['weightedAlpha'] != graph_params['alpha']:
+            folder_name_parts.append('wAlpha({})'.format(
+                graph_params['weightedAlpha']))
+
     if graph_params['foveated_pass_enabled']:
         fovea_params = graph_params['foveated_pass_params']
         assert fovea_params['foveaInputType'] == FoveaInputType.PROCEDURAL
@@ -360,6 +374,8 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
             folder_name_parts.append('MoveAndStay({},{})'.format(
                 fovea_params['foveaMoveSpeed'],
                 fovea_params['foveaMoveStayDuration']))
+    else:
+        folder_name_parts.append(f'{graph_params["sample_count"]}')
 
     folder_name = '_'.join(folder_name_parts)
     return folder_name
@@ -426,8 +442,8 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     gc.collect()
 
 
-# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
-scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
+scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
@@ -455,7 +471,8 @@ common_record_params = {
 }
 
 common_graph_params = {
-    'alpha': 0.05,
+    'alpha': 0.2,
+    'weightedAlpha': 0.02,
     'debug_tag_enabled': False,
 }
 
@@ -476,8 +493,8 @@ gt_sample_Count = 64
 
 # iters, feedback, grad_iters
 iter_params = [
-    (2, -1, 0),
-    # (2, 0, 1),
+    # (2, -1, 0),
+    (2, 0, 1),
     # (2, 1, 2),
 ]
 midpoints = [0, 0.05, 0.5, 1.0]

@@ -43,6 +43,7 @@ namespace
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
     const char kAlpha[] = "Alpha";
+    const char kWeightedAlpha[] = "WeightedAlpha";
     const char kMomentsAlpha[] = "MomentsAlpha";
     const char kGradientAlpha[] = "GradientAlpha";
     const char kGradientMidpoint[] = "GradientMidpoint";
@@ -188,6 +189,7 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kPhiColor) mPhiColor = value;
         else if (key == kPhiNormal) mPhiNormal = value;
         else if (key == kAlpha) mAlpha = value;
+        else if (key == kWeightedAlpha) mWeightedAlpha = value;
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
         else if (key == kGradientAlpha) mGradientAlpha = value;
         else if (key == kGradientMidpoint) mGammaMidpoint = value;
@@ -219,6 +221,7 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kPhiColor] = mPhiColor;
     dict[kPhiNormal] = mPhiNormal;
     dict[kAlpha] = mAlpha;
+    dict[kWeightedAlpha] = mWeightedAlpha;
     dict[kMomentsAlpha] = mMomentsAlpha;
     dict[kGradientAlpha] = mGradientAlpha;
     dict[kGradientMidpoint] = mGammaMidpoint;
@@ -383,8 +386,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
             pSampleCountTexture,
             pEmissionTexture,
             pMotionVectorTexture,
-            pPosNormalFwidthTexture,
-            pOutputVariance);
+            pPosNormalFwidthTexture);
 
 #if DEBUG_OUTPUT_ENABLED
         if (mEnableDebugOutput)
@@ -588,8 +590,7 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     Texture::SharedPtr pSampleCountTexture,
     Texture::SharedPtr pEmissionTexture,
     Texture::SharedPtr pMotionVectorTexture,
-    Texture::SharedPtr pPositionNormalFwidthTexture,
-    Texture::SharedPtr pOutputVarianceTexture)
+    Texture::SharedPtr pPositionNormalFwidthTexture)
 {
     FALCOR_PROFILE("computeTemporalFilter");
 
@@ -623,6 +624,7 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
 
     // Parameters
     perImageCB["gAlpha"] = mAlpha;
+    perImageCB["gWeightedAlpha"] = mWeightedAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
     perImageCB["gSampleCountOverride"] = mSampleCountOverride;
 
@@ -858,6 +860,7 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
     dirty |= widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
+    dirty |= widget.var("Weighted Alpha", mWeightedAlpha, 0.0f, 1.0f, 0.001f);
     dirty |= widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
 
     widget.text("");

@@ -39,8 +39,7 @@ private:
         Texture::SharedPtr pSampleCount,
         Texture::SharedPtr pEmissionTexture,
         Texture::SharedPtr pMotionVectorTexture,
-        Texture::SharedPtr pPositionNormalFwidthTexture,
-        Texture::SharedPtr pOutputVarianceTexture);
+        Texture::SharedPtr pPositionNormalFwidthTexture);
     void computeReprojection(RenderContext* pRendercontext,
         Texture::SharedPtr pColorTexture,
         Texture::SharedPtr pLinearZTexture,
@@ -76,6 +75,7 @@ private:
     float   mPhiColor = 10.0f;
     float   mPhiNormal = 128.0f;
     float   mAlpha = 0.05f;
+    float   mWeightedAlpha = 0.05f;
     float   mMomentsAlpha = 0.2f;
     float   mGradientAlpha = 0.2f;
     float   mExpectedDelay = -10;
