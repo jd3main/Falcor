@@ -117,8 +117,6 @@ private:
     // Intermediate textures
     Texture::SharedPtr mpPrevLinearZAndNormalTexture;
     Texture::SharedPtr mpPrevGradientTexture;
-    Texture::SharedPtr mpPrevUnweightedIllumination;
-    Texture::SharedPtr mpPrevWeightedIllumination;
 
     // Intermediate buffers
     Texture::SharedPtr mpReprojectionTapWidthAndPrevPosTexture;

@@ -3,6 +3,8 @@ import sys
 from pathlib import *
 import gc
 import math
+from pprint import pprint
+import json
 
 def install(package):
     python_path = Path(sys.executable).parent/'Python/python.exe'
@@ -35,8 +37,8 @@ class FalcorDecoder(json.JSONDecoder):
 def __eq__(self, other):
     """Overrides the default implementation"""
     if isinstance(other, float2):
-        print('is float2')
         return self.x == other.x and self.y == other.y
+    print(f"using fallback __eq__ for {type(self)} and {type(other)}")
     return False
 
 float2.__eq__ = __eq__
@@ -95,7 +97,7 @@ class AllFrames:
     def __dict__(self) -> dict:
         return dict()
     def toJSON(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=2)
 
 
 def render_graph_g(iters, feedback, grad_iters, alpha=0.05, weightedAlpha=0.05,
@@ -104,6 +106,7 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05, weightedAlpha=0.05,
                    output_sample_count=False,
                    sample_count=DEFAULT_GT_SAMPLE_COUNT,
                    debug_tag_enabled=False,
+                   debug_output_enabled=False,
                    **kwargs):
     g = RenderGraph('g')
 
@@ -162,6 +165,7 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05, weightedAlpha=0.05,
         'SampleCountOverride': -1,
         'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
         'EnableDebugTag': debug_tag_enabled,
+        'EnableDebugOutput': debug_output_enabled,
         **dynamic_weighting_params})
     g.addPass(SVGFPass, 'SVGFPass')
 
@@ -213,7 +217,8 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
     m.frameCapture.baseFilename = base_filename
 
     renderFrame()
-
+    m.profiler.enabled = True
+    m.profiler.startCapture()
     start_frame = int(start_time * fps)
     end_frame = int(end_time * fps)
     for frame in range(start_frame, end_frame):
@@ -222,6 +227,10 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
         if frame in frames:
             m.frameCapture.baseFilename = base_filename
             m.frameCapture.capture()
+    capture = m.profiler.endCapture()
+    m.profiler.enabled = False
+    json.dump(capture, open(output_path/'profile.json', 'w'), indent=2)
+
 
 def recordVideo(start_time, end_time, fps=60, codec="Raw", bitrate_mbps=4.0, gopSize=10,
                 output_path=DEFAULT_OUTPUT_PATH, base_filename=DEFAULT_BASE_FILENAME, exit_on_done=True):
@@ -255,7 +264,7 @@ def storeMetadata(output_path: Union[str,Path], data):
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
     with open(output_path/'metadata.txt', 'w') as f:
-        json.dump(data, f, cls=FalcorEnoder, indent=4)
+        json.dump(data, f, cls=FalcorEnoder, indent=2)
 
 def loadMetadata(path) -> dict:
     '''
@@ -408,19 +417,31 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     output_path = output_path_base / folder_name
     if output_path.exists():
         if force_record:
-            print(f"[Warning] Found existing record at \"{output_path}\".\nForce continue recording.")
+            print(f"[Warning] Found existing record at \"{output_path}\".")
+            print("Force continue recording.")
         else:
             g_params = normalizeGraphParams(loadMetadata(output_path))
             n_frames = int(record_params['fps'] * (record_params['end_time'] - record_params['start_time']))
             existing_frame_count = countImages(output_path, f'{record_params["fps"]}fps.SVGFPass.Filtered image.{{}}.exr')
-            if g_params == graph_params and n_frames == existing_frame_count:
-                print(f"[Warning] Found existing record with same parameters at \"{output_path}\".\nSkip recording.")
-                return
+            if g_params != graph_params:
+                print(f"[Warning] Found existing record with different parameters at: \"{output_path}\"")
+                for k in g_params.keys():
+                    if k not in graph_params:
+                        print(f"key \"{k}\" not in graph_params")
+                for k in graph_params.keys():
+                    if k not in g_params:
+                        print(f"key \"{k}\" not in g_params")
+                for k in g_params.keys():
+                    if g_params[k] != graph_params[k]:
+                        print(f"{k}: {g_params[k]} != {graph_params[k]}")
+                print(f"Overwriting.")
+            elif n_frames != existing_frame_count:
+                print(f"[Warning] Found existing record with different number of frames at: \"{output_path}\"")
+                print(f"Overwriting.")
             else:
-                print(f"[Warning] Found existing record with different parameters at \"{output_path}\".\nContinue recording.")
-                print(g_params)
-                print(graph_params)
-                exit()
+                print(f"[Warning] Found existing record with same parameters at \"{output_path}\".")
+                print(f"Skip recoding.")
+                return
 
     base_filename = '{fps}fps'.format(
         fps = record_params['fps'])
@@ -466,14 +487,15 @@ except Exception as e:
 common_record_params = {
     'fps': 30,
     'start_time': 0,
-    'end_time': animation_lengths[scene_name],
-    # 'end_time': 30,
+    # 'end_time': animation_lengths[scene_name],
+    'end_time': 20,
 }
 
 common_graph_params = {
-    'alpha': 0.2,
-    'weightedAlpha': 0.02,
+    'alpha': 0.05,
+    # 'weightedAlpha': 0.02,
     'debug_tag_enabled': False,
+    'debug_output_enabled': False,
 }
 
 foveated_params_override = {
@@ -489,16 +511,18 @@ foveated_params_override = {
     'foveaMoveStayDuration': 0.5,
 }
 
-gt_sample_Count = 64
+gt_sample_Count = 96
 
 # iters, feedback, grad_iters
 iter_params = [
-    # (2, -1, 0),
-    (2, 0, 1),
+    (2, -1, 0),
+    # (2, 0, 1),
     # (2, 1, 2),
 ]
 midpoints = [0, 0.05, 0.5, 1.0]
 steepnesses = [0.1, 1, 10]
+# midpoints = [0.05]
+# steepnesses = [1]
 
 force_record_selections =  False
 force_record_step = False
@@ -521,7 +545,7 @@ for iters, feedback, grad_iters in iter_params:
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
                         'SampleCountOverride': -1,
-                        'NormalizationMode': NormalizationMode.STD,
+                        'NormalizationMode': NormalizationMode.NONE,
                     },
                     'foveated_pass_enabled': True,
                     'foveated_pass_params': foveated_params_override,

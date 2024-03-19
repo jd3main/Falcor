@@ -36,8 +36,8 @@ class Record:
 
 record_path = Path(__file__).parents[4]/'Record'
 
-# scene_name = 'BistroExterior'
-scene_name = 'VeachAjarAnimated'
+scene_name = 'BistroExterior'
+# scene_name = 'VeachAjarAnimated'
 
 iters = 2
 feedback = -1

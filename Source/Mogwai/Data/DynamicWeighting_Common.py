@@ -24,10 +24,10 @@ class SelectionMode(IntEnum):
 
 class NormalizationMode(IntEnum):
     NONE = 0
-    LUMINANCE = auto()
-    VARIANCE = auto()
-    STANDARD_DEVIATION = auto()
+    LUM = auto()
+    VAR = auto()
+    STD = auto()
 
-    LUM = LUMINANCE
-    VAR = VARIANCE
-    STD = STANDARD_DEVIATION
+    LUMINANCE = LUM
+    VARIANCE = VAR
+    STANDARD_DEVIATION = STD

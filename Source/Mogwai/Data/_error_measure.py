@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass
 from enum import IntEnum, auto
 import argparse
+import gc
+import winsound
 
 import numpy as np
 import cupy as cp
@@ -18,6 +20,7 @@ from matplotlib.axes import Axes
 import pandas as pd
 import skimage as ski
 from skimage.metrics import structural_similarity as ssim
+from tqdm import tqdm
 
 from _utils import *
 from DynamicWeighting_Common import *
@@ -164,9 +167,9 @@ DEFAULT_SELECTION_FUNC = "Linear"
 # DEFAULT_SELECTION_FUNC = "Step"
 # DEFAULT_SELECTION_FUNC = "Logistic"
 
-DEFAULT_NORMALZATION_MODE = NormalizationMode.STANDARD_DEVIATION
+DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
 # DEFAULT_NORMALZATION_MODE = NormalizationMode.NONE
-# DEFAULT_NORMALZATION_MODE = NormalizationMode.LUMINANCE
+# DEFAULT_NORMALZATION_MODE = NormalizationMode.LUM
 
 DEFAULT_ITER_PARAMS = [
     (2, -1, 0),
@@ -227,7 +230,10 @@ sampling = args.sampling
 force_recalculate = args.force
 plot_histo = args.plot_histo
 plot_error_over_time = args.plot_error_over_time
+alpha = 0.05
+w_alpha = 0.05
 
+gt_sample_count = 96
 
 print(f'scene_name:         {scene_name}')
 print(f'n_frames:           {n_frames}')
@@ -238,53 +244,41 @@ print(f'iter_params:        {iter_params}')
 print(f'midpoints:          {midpoints}')
 print(f'steepnesses:        {steepnesses}')
 print(f'sampling:           {sampling}')
+print(f'gt_sample_count:    {gt_sample_count}')
 
 
 for iters, feedback, grad_iters in iter_params:
     print(f'iters: ({iters},{feedback},{grad_iters})')
 
     # check reference data path
-    reference_path = record_path/f'{scene_name}_iters({iters},{feedback})'
+    reference_path = record_path/f'{scene_name}_iters({iters},{feedback})_Alpha({alpha})_{gt_sample_count}'
     if not reference_path.exists():
         logErr(f'[Error] reference folder not found: {reference_path}')
         exit()
+
     # check number of reference images
-    n_ref_images = countImages(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr')
+    ref_images_pattern = f'{fps}fps.SVGFPass.Filtered image.{{}}.exr'
+    n_ref_images = countImages(reference_path, ref_images_pattern)
     if n_ref_images < n_frames:
         logErr(f'[Error] {n_frames} reference images required but only {n_ref_images} found.')
         exit()
     elif n_ref_images > n_frames:
         logWarn(f'[Warning] {n_ref_images} reference images found, more than required ({n_frames})')
 
-    # load reference images
-    print(f'loading reference data from "{reference_path}"')
-    reference_images = []
-    try:
-        reference_images = loadImageSequence(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
-    except FileNotFoundError as e:
-        logErr(f'[Error] FileNotFoundError: {e}')
-        exit()
-
-    if len(reference_images) == 0:
-        logErr(f'[Error] No reference images loaded')
-        exit()
-    else:
-        print(f'{len(reference_images)} reference images loaded')
-
-    print(f'max value: {np.max(reference_images)}')
-
     # setup source folders
     source_folders: list[Path] = []
     for midpoint in midpoints:
         for steepness in steepnesses:
             if selection_func == 'Step':
-                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint})_GAlpha(0.2)_Norm({normalization_mode.name})_{sampling}'
+                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha(0.2)_Norm({normalization_mode.name})_{sampling}'
             else:
-                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint},{steepness})_GAlpha(0.2)_Norm({normalization_mode.name})_{sampling}'
+                folder_name = f'{scene_name}_iters({iters},{feedback},{grad_iters})_{selection_func}({midpoint},{steepness})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha(0.2)_Norm({normalization_mode.name})_{sampling}'
             if (record_path/folder_name).exists():
                 source_folders.append(record_path/folder_name)
-    source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_{sampling}')
-    source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Weighted_{sampling}')
+            else:
+                logWarn(f'[Warning] folder not found: {folder_name}')
+    source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Alpha({alpha})_{sampling}')
+    source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Weighted_Alpha({alpha})_WAlpha({w_alpha})_{sampling}')
     print(f'found {len(source_folders)} source folders')
 
     records_params:list[RecordParams] = [RecordParams.parse(folder.name, scene_name) for folder in source_folders]
@@ -350,6 +344,9 @@ for iters, feedback, grad_iters in iter_params:
             else:
                 print(f'some data not exists or outdated, calculating...')
 
+        # load reference images
+        reference_images = imageSequenceLoader(reference_path, ref_images_pattern, n_frames)
+
         # load source images
         source_images = imageSequenceLoader(folder, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
         params = records_params[folder_index]
@@ -359,15 +356,13 @@ for iters, feedback, grad_iters in iter_params:
         c = midpoints.index(midpoint)
 
         # calculate errors
-        for i, _source_image in enumerate(source_images):
+        for i, (_reference_image, _source_image) in tqdm(enumerate(zip(reference_images, source_images)), total=n_frames):
             if USE_CUDA:
-                reference_image = cp.asarray(reference_images[i])
+                reference_image = cp.asarray(_reference_image)
                 source_image = cp.asarray(_source_image)
             else:
+                reference_image = _reference_image
                 source_image = _source_image
-
-
-            xp = cp.get_array_module(reference_image)
 
             if err_type == ErrorType.L1:
                 err = xp.sum(xp.abs(reference_image - source_image), axis=-1)
@@ -388,7 +383,7 @@ for iters, feedback, grad_iters in iter_params:
                 results[folder_index, i, fields.index('top-1-percent')] = top_1_percent
 
             if 'ssim' in fields and not loaded['ssim']:
-                mssim = ssim(reference_images[i], _source_image,
+                mssim = ssim(_reference_image, _source_image,
                              gaussian_weights = True,
                              sigma = 1.5,
                              use_sample_covariance = False,
@@ -398,6 +393,8 @@ for iters, feedback, grad_iters in iter_params:
 
             if plot_histo:
                 err_histograms[r, c, i, :] = xp.histogram(err, bins=err_bins)[0]
+
+            gc.collect()
 
 
         short_name = folder.name.split('_')[2+scene_name.count('_')]
@@ -436,7 +433,7 @@ for iters, feedback, grad_iters in iter_params:
     # write tables to file
     output_dir = Path(f'{sampling}/{scene_name}')
     ensurePath(output_dir)
-    save_path = output_dir/Path(f'iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Err({err_type.name}).txt')
+    save_path = output_dir/Path(f'iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Alpha({alpha})_wAlpha({w_alpha})_Err({err_type.name}).txt')
     with open(save_path, 'w') as f:
         f.write(f'# {scene_name}\n')
         for folder in source_folders:
@@ -459,6 +456,9 @@ for iters, feedback, grad_iters in iter_params:
             f.write(tables[field_index].to_csv(sep='\t', lineterminator='\n'))
             f.write('\n')
         print(f'Tables are saved to \"{save_path.absolute()}\"')
+
+    winsound.Beep(442, 100)
+    winsound.Beep(442, 100)
 
     # plot error histograms
     if plot_histo:

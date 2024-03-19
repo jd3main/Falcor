@@ -38,14 +38,24 @@ def loadImageSequence(path, filename_pattern:str, max_frame_id=None) -> list:
         frame_id += 1
     return dataset
 
-def imageSequenceLoader(path, filename_pattern:str, max_frame_id=None):
+def imageSequenceLoader(path, filename_pattern:str, max_frame_id=None, n_retry=5):
     path = Path(path)
     frame_id = 1
     while (max_frame_id is None) or (frame_id <= max_frame_id):
-        try:
-            img = loadImage(path, filename_pattern, frame_id)
-        except FileNotFoundError as e:
-            raise e
+        for i in range(n_retry):
+            try:
+                img = loadImage(path, filename_pattern, frame_id)
+                if img is None:
+                    logWarn(f"Image {frame_id} is empty. Retrying... ({i+1}/{n_retry})")
+                    continue
+                break
+            except FileNotFoundError as e:
+                raise e
+            except Exception as e:
+                if i < n_retry - 1:
+                    logErr(f"Error loading image {frame_id}: {e}. Retrying... ({i+1}/{n_retry})")
+                else:
+                    raise e
         yield img
         frame_id += 1
 

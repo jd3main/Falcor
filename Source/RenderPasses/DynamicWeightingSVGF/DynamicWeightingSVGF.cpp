@@ -90,8 +90,8 @@ namespace
     // Internal buffers
     const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
     const char kInternalBufferPreviousGradient[] = "Previous Gradient";
-    const char kInternalBufferPreviousUnweightedIllumination[] = "PrevUnweightedIllumination";
-    const char kInternalBufferPreviousWeightedIllumination[] = "PrevWeightedIllumination";
+    const char kInternalBufferPreviousUnweightedIllumination[] = "PrevUnweightedIllumination";  // for dynamic weighting
+    const char kInternalBufferPreviousWeightedIllumination[] = "PrevWeightedIllumination";      // for dynamic weighting
 
     // Output buffers
     const char kOutputBufferFilteredImage[] = "Filtered image";
@@ -663,10 +663,7 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
 void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pAlbedoTexture)
 {
     FALCOR_PROFILE("computeAtrousDecomposition");
-
     // cerr << "computeAtrousDecomposition()" << endl;
-    mpPrevUnweightedIllumination = renderData.getTexture(kInternalBufferPreviousUnweightedIllumination);
-    mpPrevWeightedIllumination = renderData.getTexture(kInternalBufferPreviousWeightedIllumination);
 
 #if DEBUG_OUTPUT_ENABLED
     Texture::SharedPtr pOutputGradient = renderData.getTexture(kOutputGradient);
@@ -787,6 +784,9 @@ void DynamicWeightingSVGF::dynamicWeighting(
 {
     FALCOR_PROFILE("dynamicWeighting");
 
+    Texture::SharedPtr pPrevUnweightedIllumination = renderData.getTexture(kInternalBufferPreviousUnweightedIllumination);
+    Texture::SharedPtr pPrevWeightedIllumination = renderData.getTexture(kInternalBufferPreviousWeightedIllumination);
+
 #if DEBUG_OUTPUT_ENABLED
     Texture::SharedPtr pOutputGammaTexture = renderData.getTexture(kOutputGamma);
     Texture::SharedPtr pOutputGradientTexture = renderData.getTexture(kOutputGradient);
@@ -796,8 +796,8 @@ void DynamicWeightingSVGF::dynamicWeighting(
     auto perImageCB = mpDynamicWeighting["PerImageCB"];
 
     // Input textures
-    perImageCB["gPrevUnweightedIllumination"] = mpPrevUnweightedIllumination;
-    perImageCB["gPrevWeightedIllumination"] = mpPrevWeightedIllumination;
+    perImageCB["gPrevUnweightedIllumination"] = pPrevUnweightedIllumination;
+    perImageCB["gPrevWeightedIllumination"] = pPrevWeightedIllumination;
     perImageCB["gUnweightedIllumination"] = pUnweightedIlluminationTexture;
     perImageCB["gWeightedIllumination"] = pWeightedIlluminationTexture;
     perImageCB["gPrevGradient"] = mpPrevGradientTexture;
@@ -814,12 +814,15 @@ void DynamicWeightingSVGF::dynamicWeighting(
     perImageCB["gNormalizationMode"] = mNormalizationMode;
 
     mpDynamicWeighting->execute(pRenderContext, pOutputFbo);
+
+    pRenderContext->blit(pUnweightedIlluminationTexture->getSRV(), pPrevUnweightedIllumination->getRTV());
+    pRenderContext->blit(pWeightedIlluminationTexture->getSRV(), pPrevWeightedIllumination->getRTV());
+    pRenderContext->blit(pOutputFbo->getColorTexture((uint32_t)DynamicWeightingOutFields::Gradient)->getSRV(), mpPrevGradientTexture->getRTV());
+
 #if DEBUG_OUTPUT_ENABLED
     if (mEnableDebugOutput)
     {
         FALCOR_PROFILE("[debug] blit debug outputs");
-        pRenderContext->blit(pUnweightedIlluminationTexture->getSRV(), mpPrevUnweightedIllumination->getRTV());
-        pRenderContext->blit(pWeightedIlluminationTexture->getSRV(), mpPrevWeightedIllumination->getRTV());
         pRenderContext->blit(pOutputFbo->getColorTexture((uint32_t)DynamicWeightingOutFields::Gradient)->getSRV(), pOutputGradientTexture->getRTV());
         pRenderContext->blit(pOutputFbo->getColorTexture((uint32_t)DynamicWeightingOutFields::Gamma)->getSRV(), pOutputGammaTexture->getRTV());
     }
