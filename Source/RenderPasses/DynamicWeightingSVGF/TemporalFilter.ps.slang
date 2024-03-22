@@ -46,28 +46,35 @@ bool isNaN(float f)
 
 cbuffer PerImageCB
 {
+    Texture2D gAlbedo;
+    Texture2D gColor;
+    Texture2D gEmission;
     Texture2D gMotion;
     Texture2D gPositionNormalFwidth;
-    Texture2D gColor;
-    Texture2D gAlbedo;
-    Texture2D gEmission;
+    Texture2D<uint> gSampleCount;
+
     Texture2D gLinearZAndNormal;
 
-    Texture2D gPrevUnweightedIllum;
-    Texture2D gPrevWeightedIllum;
     Texture2D gPrevMoments;
-    Texture2D gPrevLinearZAndNormal;
-
-    Texture2D<uint> gSampleCount;
     Texture2D gPrevHistoryLength;
     Texture2D gPrevUnweightedHistoryWeight;
-    Texture2D gPrevWeightedHistoryWeight;
+    Texture2D gPrevUnweightedIllum;
+    Texture2D gPrevLinearZAndNormal;
 
     float gAlpha;
     float gWeightedAlpha;
     float gMomentsAlpha;
 
     int gSampleCountOverride = -1;
+
+#if DW_ENABLED
+    Texture2D gPrevWeightedHistoryWeight;
+    Texture2D gPrevWeightedIllum;
+    Texture2D gPrevGradient;
+
+    float gGradientAlpha;
+    float gMaxGradient;
+#endif
 };
 
 float3 demodulate(float3 c, float3 albedo)
@@ -100,6 +107,7 @@ struct History
 #if DW_ENABLED
     float weightedWeight;
     float3 weightedIllumination;
+    float3 gradient;
 #endif
 };
 
@@ -125,6 +133,7 @@ bool loadHistory(float2 posH, out History history)
     float weightedHistoryWeight = 0;
     float3 weightedHistoryIllum = float3(0, 0, 0);
 #endif
+    float3 gradient = float3(0, 0, 0);
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -169,6 +178,7 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
                 weightedHistoryWeight += w[sampleIdx] * gPrevWeightedHistoryWeight[loc].x;
                 weightedHistoryIllum += w[sampleIdx] * gPrevWeightedIllum[loc].xyz;
+                gradient += w[sampleIdx] * gPrevGradient[loc].xyz;
 #endif
             }
         }
@@ -182,6 +192,7 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
         weightedHistoryWeight = valid ? weightedHistoryWeight / sumw : 0;
         weightedHistoryIllum = valid ? weightedHistoryIllum / sumw : float3(0, 0, 0);
+        gradient = valid ? gradient / sumw : 0;
 #endif
     }
 
@@ -209,6 +220,7 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
                     weightedHistoryWeight += gPrevWeightedHistoryWeight[p].x;
                     weightedHistoryIllum += gPrevWeightedIllum[p].xyz;
+                    gradient += gPrevGradient[p].xyz;
 #endif
                 }
             }
@@ -223,6 +235,7 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
             weightedHistoryWeight /= nValid;
             weightedHistoryIllum /= nValid;
+            gradient /= nValid;
 #endif
         }
     }
@@ -234,6 +247,7 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
     history.weightedWeight = weightedHistoryWeight;
     history.weightedIllumination = weightedHistoryIllum;
+    history.gradient = gradient;
 #endif
 
     return valid;
@@ -255,6 +269,7 @@ struct PS_OUT
     float4 OutWeightedHistoryIllumination   : SV_TARGET4;
     float OutWeightedHistoryWeight          : SV_TARGET5;
     float OutVariance                       : SV_TARGET6;
+    float4 OutGradient                      : SV_TARGET7;
 };
 
 // PS_OUT main(FullScreenPassVsOut vsOut)
@@ -304,7 +319,12 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float weightedAlpha = float(sampleCount) / (weightedDecay * h.weightedWeight + float(sampleCount));
     float weightedHistoryWeight = weightedDecay * h.weightedWeight + sampleCount;
     float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
+
+    float3 delta = success ? (illumination - h.unweightedIllumination) : float3(0, 0, 0);
+    delta = clamp(delta, -gMaxGradient, gMaxGradient);
+    const float3 outGradient = success ? lerp(h.gradient, delta, gGradientAlpha) : 0;
 #endif
+
 
     PS_OUT psOut;
     psOut.OutMoments = moments;
@@ -314,6 +334,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 #if DW_ENABLED
     psOut.OutWeightedHistoryWeight = weightedHistoryWeight;
     psOut.OutWeightedHistoryIllumination = float4(outWeightedIllumination, variance);
+    psOut.OutGradient.xyz = outGradient;
 #endif
     psOut.OutVariance = variance;
 

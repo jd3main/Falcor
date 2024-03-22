@@ -78,6 +78,7 @@ private:
     float   mWeightedAlpha = 0.05f;
     float   mMomentsAlpha = 0.2f;
     float   mGradientAlpha = 0.2f;
+    float   mMaxGradient = 1e6f;
     float   mExpectedDelay = -10;
     float   mGammaMidpoint = 0.01f;
     float   mGammaSteepness = 100;

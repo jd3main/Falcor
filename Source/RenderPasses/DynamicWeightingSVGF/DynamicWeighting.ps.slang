@@ -25,81 +25,21 @@ bool isNaN(float3 f)
 cbuffer PerImageCB
 {
     // Input buffer
-    Texture2D gPrevUnweightedIllumination;
-    Texture2D gPrevWeightedIllumination;
     Texture2D gUnweightedIllumination;
     Texture2D gWeightedIllumination;
-    Texture2D gPrevGradient;
-    Texture2D<int4> gInputReprojectionTapWidthAndPrevPos;
-    Texture2D gInputReprojectionW0123;
-    Texture2D gInputReprojectionW4567;
+    Texture2D gGradient;
 
     // Parameters
-    float gGradientAlpha;
     float gGammaMidpoint;
     float gGammaSteepness;
     SelectionMode gSelectionMode;
     NormalizationMode gNormalizationMode;
 };
 
-struct History
-{
-    float3 gradient;
-    float3 unweightedIllumination;
-}
-
-bool loadHistory(int2 ipos, out History h)
-{
-    h.gradient = float3(0, 0, 0);
-    h.unweightedIllumination = float3(0, 0, 0);
-
-    const int4 tapWidthAndPrevPos = gInputReprojectionTapWidthAndPrevPos[ipos];
-    const float4 w0123 = gInputReprojectionW0123[ipos];
-    const float4 w4567 = gInputReprojectionW4567[ipos];
-    const Reprojection reprojection = toReprojectionStruct(tapWidthAndPrevPos, w0123, w4567);
-
-    if (reprojection.tapWidth == 2)
-    {
-        const int2 offset[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1, 1) };
-        for (int i = 0; i < 4; i++)
-        {
-            const int2 loc = reprojection.iposPrev + offset[i];
-            h.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
-            h.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
-        }
-    }
-    else if (reprojection.tapWidth == 3)
-    {
-        const int radius = 1;
-        int i = 0;
-        for (int yy = -radius; yy <= radius; yy++)
-        {
-            for (int xx = -radius; xx <= radius; xx++)
-            {
-                i++;
-                const int2 loc = reprojection.iposPrev + int2(xx, yy);
-                if (reprojection.w[i] != 0)
-                {
-                    h.gradient += gPrevGradient[loc].xyz * reprojection.w[i];
-                    h.unweightedIllumination += gPrevUnweightedIllumination[loc].xyz * reprojection.w[i];
-                }
-            }
-        }
-    }
-
-    if (isNaN(h.gradient))
-        h.gradient = float3(0, 0, 0);
-    if (isNaN(h.unweightedIllumination))
-        h.unweightedIllumination = float3(0, 0, 0);
-
-    return reprojection.tapWidth > 0;
-}
-
 struct PS_OUT
 {
     float4 color        : SV_Target0;
 #if DEBUG_OUTPUT_ENABLED
-    float4 gradient     : SV_Target1;
     float gamma         : SV_Target2;
 #endif
 };
@@ -109,17 +49,10 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     const int2 ipos = int2(vsOut.posH.xy);
 
     const float3 unweightedIllumination = gUnweightedIllumination[ipos].rgb;
-    const float variance = gUnweightedIllumination[ipos].a;
     const float3 weightedIllumination = gWeightedIllumination[ipos].rgb;
+    const float variance = gUnweightedIllumination[ipos].a;
+    const float3 gradient = gGradient[ipos].rgb;
 
-    History h;
-    bool success = loadHistory(ipos, h);
-
-    float3 delta = success ? (unweightedIllumination - h.unweightedIllumination) : float3(0, 0, 0);
-    delta = clamp(delta, -1, 1);
-
-    float3 gradient = success ? lerp(h.gradient, delta, gGradientAlpha) : float3(0, 0, 0);
-    gradient = clamp(gradient, -1, 1);
     float gamma = luminance(abs(gradient));
 
     // normalize
@@ -162,7 +95,6 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     PS_OUT psOut;
     psOut.color = float4(outIllumination, variance);
 #if DEBUG_OUTPUT_ENABLED
-    psOut.gradient = float4(gradient, 0);
     psOut.gamma = gamma;
 #endif
 

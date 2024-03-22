@@ -23,6 +23,7 @@ from skimage.metrics import structural_similarity as ssim
 from tqdm import tqdm
 
 from _utils import *
+from _log_utils import *
 from DynamicWeighting_Common import *
 
 
@@ -144,6 +145,11 @@ def loadMetadata(path) -> dict:
         print(e)
     return data
 
+def getErrFilename(field, err_type:ErrorType, use_no_filter_reference):
+    if use_no_filter_reference:
+        return f'{field}_{err_type.name}_NoFilterReference.txt'
+    return f'{field}_{err_type.name}.txt'
+
 xp = cp if USE_CUDA else np
 
 
@@ -153,7 +159,9 @@ DEFAULT_PLOT_ERROR_OVER_TIME = False
 DEFAULT_FORCE_RECALCULATE = False
 
 DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+# DEFAULT_SCENE_NAME = 'VeachAjar'
 # DEFAULT_SCENE_NAME = 'BistroExterior'
+# DEFAULT_SCENE_NAME = 'BistroInterior'
 # DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
 # DEFAULT_SCENE_NAME = 'SunTemple'
 
@@ -173,8 +181,13 @@ DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
 
 DEFAULT_ITER_PARAMS = [
     (2, -1, 0),
-    # (2, 0, 1),
-    # (2, 1, 2),
+    (2, 0, 1),
+    (2, 1, 2),
+    (3, -1, 0),
+    (3, 0, 1),
+    (3, 1, 2),
+    (4, 0, 1),
+    (4, 1, 2),
 ]
 
 DEFAULT_MIDPOINTS = [0.0, 0.05, 0.5, 1.0]
@@ -200,6 +213,7 @@ parser.add_argument('--sampling', type=str, default=DEFAULT_SAMPLING_METHOD, hel
 parser.add_argument('--force', action='store_true', help='force recalculate')
 parser.add_argument('--plot_histo', action='store_true', help='plot histogram')
 parser.add_argument('--plot_error_over_time', action='store_true', help='plot error over time')
+parser.add_argument('--use_no_filter_reference', action='store_true', help='use no filter reference')
 args = parser.parse_args()
 
 ### Load parameters
@@ -230,10 +244,12 @@ sampling = args.sampling
 force_recalculate = args.force
 plot_histo = args.plot_histo
 plot_error_over_time = args.plot_error_over_time
+use_no_filter_reference = args.use_no_filter_reference
+
 alpha = 0.05
 w_alpha = 0.05
 
-gt_sample_count = 96
+gt_sample_count = 64
 
 print(f'scene_name:         {scene_name}')
 print(f'n_frames:           {n_frames}')
@@ -251,19 +267,22 @@ for iters, feedback, grad_iters in iter_params:
     print(f'iters: ({iters},{feedback},{grad_iters})')
 
     # check reference data path
-    reference_path = record_path/f'{scene_name}_iters({iters},{feedback})_Alpha({alpha})_{gt_sample_count}'
+    if use_no_filter_reference:
+        reference_path = record_path/f'{scene_name}_iters(0,-1)_Alpha({alpha})_{gt_sample_count}'
+    else:
+        reference_path = record_path/f'{scene_name}_iters({iters},{feedback})_Alpha({alpha})_{gt_sample_count}'
     if not reference_path.exists():
-        logErr(f'[Error] reference folder not found: {reference_path}')
+        logE(f'[Error] reference folder not found: {reference_path}')
         exit()
 
     # check number of reference images
     ref_images_pattern = f'{fps}fps.SVGFPass.Filtered image.{{}}.exr'
     n_ref_images = countImages(reference_path, ref_images_pattern)
     if n_ref_images < n_frames:
-        logErr(f'[Error] {n_frames} reference images required but only {n_ref_images} found.')
+        logE(f'[Error] {n_frames} reference images required but only {n_ref_images} found.')
         exit()
     elif n_ref_images > n_frames:
-        logWarn(f'[Warning] {n_ref_images} reference images found, more than required ({n_frames})')
+        logW(f'[Warning] {n_ref_images} reference images found, more than required ({n_frames})')
 
     # setup source folders
     source_folders: list[Path] = []
@@ -276,7 +295,7 @@ for iters, feedback, grad_iters in iter_params:
             if (record_path/folder_name).exists():
                 source_folders.append(record_path/folder_name)
             else:
-                logWarn(f'[Warning] folder not found: {folder_name}')
+                logW(f'[Warning] folder not found: {folder_name}')
     source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Alpha({alpha})_{sampling}')
     source_folders.append(record_path/f'{scene_name}_iters({iters},{feedback})_Weighted_Alpha({alpha})_WAlpha({w_alpha})_{sampling}')
     print(f'found {len(source_folders)} source folders')
@@ -287,15 +306,15 @@ for iters, feedback, grad_iters in iter_params:
     # check source folders
     for folder in source_folders:
         if not folder.exists():
-            logWarn(f'[Warning] folder not found: {folder}')
+            logW(f'[Warning] folder not found: {folder}')
             continue
         n_images = countImages(folder, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr')
         if n_images < n_frames:
-            logErr(f'[Error] does not have enough images in: \"{folder}\"')
-            logErr(f'found {n_images} images, expected {n_frames}')
+            logE(f'[Error] does not have enough images in: \"{folder}\"')
+            logE(f'found {n_images} images, expected {n_frames}')
             exit()
         elif n_images > n_frames:
-            logWarn(f'[Warning] more than {n_frames} images found in: \"{folder}\"')
+            logW(f'[Warning] more than {n_frames} images found in: \"{folder}\"')
 
     # load source data and calculate error
 
@@ -317,7 +336,7 @@ for iters, feedback, grad_iters in iter_params:
         print(f'err_bins = {err_bins}')
     for folder_index, folder in enumerate(source_folders):
         if not folder.exists():
-            logWarn(f'[Warning] folder not found: {folder}')
+            logW(f'[Warning] folder not found: {folder}')
             continue
 
         print(f'# \"{folder.name}\"')
@@ -327,12 +346,12 @@ for iters, feedback, grad_iters in iter_params:
         if not force_recalculate:
             all_valid = True
             for field_index, field in enumerate(fields): # check if all data exists and are modified later than metadata
-                load_path = folder/f'{field}_{err_type}.txt'
+                load_path = folder/getErrFilename(field, err_type, use_no_filter_reference)
                 if (load_path.exists()
                     and fileModifiedLaterThan(load_path, folder/'metadata.txt')
                     and fileModifiedLaterThan(load_path, reference_path/'metadata.txt')):
 
-                    results[folder_index, :, field_index] = xp.loadtxt(folder/f'{field}_{err_type}.txt')
+                    results[folder_index, :, field_index] = xp.loadtxt(load_path)
                     avg_results[folder_index, :] = xp.mean(results[folder_index, :, :], axis=0)
                     loaded[field] = True
                 else:
@@ -406,7 +425,7 @@ for iters, feedback, grad_iters in iter_params:
 
         # write to file
         for field_indx, field in enumerate(fields):
-            save_path = folder/f'{field}_{err_type}.txt'
+            save_path = folder/getErrFilename(field, err_type, use_no_filter_reference)
             with open(save_path, 'w') as f:
                 xp.savetxt(f, results[folder_index, :, field_indx])
     ed = time.time()
@@ -433,7 +452,11 @@ for iters, feedback, grad_iters in iter_params:
     # write tables to file
     output_dir = Path(f'{sampling}/{scene_name}')
     ensurePath(output_dir)
-    save_path = output_dir/Path(f'iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Alpha({alpha})_wAlpha({w_alpha})_Err({err_type.name}).txt')
+    if use_no_filter_reference:
+        table_file_name = f'iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Alpha({alpha})_wAlpha({w_alpha})_Err({err_type.name})_NoFilterReference.txt'
+    else:
+        table_file_name = f'iters({iters},{feedback},{grad_iters})_fps({fps})_t({duration})_{selection_func}_Norm({normalization_mode.name})_Alpha({alpha})_wAlpha({w_alpha})_Err({err_type.name}).txt'
+    save_path = output_dir/table_file_name
     with open(save_path, 'w') as f:
         f.write(f'# {scene_name}\n')
         for folder in source_folders:

@@ -81,16 +81,6 @@ def countImages(path, filename_pattern:str) -> int:
         frame_id += 1
     return frame_id - 1
 
-def logErr(*args, **kwargs):
-    print(Fore.RED, file=sys.stderr, end='')
-    print(*args, file=sys.stderr, **kwargs, end='')
-    print(Style.RESET_ALL, file=sys.stderr, end=kwargs.get('end', '\n'))
-
-def logWarn(*args, **kwargs):
-    print(Fore.YELLOW, file=sys.stderr, end='')
-    print(*args, file=sys.stderr, **kwargs, end='')
-    print(Style.RESET_ALL, file=sys.stderr, end=kwargs.get('end', '\n'))
-
 
 def fileModifiedLaterThan(file1: Path, file2: Path):
     '''

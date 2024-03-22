@@ -18,6 +18,7 @@ import json
 from typing import Union
 import numpy as np
 from DynamicWeighting_Common import *
+from _log_utils import *
 
 class FalcorEnoder(json.JSONEncoder):
     def default(self, o):
@@ -100,7 +101,7 @@ class AllFrames:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=2)
 
 
-def render_graph_g(iters, feedback, grad_iters, alpha=0.05, weightedAlpha=0.05,
+def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
                    dynamic_weighting_enabled=False, dynamic_weighting_params:dict={},
                    foveated_pass_enabled=False, foveated_pass_params:dict={},
                    output_sample_count=False,
@@ -156,7 +157,7 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05, weightedAlpha=0.05,
         'PhiColor': 10.0,
         'PhiNormal': 128.0,
         'Alpha': alpha,
-        'WeightedAlpha': weightedAlpha,
+        'WeightedAlpha': alpha,
         'MomentsAlpha': 0.2,
         'GradientAlpha': 0.2,
         'GradientMidpoint': 0.01,
@@ -201,7 +202,9 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05, weightedAlpha=0.05,
 
 
 def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
-                 output_path=DEFAULT_OUTPUT_PATH, base_filename=DEFAULT_BASE_FILENAME):
+                 output_path=DEFAULT_OUTPUT_PATH, base_filename=DEFAULT_BASE_FILENAME,
+                 enable_profiler=True,
+                 skip_capture_for_frames = 0):
     '''
     Record images from start_time to end_time at fps.
     '''
@@ -217,19 +220,21 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
     m.frameCapture.baseFilename = base_filename
 
     renderFrame()
-    m.profiler.enabled = True
-    m.profiler.startCapture()
+    m.profiler.enabled = enable_profiler
+    if enable_profiler:
+        m.profiler.startCapture()
     start_frame = int(start_time * fps)
     end_frame = int(end_time * fps)
     for frame in range(start_frame, end_frame):
         print(f"frame={m.clock.frame} time={m.clock.time:.3f}")
         renderFrame()
-        if frame in frames:
+        if frame in frames and frame >= skip_capture_for_frames:
             m.frameCapture.baseFilename = base_filename
             m.frameCapture.capture()
-    capture = m.profiler.endCapture()
-    m.profiler.enabled = False
-    json.dump(capture, open(output_path/'profile.json', 'w'), indent=2)
+    if enable_profiler:
+        capture = m.profiler.endCapture()
+        m.profiler.enabled = False
+        json.dump(capture, open(output_path/'profile.json', 'w'), indent=2)
 
 
 def recordVideo(start_time, end_time, fps=60, codec="Raw", bitrate_mbps=4.0, gopSize=10,
@@ -300,11 +305,19 @@ def normalizeGraphParams(graph_params: dict) -> dict:
             }
         elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.UNWEIGHTED:
             graph_params['grad_iters'] = 0
+            pop_keys = ['GradientMidpoint', 'GammaSteepness', 'WeightedAlpha', 'GradientAlpha']
+            for k in pop_keys:
+                if k in graph_params['dynamic_weighting_params']:
+                    graph_params['dynamic_weighting_params'].pop(k)
         elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.WEIGHTED:
             graph_params['grad_iters'] = graph_params['feedback'] + 1
-            graph_params['dynamic_weighting_params'] = {
-                'SelectionMode': SelectionMode.WEIGHTED,
-            }
+            pop_keys = ['GradientMidpoint', 'GammaSteepness', 'GradientAlpha']
+            for k in pop_keys:
+                if k in graph_params['dynamic_weighting_params']:
+                    graph_params['dynamic_weighting_params'].pop(k)
+
+        if 'weighted_alpha' not in graph_params and 'alpha' in graph_params:
+            graph_params['weighted_alpha'] = graph_params['alpha']
 
     if 'foveated_pass_enabled' not in graph_params:
         graph_params['foveated_pass_enabled'] = False
@@ -319,8 +332,6 @@ def normalizeGraphParams(graph_params: dict) -> dict:
     if 'alpha' not in graph_params:
         graph_params['alpha'] = 0.05
 
-    if 'weightedAlpha' not in graph_params and 'alpha' in graph_params:
-        graph_params['weightedAlpha'] = graph_params['alpha']
 
     return graph_params
 
@@ -339,8 +350,10 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
         folder_name_parts.append('iters({},{})'.format(
             graph_params['iters'],  graph_params['feedback']))
 
+
     if graph_params['dynamic_weighting_enabled']:
         dw_params = graph_params['dynamic_weighting_params']
+
         selection_mode = dw_params['SelectionMode']
         if selection_mode == SelectionMode.LINEAR:
             folder_name_parts.append('Linear({},{})'.format(
@@ -358,15 +371,19 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
         elif selection_mode == SelectionMode.UNWEIGHTED:
             folder_name_parts.append('Unweighted')
 
+    folder_name_parts.append('Alpha({})'.format(graph_params['alpha']))
+
+    if graph_params['dynamic_weighting_enabled']:
+        if selection_mode not in [SelectionMode.UNWEIGHTED]:
+            folder_name_parts.append('WAlpha({})'.format(
+                dw_params['WeightedAlpha']))
+
         if selection_mode not in [SelectionMode.UNWEIGHTED, SelectionMode.WEIGHTED]:
             folder_name_parts.append('GAlpha({})'.format(
                 dw_params['GradientAlpha']))
             folder_name_parts.append('Norm({})'.format(
                 NormalizationMode(dw_params['NormalizationMode']).name))
 
-        if graph_params['weightedAlpha'] != graph_params['alpha']:
-            folder_name_parts.append('wAlpha({})'.format(
-                graph_params['weightedAlpha']))
 
     if graph_params['foveated_pass_enabled']:
         fovea_params = graph_params['foveated_pass_params']
@@ -409,6 +426,7 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
         'end_time': 20,
         'fps': 30,
         'frames': AllFrames(),
+        'enable_profiler': True,
         **record_params_override
     }
 
@@ -417,30 +435,30 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     output_path = output_path_base / folder_name
     if output_path.exists():
         if force_record:
-            print(f"[Warning] Found existing record at \"{output_path}\".")
+            logW(f" Found existing record at \"{output_path}\".")
             print("Force continue recording.")
         else:
             g_params = normalizeGraphParams(loadMetadata(output_path))
             n_frames = int(record_params['fps'] * (record_params['end_time'] - record_params['start_time']))
             existing_frame_count = countImages(output_path, f'{record_params["fps"]}fps.SVGFPass.Filtered image.{{}}.exr')
             if g_params != graph_params:
-                print(f"[Warning] Found existing record with different parameters at: \"{output_path}\"")
+                logW(f"[Warning] Found existing record with different parameters at: \"{output_path}\"")
                 for k in g_params.keys():
                     if k not in graph_params:
                         print(f"key \"{k}\" not in graph_params")
                 for k in graph_params.keys():
                     if k not in g_params:
                         print(f"key \"{k}\" not in g_params")
-                for k in g_params.keys():
+                for k in set(g_params.keys()).intersection(graph_params.keys()):
                     if g_params[k] != graph_params[k]:
                         print(f"{k}: {g_params[k]} != {graph_params[k]}")
-                print(f"Overwriting.")
+                logW(f"Overwriting.")
             elif n_frames != existing_frame_count:
-                print(f"[Warning] Found existing record with different number of frames at: \"{output_path}\"")
-                print(f"Overwriting.")
+                logW(f"[Warning] Found existing record with different number of frames at: \"{output_path}\"")
+                logW(f"Overwriting.")
             else:
-                print(f"[Warning] Found existing record with same parameters at \"{output_path}\".")
-                print(f"Skip recoding.")
+                logW(f"[Warning] Found existing record with same parameters at \"{output_path}\".")
+                logW(f"Skip recoding.")
                 return
 
     base_filename = '{fps}fps'.format(
@@ -464,14 +482,20 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
 
 
 scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
 
 animation_lengths = {
     'VeachAjarAnimated': 20,
+    'VeachAjar': 20,
     'BistroExterior': 100,
+    'BistroInterior': 59.5,
+    'BistroInterior_Wine': 59.5,
     'EmeraldSquare_Day': 10,
     'SunTemple': 20,
 }
@@ -487,15 +511,19 @@ except Exception as e:
 common_record_params = {
     'fps': 30,
     'start_time': 0,
-    # 'end_time': animation_lengths[scene_name],
-    'end_time': 20,
+    'end_time': animation_lengths[scene_name],
+    # 'end_time': 20,
 }
 
 common_graph_params = {
     'alpha': 0.05,
-    # 'weightedAlpha': 0.02,
     'debug_tag_enabled': False,
     'debug_output_enabled': False,
+}
+
+common_dynamic_weighting_params = {
+    'WeightedAlpha': 0.05,
+    'GradientAlpha': 0.2,
 }
 
 foveated_params_override = {
@@ -511,18 +539,24 @@ foveated_params_override = {
     'foveaMoveStayDuration': 0.5,
 }
 
-gt_sample_Count = 96
+gt_sample_Count = 64
+use_no_filter_gt = False
 
 # iters, feedback, grad_iters
 iter_params = [
     (2, -1, 0),
-    # (2, 0, 1),
-    # (2, 1, 2),
+    (2, 0, 1),
+    (2, 1, 2),
+    (3, -1, 0),
+    (3, 0, 1),
+    (3, 1, 2),
+    (4, 0, 1),
+    (4, 1, 2),
 ]
-midpoints = [0, 0.05, 0.5, 1.0]
-steepnesses = [0.1, 1, 10]
-# midpoints = [0.05]
-# steepnesses = [1]
+# midpoints = [0, 0.05, 0.5, 1.0]
+# steepnesses = [0.1, 1, 10]
+# blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
+blending_func_params = [(0.5, 1.0)]
 
 force_record_selections =  False
 force_record_step = False
@@ -532,29 +566,29 @@ force_record_ground_truth = False
 
 for iters, feedback, grad_iters in iter_params:
     # Try different parameters with dynamic weighting
-    for midpoint in midpoints:
-        for steepness in steepnesses:
-            run(graph_params_override = {
-                    'iters': iters,
-                    'feedback': feedback,
-                    'grad_iters': grad_iters,
-                    'dynamic_weighting_enabled': True,
-                    'dynamic_weighting_params': {
-                        'GradientAlpha': 0.2,
-                        'GradientMidpoint': float(midpoint),
-                        'GammaSteepness': float(steepness),
-                        'SelectionMode': SelectionMode.LINEAR,
-                        'SampleCountOverride': -1,
-                        'NormalizationMode': NormalizationMode.NONE,
-                    },
-                    'foveated_pass_enabled': True,
-                    'foveated_pass_params': foveated_params_override,
-                    **common_graph_params
+    for midpoint, steepness in blending_func_params:
+        logI(f"Run Dynamic Weighting: iters={iters}, feedback={feedback}, grad_iters={grad_iters}, midpoint={midpoint}, steepness={steepness}")
+        run(graph_params_override = {
+                'iters': iters,
+                'feedback': feedback,
+                'grad_iters': grad_iters,
+                'dynamic_weighting_enabled': True,
+                'dynamic_weighting_params': {
+                    'GradientMidpoint': float(midpoint),
+                    'GammaSteepness': float(steepness),
+                    'SelectionMode': SelectionMode.LINEAR,
+                    'SampleCountOverride': -1,
+                    'NormalizationMode': NormalizationMode.STD,
+                    **common_dynamic_weighting_params
                 },
-                record_params_override={
-                    **common_record_params,
-                },
-                force_record=force_record_selections)
+                'foveated_pass_enabled': True,
+                'foveated_pass_params': foveated_params_override,
+                **common_graph_params
+            },
+            record_params_override={
+                **common_record_params,
+            },
+            force_record=force_record_selections)
 
 
     # for midpoint in midpoints:
@@ -581,7 +615,7 @@ for iters, feedback, grad_iters in iter_params:
     #         force_record=force_record_step)
 
     # Unweighted
-    print("Run Unweighted")
+    logI("Run Unweighted")
     run(graph_params_override = {
             'iters': iters,
             'feedback': feedback,
@@ -589,6 +623,7 @@ for iters, feedback, grad_iters in iter_params:
             'dynamic_weighting_enabled': False,
             'dynamic_weighting_params': {
                 'SelectionMode': SelectionMode.UNWEIGHTED,
+                **common_dynamic_weighting_params
             },
             'foveated_pass_enabled': True,
             'foveated_pass_params': foveated_params_override,
@@ -602,7 +637,7 @@ for iters, feedback, grad_iters in iter_params:
     )
 
     # Weighted
-    print("Run Weighted")
+    logI("Run Weighted")
     run(graph_params_override = {
             'iters': iters,
             'feedback': feedback,
@@ -610,6 +645,7 @@ for iters, feedback, grad_iters in iter_params:
             'dynamic_weighting_enabled': True,
             'dynamic_weighting_params': {
                 'SelectionMode': SelectionMode.WEIGHTED,
+                **common_dynamic_weighting_params
             },
             'foveated_pass_enabled': True,
             'foveated_pass_params': foveated_params_override,
@@ -623,18 +659,19 @@ for iters, feedback, grad_iters in iter_params:
 
 
     # Generate ground truth
-    print("Run Ground Truth")
+    logI("Run Ground Truth")
     run(graph_params_override = {
-            'iters': iters,
-            'feedback': feedback,
-            'grad_iters': iters,
+            'iters': 0 if use_no_filter_gt else iters,
+            'feedback': -1 if use_no_filter_gt else feedback,
+            'grad_iters': 0 if use_no_filter_gt else iters,
             'dynamic_weighting_enabled': False,
             'foveated_pass_enabled': False,
             'sample_count': gt_sample_Count,
             **common_graph_params
         },
-        record_params_override={
+        record_params_override = {
             **common_record_params,
+            'enable_profiler': False,
         },
         force_record=force_record_ground_truth
     )
