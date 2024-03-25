@@ -220,13 +220,14 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
     m.frameCapture.baseFilename = base_filename
 
     renderFrame()
+    print()
     m.profiler.enabled = enable_profiler
     if enable_profiler:
         m.profiler.startCapture()
     start_frame = int(start_time * fps)
     end_frame = int(end_time * fps)
     for frame in range(start_frame, end_frame):
-        print(f"frame={m.clock.frame} time={m.clock.time:.3f}")
+        print(f"\rframe={m.clock.frame} time={m.clock.time:.3f}", end='')
         renderFrame()
         if frame in frames and frame >= skip_capture_for_frames:
             m.frameCapture.baseFilename = base_filename
@@ -558,7 +559,7 @@ iter_params = [
 # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
 blending_func_params = [(0.5, 1.0)]
 
-force_record_selections = False
+force_record_selections = True
 force_record_step = False
 force_record_unweighted = True
 force_record_weighted = True

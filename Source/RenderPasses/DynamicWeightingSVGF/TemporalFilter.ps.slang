@@ -37,6 +37,12 @@ import RenderPasses.SVGFPass.SVGFCommon;
 
 #define DW_ENABLED _DW_ENABLED
 
+#if DW_ENABLED
+typedef float2 HistoryWeightType;
+#else
+typedef float HistoryWeightType;
+#endif
+
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
 {
@@ -57,7 +63,7 @@ cbuffer PerImageCB
 
     Texture2D gPrevMoments;
     Texture2D gPrevHistoryLength;
-    Texture2D gPrevUnweightedHistoryWeight;
+    Texture2D gPrevHistoryWeight;
     Texture2D gPrevUnweightedIllum;
     Texture2D gPrevLinearZAndNormal;
 
@@ -68,7 +74,6 @@ cbuffer PerImageCB
     int gSampleCountOverride = -1;
 
 #if DW_ENABLED
-    Texture2D gPrevWeightedHistoryWeight;
     Texture2D gPrevWeightedIllum;
     Texture2D gPrevGradient;
 
@@ -102,10 +107,9 @@ struct History
 {
     float2 moments;
     float length;
-    float unweightedWeight;
+    HistoryWeightType weight;
     float3 unweightedIllumination;
 #if DW_ENABLED
-    float weightedWeight;
     float3 weightedIllumination;
     float3 gradient;
 #endif
@@ -127,10 +131,9 @@ bool loadHistory(float2 posH, out History history)
 
     float2 prevMoments = float2(0, 0);
     float historyLength = 0;
-    float unweightedHistoryWeight = 0;
+    HistoryWeightType historyWeight = 0;
     float3 unweightedHistoryIllum = float3(0, 0, 0);
 #if DW_ENABLED
-    float weightedHistoryWeight = 0;
     float3 weightedHistoryIllum = float3(0, 0, 0);
 #endif
     float3 gradient = float3(0, 0, 0);
@@ -173,10 +176,11 @@ bool loadHistory(float2 posH, out History history)
                 prevMoments += w[sampleIdx] * gPrevMoments[loc].xy;
                 sumw += w[sampleIdx];
                 historyLength += w[sampleIdx] * gPrevHistoryLength[loc].x;
-                unweightedHistoryWeight += w[sampleIdx] * gPrevUnweightedHistoryWeight[loc].x;
                 unweightedHistoryIllum += w[sampleIdx] * gPrevUnweightedIllum[loc].xyz;
-#if DW_ENABLED
-                weightedHistoryWeight += w[sampleIdx] * gPrevWeightedHistoryWeight[loc].x;
+#if !DW_ENABLED
+                historyWeight += w[sampleIdx] * gPrevHistoryWeight[loc].x;
+#else
+                historyWeight += w[sampleIdx] * gPrevHistoryWeight[loc].xy;
                 weightedHistoryIllum += w[sampleIdx] * gPrevWeightedIllum[loc].xyz;
                 gradient += w[sampleIdx] * gPrevGradient[loc].xyz;
 #endif
@@ -187,10 +191,9 @@ bool loadHistory(float2 posH, out History history)
         valid = (sumw >= 0.01);
         prevMoments = valid ? prevMoments / sumw : float2(0, 0);
         historyLength = valid ? historyLength / sumw : 0;
-        unweightedHistoryWeight = valid ? unweightedHistoryWeight / sumw : 0;
+        historyWeight = valid ? historyWeight / sumw : 0;
         unweightedHistoryIllum = valid ? unweightedHistoryIllum / sumw : float3(0, 0, 0);
 #if DW_ENABLED
-        weightedHistoryWeight = valid ? weightedHistoryWeight / sumw : 0;
         weightedHistoryIllum = valid ? weightedHistoryIllum / sumw : float3(0, 0, 0);
         gradient = valid ? gradient / sumw : 0;
 #endif
@@ -215,10 +218,11 @@ bool loadHistory(float2 posH, out History history)
                     prevMoments += gPrevMoments[p].xy;
                     nValid += 1.0;
                     historyLength += gPrevHistoryLength[p].x;
-                    unweightedHistoryWeight += gPrevUnweightedHistoryWeight[p].x;
                     unweightedHistoryIllum += gPrevUnweightedIllum[p].xyz;
-#if DW_ENABLED
-                    weightedHistoryWeight += gPrevWeightedHistoryWeight[p].x;
+#if !DW_ENABLED
+                    historyWeight += gPrevHistoryWeight[p].x;
+#else
+                    historyWeight += gPrevHistoryWeight[p].xy;
                     weightedHistoryIllum += gPrevWeightedIllum[p].xyz;
                     gradient += gPrevGradient[p].xyz;
 #endif
@@ -230,10 +234,9 @@ bool loadHistory(float2 posH, out History history)
             valid = true;
             prevMoments /= nValid;
             historyLength /= nValid;
-            unweightedHistoryWeight /= nValid;
+            historyWeight /= nValid;
             unweightedHistoryIllum /= nValid;
 #if DW_ENABLED
-            weightedHistoryWeight /= nValid;
             weightedHistoryIllum /= nValid;
             gradient /= nValid;
 #endif
@@ -242,10 +245,9 @@ bool loadHistory(float2 posH, out History history)
 
     history.moments = prevMoments;
     history.length = historyLength;
-    history.unweightedWeight = unweightedHistoryWeight;
+    history.weight = historyWeight;
     history.unweightedIllumination = unweightedHistoryIllum;
 #if DW_ENABLED
-    history.weightedWeight = weightedHistoryWeight;
     history.weightedIllumination = weightedHistoryIllum;
     history.gradient = gradient;
 #endif
@@ -265,11 +267,10 @@ struct PS_OUT
     float4 OutUnweightedHistoryIllumination : SV_TARGET0;
     float2 OutMoments                       : SV_TARGET1;
     float OutHistoryLength                  : SV_TARGET2;
-    float OutUnweightedHistoryWeight        : SV_TARGET3;
+    HistoryWeightType OutHistoryWeight      : SV_TARGET3;
     float4 OutWeightedHistoryIllumination   : SV_TARGET4;
-    float OutWeightedHistoryWeight          : SV_TARGET5;
-    float OutVariance                       : SV_TARGET6;
-    float4 OutGradient                      : SV_TARGET7;
+    float OutVariance                       : SV_TARGET5;
+    float4 OutGradient                      : SV_TARGET6;
 };
 
 // PS_OUT main(FullScreenPassVsOut vsOut)
@@ -305,18 +306,20 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
     const float variance = max(0.f, moments.g - moments.r * moments.r);
 
+
     float decay = success ? (1.0f - gAlpha) : 0.0f;
     if (curLength < 8)
         decay = 1;
-    const float unweightedAlpha = 1.0f / (decay * h.unweightedWeight + 1);
-    const float unweightedHistoryWeight = decay * h.unweightedWeight + 1;
+    const float unweightedAlpha = 1.0f / (decay * h.weight.x + 1);
+    const float historyWeight = decay * h.weight.x + 1;
     const float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
+
 #if DW_ENABLED
     float weightedDecay = success ? (1.0f - gWeightedAlpha) : 0.0f;
     if (curLength < 8)
         weightedDecay = 1;
-    const float weightedAlpha = float(sampleCount) / (weightedDecay * h.weightedWeight + float(sampleCount));
-    const float weightedHistoryWeight = weightedDecay * h.weightedWeight + sampleCount;
+    const float weightedAlpha = float(sampleCount) / (weightedDecay * h.weight.y + float(sampleCount));
+    const float weightedHistoryWeight = weightedDecay * h.weight.y + sampleCount;
     const float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
 
     float3 delta = success ? (illumination - h.unweightedIllumination) : float3(0, 0, 0);
@@ -326,14 +329,15 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
 
     PS_OUT psOut;
+    psOut.OutUnweightedHistoryIllumination = float4(outUnweightedIllumination, variance);
     psOut.OutMoments = moments;
     psOut.OutHistoryLength = curLength;
-    psOut.OutUnweightedHistoryWeight = unweightedHistoryWeight;
-    psOut.OutUnweightedHistoryIllumination = float4(outUnweightedIllumination, variance);
 #if DW_ENABLED
-    psOut.OutWeightedHistoryWeight = weightedHistoryWeight;
+    psOut.OutHistoryWeight = float2(historyWeight, weightedHistoryWeight);
     psOut.OutWeightedHistoryIllumination = float4(outWeightedIllumination, variance);
     psOut.OutGradient.xyz = outGradient;
+#else
+    psOut.OutHistoryWeight = historyWeight;
 #endif
     psOut.OutVariance = variance;
 

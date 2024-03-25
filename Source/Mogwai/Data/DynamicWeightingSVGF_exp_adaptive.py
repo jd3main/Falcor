@@ -226,11 +226,12 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
     m.frameCapture.baseFilename = base_filename
 
     renderFrame()
+    print()
 
     start_frame = int(start_time * fps)
     end_frame = int(end_time * fps)
     for frame in range(start_frame, end_frame):
-        print(f"frame={m.clock.frame} time={m.clock.time:.3f}")
+        print(f"\rframe={m.clock.frame} time={m.clock.time:.3f}")
         renderFrame()
         if frame in frames:
             m.frameCapture.baseFilename = base_filename

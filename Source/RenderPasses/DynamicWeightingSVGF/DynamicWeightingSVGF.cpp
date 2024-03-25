@@ -57,6 +57,7 @@ namespace
     const char kOutputPingPongIdx[] = "OutputPingPongIdx";
     const char kEnableDebugTag[] = "EnableDebugTag";
     const char kEnableDebugOutput[] = "EnableDebugOutput";
+    const char kEnableOutputVariance[] = "EnableOutputVariance";
 
     // Input buffers
     const char kInputBufferAlbedo[] = "Albedo";
@@ -127,12 +128,11 @@ namespace
 
     enum TemporalFilterOutFields
     {
-        TemporalFilterOutFields_UnweightedHistoryIllumination,
+        TemporalFilterOutFields_HistoryIllumination,
         TemporalFilterOutFields_Moments,
         TemporalFilterOutFields_HistoryLength,
-        TemporalFilterOutFields_UnweightedHistoryWeight,
+        TemporalFilterOutFields_HistoryWeight,
         TemporalFilterOutFields_WeightedHistoryIllumination,
-        TemporalFilterOutFields_WeightedHistoryWeight,
         TemporalFilterOutFields_Variance,
         TemporalFilterOutFields_Gradient,
     };
@@ -202,6 +202,7 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kOutputPingPongIdx) mOutputPingPongIdx = value;
         else if (key == kEnableDebugTag) mEnableDebugTag = value;
         else if (key == kEnableDebugOutput) mEnableDebugOutput = value;
+        else if (key == kEnableOutputVariance) mEnableOutputVariance = value;
         else logWarning("Unknown field '{}' in DynamicWeightingSVGF dictionary.", key);
     }
     mRecompile = true;
@@ -235,6 +236,7 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kOutputPingPongIdx] = mOutputPingPongIdx;
     dict[kEnableDebugTag] = mEnableDebugTag;
     dict[kEnableDebugOutput] = mEnableDebugOutput;
+    dict[kEnableOutputVariance] = mEnableOutputVariance;
     return dict;
 }
 
@@ -346,7 +348,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         defines.add("_DEBUG_OUTPUT_ENABLED", mEnableDebugOutput ? "1" : "0");
 
         mpPackLinearZAndNormal = FullScreenPass::create(kPackLinearZAndNormalShader);
-        mpReproject = FullScreenPass::create(kReprojectShader);
+        // mpReproject = FullScreenPass::create(kReprojectShader);
         mpTemporalFilter = FullScreenPass::create(kTemporalFilterShader, defines);
         mpFilterMoments = FullScreenPass::create(kFilterMomentShader);
         mpAtrous = FullScreenPass::create(kAtrousShader, defines);
@@ -390,11 +392,8 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         {
             FALCOR_PROFILE("[debug] blit history illumination");
             pRenderContext->blit(
-                mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_UnweightedHistoryIllumination)->getSRV(),
+                mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryIllumination)->getSRV(),
                 pOutputUnweightedHistoryIllumination->getRTV());
-            pRenderContext->blit(
-                mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_WeightedHistoryIllumination)->getSRV(),
-                pOutputWeightedHistoryIllumination->getRTV());
         }
 #endif
 
@@ -444,11 +443,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         if (mEnableDebugOutput)
         {
             FALCOR_PROFILE("[debug] blit history weight");
-            pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_UnweightedHistoryWeight)->getSRV(), pOutputUnweightedHistoryWeight->getRTV());
-            if (mDynamicWeighingEnabled)
-            {
-                pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_WeightedHistoryWeight)->getSRV(), pOutputWeightedHistoryWeight->getRTV());
-            }
+            pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryWeight)->getSRV(), pOutputUnweightedHistoryWeight->getRTV());
         }
 #endif
         pRenderContext->blit(mpFinalFbo->getColorTexture(0)->getSRV(), pOutputTexture->getRTV());
@@ -472,12 +467,12 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
         // RG32F for the luminance moments, and one that is R16F.
         Fbo::Desc desc;
         desc.setSampleCount(0);
-        desc.setColorTarget(TemporalFilterOutFields_UnweightedHistoryIllumination, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(TemporalFilterOutFields_HistoryIllumination, Falcor::ResourceFormat::RGBA32Float);
         desc.setColorTarget(TemporalFilterOutFields_Moments, Falcor::ResourceFormat::RG32Float);
         desc.setColorTarget(TemporalFilterOutFields_HistoryLength, Falcor::ResourceFormat::R32Float);
-        desc.setColorTarget(TemporalFilterOutFields_UnweightedHistoryWeight, Falcor::ResourceFormat::R32Float);
+        desc.setColorTarget(TemporalFilterOutFields_HistoryWeight,
+                            mDynamicWeighingEnabled ? Falcor::ResourceFormat::RG32Float : Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(TemporalFilterOutFields_WeightedHistoryIllumination, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(TemporalFilterOutFields_WeightedHistoryWeight, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(TemporalFilterOutFields_Variance, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(TemporalFilterOutFields_Gradient, Falcor::ResourceFormat::RGBA32Float);
         mpCurTemporalFilterFbo = Fbo::create2D(dim.x, dim.y, desc);
@@ -614,12 +609,11 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     // From previous frame
     perImageCB["gPrevMoments"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Moments);
     perImageCB["gPrevHistoryLength"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
-    perImageCB["gPrevUnweightedHistoryWeight"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_UnweightedHistoryWeight);
+    perImageCB["gPrevHistoryWeight"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryWeight);
     perImageCB["gPrevUnweightedIllum"] = mpFilteredPastFbo[0]->getColorTexture(0);
     perImageCB["gPrevLinearZAndNormal"] = mpPrevLinearZAndNormalTexture;
     if (mDynamicWeighingEnabled)
     {
-        perImageCB["gPrevWeightedHistoryWeight"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_WeightedHistoryWeight);
         perImageCB["gPrevWeightedIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
         perImageCB["gPrevGradient"] = mpPrevGradientTexture;
     }
@@ -664,7 +658,7 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
     // Filter unweighted history
     perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
     // perImageCB["gIllumination"] = Texture::SharedPtr();
-    perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_UnweightedHistoryIllumination);
+    perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryIllumination);
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
 
     // Filter weighted history
@@ -692,7 +686,7 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
     {
         FALCOR_PROFILE("direct feedback");
         // cerr << "*feedback" << endl;
-        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_UnweightedHistoryIllumination)->getSRV(), mpFilteredPastFbo[0]->getRenderTargetView(0));
+        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryIllumination)->getSRV(), mpFilteredPastFbo[0]->getRenderTargetView(0));
         if (mDynamicWeighingEnabled)
             pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_WeightedHistoryIllumination)->getSRV(), mpFilteredPastFbo[1]->getRenderTargetView(0));
     }

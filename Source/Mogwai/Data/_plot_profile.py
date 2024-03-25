@@ -163,11 +163,12 @@ for i, folder_name in enumerate(folder_names):
         #     if 'Others' not in data:
         #         data['Others'] = np.array(events[key]['records'])
         #     data['Others'] += np.array(events[key]['records'])
+    total_time_data = events[f'{RENDER_GRAPH_PREFIX}/SVGFPass/gpuTime']['records']
+    data['Others'] = total_time_data - np.sum(list(data.values()), axis=0)
 
     plot_profile(axs[i], data, n_frames, source_display_names[i], 'Frame', 'Time (Us)')
 
     ### print data
-    total_time_data = events[f'{RENDER_GRAPH_PREFIX}/SVGFPass/gpuTime']['records']
     logI(f'{source_display_names[i]}:')
     logI(f'Total time: {np.mean(total_time_data):.3f} ms')
     for key, value in data.items():
