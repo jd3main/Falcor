@@ -3,12 +3,15 @@ import Utils.Color.ColorHelpers;
 import RenderPasses.SVGFPass.SVGFCommon;
 import RenderPasses.ReprojectionPass.ReprojectionStruct;
 
-#include "RenderPasses/DynamicWeightingSVGF/Enums.h"
 #include "RenderPasses/DynamicWeightingSVGF/Configs.h"
 
 #ifndef _DEBUG_TAG_ENABLED
 #define _DEBUG_TAG_ENABLED 0
 #endif
+
+#define NORMALIZATION_MODE _NORMALIZATION_MODE
+#define SELECTION_MODE _SELECTION_MODE
+
 
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
@@ -32,8 +35,6 @@ cbuffer PerImageCB
     // Parameters
     float gGammaMidpoint;
     float gGammaSteepness;
-    SelectionMode gSelectionMode;
-    NormalizationMode gNormalizationMode;
 };
 
 struct PS_OUT
@@ -48,39 +49,34 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 {
     const int2 ipos = int2(vsOut.posH.xy);
 
-    const float3 unweightedIllumination = gUnweightedIllumination[ipos].rgb;
+    const float4 _unweightedIllumination = gUnweightedIllumination[ipos];
+    const float3 unweightedIllumination = _unweightedIllumination.rgb;
+    const float variance = _unweightedIllumination.a;
     const float3 weightedIllumination = gWeightedIllumination[ipos].rgb;
-    const float variance = gUnweightedIllumination[ipos].a;
     const float3 gradient = gGradient[ipos].rgb;
 
     float gamma = luminance(abs(gradient));
 
-    // normalize
-    if (gNormalizationMode == NormalizationMode::Luminance)
-        gamma = gamma / luminance(unweightedIllumination);
-    else if (gNormalizationMode == NormalizationMode::Variance)
-        gamma = gamma / max(variance, 1e-6f);
-    else if (gNormalizationMode == NormalizationMode::StandardDeviation)
-        gamma = gamma / sqrt(max(variance, 1e-6f));
+// normalize
+#if NORMALIZATION_MODE == NORMALIZATION_MODE_LUMINANCE
+    gamma = gamma / luminance(unweightedIllumination);
+#elif NORMALIZATION_MODE == NORMALIZATION_MODE_VARIANCE
+    gamma = gamma / max(variance, 1e-6f);
+#elif NORMALIZATION_MODE == NORMALIZATION_MODE_STANDARDDEVIATION
+    gamma = gamma / sqrt(max(variance, 1e-6f));
+#endif
 
-    switch (gSelectionMode)
-    {
-    case SelectionMode::Unweighted:
-        gamma = 1.0f;
-        break;
-    case SelectionMode::Weighted:
-        gamma = 0.0f;
-        break;
-    case SelectionMode::Linear:
-        gamma = clamp(0.5 + (gamma-gGammaMidpoint) * gGammaSteepness, 0, 1);
-        break;
-    case SelectionMode::Step:
-        gamma = (gamma >= gGammaMidpoint) ? 1 : 0;
-        break;
-    case SelectionMode::Logistic:
-        gamma = 1 / (1 + exp(-gGammaSteepness * (gamma - gGammaMidpoint)));
-        break;
-    }
+#if SELECTION_MODE == SELECTION_MODE_UNWEIGHTED
+    gamma = 1.0f;
+#elif SELECTION_MODE == SELECTION_MODE_WEIGHTED
+    gamma = 0.0f;
+#elif SELECTION_MODE == SELECTION_MODE_LINEAR
+    gamma = clamp(0.5 + (gamma - gGammaMidpoint) * gGammaSteepness, 0, 1);
+#elif SELECTION_MODE == SELECTION_MODE_STEP
+    gamma = (gamma >= gGammaMidpoint) ? 1 : 0;
+#elif SELECTION_MODE == SELECTION_MODE_LOGISTIC
+    gamma = 1 / (1 + exp(-gGammaSteepness * (gamma - gGammaMidpoint)));
+#endif
 
     float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 

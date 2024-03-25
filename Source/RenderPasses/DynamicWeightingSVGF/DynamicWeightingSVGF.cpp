@@ -1,9 +1,12 @@
+
 #include "DynamicWeightingSVGF.h"
 #include "Configs.h"
 
 #include "RenderGraph/RenderPassLibrary.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/BasePasses/FullScreenPass.h"
+
+#include <string>
 
 using std::vector;
 using std::string;
@@ -144,18 +147,25 @@ namespace
     };
 
     Gui::DropdownList kSelectionModeList = {
-        #define X(x) { (uint32_t)SelectionMode::x, #x },
+        #define X(x) { (uint32_t)x, #x },
         FOR_SELECTION_MODES(X)
         #undef X
     };
 
     Gui::DropdownList kNormalizationModeList = {
-        #define X(x) { (uint32_t)NormalizationMode::x, #x },
+        #define X(x) { (uint32_t)x, #x },
         FOR_NORMALIZATION_MODES(X)
         #undef X
     };
 
     static const uint2 kScreenTileDim = { 16, 16 };     ///< Screen-tile dimension in pixels.
+}
+
+std::string toUpperCase(std::string&& str) {
+    for (char &c : str) {
+        c = std::toupper(c);
+    }
+    return str;
 }
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -346,6 +356,14 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         defines.add("_DW_ENABLED", mDynamicWeighingEnabled ? "1" : "0");
         defines.add("_DEBUG_TAG_ENABLED", mEnableDebugTag ? "1" : "0");
         defines.add("_DEBUG_OUTPUT_ENABLED", mEnableDebugOutput ? "1" : "0");
+
+        #define X(x) defines.add(toUpperCase(#x), std::to_string(x));
+        FOR_SELECTION_MODES(X)
+        FOR_NORMALIZATION_MODES(X)
+        #undef X
+
+        defines.add("_SELECTION_MODE", SelectionModeNames[mSelectionMode]);
+        defines.add("_NORMALIZATION_MODE", NormalizationModeNames[mNormalizationMode]);
 
         mpPackLinearZAndNormal = FullScreenPass::create(kPackLinearZAndNormalShader);
         // mpReproject = FullScreenPass::create(kReprojectShader);
@@ -684,7 +702,7 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
 
     if (mFeedbackTap < 0)
     {
-        FALCOR_PROFILE("direct feedback");
+        FALCOR_PROFILE("feedback");
         // cerr << "*feedback" << endl;
         pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryIllumination)->getSRV(), mpFilteredPastFbo[0]->getRenderTargetView(0));
         if (mDynamicWeighingEnabled)
@@ -737,10 +755,11 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
             perImageCB["gIllumination"] = mpPingPongFbo[srcId]->getColorTexture(0);
             perImageCB["gNIterations"] = i;
 
-            FALCOR_PROFILE("Atrous["+std::to_string(i)+"], srcId="+std::to_string(srcId)+", dstId="+std::to_string(dstId));
-            // Fbo::SharedPtr curTargetFbo = mpPingPongFbo[dstId];
-            // cerr << "atrous: mpPingPongFbo[" << srcId << "] => mpPingPongFbo[" << dstId << "]\n";
-            mpAtrous->execute(pRenderContext, mpPingPongFbo[dstId]);
+            {
+                FALCOR_PROFILE("Atrous["+std::to_string(i)+"], srcId="+std::to_string(srcId)+", dstId="+std::to_string(dstId));
+                // cerr << "atrous: mpPingPongFbo[" << srcId << "] => mpPingPongFbo[" << dstId << "]\n";
+                mpAtrous->execute(pRenderContext, mpPingPongFbo[dstId]);
+            }
 
             // store the filtered color for the feedback path
             if (i == std::min(mFeedbackTap, mFilterIterations - 1))
@@ -809,8 +828,6 @@ void DynamicWeightingSVGF::dynamicWeighting(
     // Parameters
     perImageCB["gGammaMidpoint"] = mGammaMidpoint;
     perImageCB["gGammaSteepness"] = mGammaSteepness;
-    perImageCB["gSelectionMode"] = mSelectionMode;
-    perImageCB["gNormalizationMode"] = mNormalizationMode;
 
     mpDynamicWeighting->execute(pRenderContext, pOutputFbo);
 
@@ -867,14 +884,18 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     mRecompile |= changed;
     if (mDynamicWeighingEnabled)
     {
-        dirty |= widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
+        changed |= widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
+        dirty |= changed;
+        mRecompile |= changed;
         dirty |= widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
         dirty |= widget.var("Max Gradient", mMaxGradient, 0.0f, 1e6f, 0.1f, false, "%.2f");
         dirty |= widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
         dirty |= widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
-        dirty |= widget.dropdown("Normalization Mode", kNormalizationModeList, mNormalizationMode);
+        changed |= widget.dropdown("Normalization Mode", kNormalizationModeList, mNormalizationMode);
+        dirty |= changed;
+        mRecompile |= changed;
 
-        if (mSelectionMode == (uint32_t)SelectionMode::Logistic)
+        if (mSelectionMode == SELECTION_MODE_LOGISTIC)
         {
             float gamma0 = 1.0f / (1.0f + expf(-mGammaSteepness * (0 - mGammaMidpoint)));
             widget.text("gamma(0) = " + std::to_string(gamma0));

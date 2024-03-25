@@ -2,32 +2,46 @@
 
 
 #define FOR_SELECTION_MODES(X)\
-    X(Unweighted) \
-    X(Weighted) \
-    X(Linear) \
-    X(Step) \
-    X(Logistic) \
+    X(SELECTION_MODE_UNWEIGHTED) \
+    X(SELECTION_MODE_WEIGHTED) \
+    X(SELECTION_MODE_LINEAR) \
+    X(SELECTION_MODE_STEP) \
+    X(SELECTION_MODE_LOGISTIC) \
 
-
-enum class SelectionMode
+enum SelectionMode
 {
     #define X(x) x,
     FOR_SELECTION_MODES(X)
     #undef X
-    MAX
+    SELECTION_MODE_MAX
 };
 
+#ifdef __cplusplus
+const char* SelectionModeNames[] = {
+    #define X(x) #x,
+    FOR_SELECTION_MODES(X)
+    #undef X
+};
+#endif
 
 #define FOR_NORMALIZATION_MODES(X)\
-    X(None) \
-    X(Luminance) \
-    X(Variance) \
-    X(StandardDeviation) \
+    X(NORMALIZATION_MODE_NONE) \
+    X(NORMALIZATION_MODE_LUMINANCE) \
+    X(NORMALIZATION_MODE_VARIANCE) \
+    X(NORMALIZATION_MODE_STANDARDDEVIATION) \
 
-enum class NormalizationMode
+enum NormalizationMode
 {
     #define X(x) x,
     FOR_NORMALIZATION_MODES(X)
     #undef X
-    MAX
+    NORMALIZATION_MODE_MAX
 };
+
+#ifdef __cplusplus
+const char* NormalizationModeNames[] = {
+    #define X(x) #x,
+    FOR_NORMALIZATION_MODES(X)
+    #undef X
+};
+#endif

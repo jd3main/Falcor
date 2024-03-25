@@ -82,8 +82,8 @@ private:
     float   mExpectedDelay = -10;
     float   mGammaMidpoint = 0.01f;
     float   mGammaSteepness = 100;
-    uint32_t mSelectionMode = (uint32_t)SelectionMode::Logistic;
-    uint32_t mNormalizationMode = (uint32_t)NormalizationMode::None;
+    uint32_t mSelectionMode = SELECTION_MODE_LOGISTIC;
+    uint32_t mNormalizationMode = NORMALIZATION_MODE_NONE;
     bool    mUseInputReprojection = false;
     bool    mEnableOutputVariance = true;
 

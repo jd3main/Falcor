@@ -146,7 +146,8 @@ for i, folder_name in enumerate(folder_names):
     #     print(key)
 
     patterns = [
-        r'^.*/SVGFPass/[^/]*/gpuTime$'
+        r'^.*/SVGFPass/[^/]*/gpuTime$',
+        r'^.*/SVGFPass/computeAtrousDecomposition/[^/]*/gpuTime$'
     ]
 
     RENDER_GRAPH_PREFIX = '/onFrameRender/RenderGraphExe::execute()'
@@ -157,7 +158,9 @@ for i, folder_name in enumerate(folder_names):
     for key in events:
         if any(re.match(pattern, key) for pattern in patterns):
             # print(key)
-            name = key.lstrip(RENDER_GRAPH_PREFIX)
+            if 'computeAtrousDecomposition/gpuTime' in key:
+                continue
+            name = key.replace(RENDER_GRAPH_PREFIX,'').replace('/gpuTime','')
             data[name] = events[key]['records']
         # else:
         #     if 'Others' not in data:
@@ -165,6 +168,7 @@ for i, folder_name in enumerate(folder_names):
         #     data['Others'] += np.array(events[key]['records'])
     total_time_data = events[f'{RENDER_GRAPH_PREFIX}/SVGFPass/gpuTime']['records']
     data['Others'] = total_time_data - np.sum(list(data.values()), axis=0)
+
 
     plot_profile(axs[i], data, n_frames, source_display_names[i], 'Frame', 'Time (Us)')
 
