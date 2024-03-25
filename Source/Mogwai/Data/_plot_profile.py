@@ -7,6 +7,7 @@ import re
 
 from _utils import *
 from DynamicWeighting_Common import *
+from _log_utils import *
 
 
 def plot_profile(ax, data:dict, n_frames:int, title, xlabel, ylabel):
@@ -15,17 +16,27 @@ def plot_profile(ax, data:dict, n_frames:int, title, xlabel, ylabel):
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+    ax.set_ylim(0, 5)
     ax.legend()
 
 
 DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+# DEFAULT_SCENE_NAME = 'VeachAjar'
 # DEFAULT_SCENE_NAME = 'BistroExterior'
 # DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
 # DEFAULT_SCENE_NAME = 'SunTemple'
 
+SCENE_DURATIONS = {
+    'VeachAjarAnimated': 20,
+    'VeachAjar': 20,
+    'BistroExterior': 100,
+    'EmeraldSquare_Day': 10,
+    'SunTemple': 10,
+}
+
 DEFAULT_RECORD_PATH = Path(__file__).parents[4]/'Record'
 DEFAULT_FPS = 30
-DEFAULT_RECORD_SECONDS = 20
+DEFAULT_RECORD_SECONDS = -1
 
 DEFAULT_SELECTION_FUNC = "Linear"
 # DEFAULT_SELECTION_FUNC = "Step"
@@ -35,7 +46,7 @@ DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
 # DEFAULT_NORMALZATION_MODE = NormalizationMode.NONE
 # DEFAULT_NORMALZATION_MODE = NormalizationMode.LUM
 
-DEFAULT_ITER_PARAMS = (2, -1, 0)
+DEFAULT_ITER_PARAMS = (4, 0, 1)
 
 # DEFAULT_SAMPLING_METHOD = 'Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
 # DEFAULT_SAMPLING_METHOD = 'Adaptive(2.0,0.0,10.0,1,1)'
@@ -67,6 +78,8 @@ else:
     iter_params = DEFAULT_ITER_PARAMS
 fps = args.fps
 duration = args.duration
+if duration < 0:
+    duration = SCENE_DURATIONS[scene_name]
 n_frames = int(fps * duration)
 
 selection_func = args.selection_func
@@ -99,7 +112,15 @@ folder_names = [
     f'{scene_name}_iters({iters},{feedback})_Weighted_Alpha({alpha})_WAlpha({w_alpha})_{sampling}',
 ]
 
+source_display_names = [
+    f'{scene_name} - {iters} iters - Dynamic',
+    f'{scene_name} - {iters} iters - Unweighted',
+    f'{scene_name} - {iters} iters - Weighted',
+]
+
 fig, axs = plt.subplots(len(folder_names), 1, sharex=True, sharey=True)
+
+execution_times = []
 
 for i, folder_name in enumerate(folder_names):
     full_folder_path = record_path/folder_name
@@ -107,10 +128,10 @@ for i, folder_name in enumerate(folder_names):
     ### Load data
     print(f'Loading from: {full_folder_path}')
     if not full_folder_path.exists():
-        logErr(f'Folder not found: \"{full_folder_path}\"')
+        logE(f'Folder not found: \"{full_folder_path}\"')
         exit()
     if not (full_folder_path/'profile.json').exists():
-        logErr(f'profile.json not found in \"{full_folder_path}\"')
+        logE(f'profile.json not found in \"{full_folder_path}\"')
         exit()
     profile = json.load(open(full_folder_path/'profile.json'))
 
@@ -120,29 +141,44 @@ for i, folder_name in enumerate(folder_names):
     events = profile['events']
     print(f"{n_frames} frames")
 
-    print("Keys:")
-    for key in profile['events']:
-        print(key)
+    # print("Keys:")
+    # for key in profile['events']:
+    #     print(key)
 
     patterns = [
         r'^.*/SVGFPass/[^/]*/gpuTime$'
     ]
 
-    print("Matching keys:")
+    RENDER_GRAPH_PREFIX = '/onFrameRender/RenderGraphExe::execute()'
+
+    # print("Matching keys:")
 
     data = dict()
     for key in events:
         if any(re.match(pattern, key) for pattern in patterns):
-            print(key)
-            name = key.lstrip("/onFrameRender/RenderGraphExe::execute()")
+            # print(key)
+            name = key.lstrip(RENDER_GRAPH_PREFIX)
             data[name] = events[key]['records']
         # else:
         #     if 'Others' not in data:
         #         data['Others'] = np.array(events[key]['records'])
         #     data['Others'] += np.array(events[key]['records'])
 
+    plot_profile(axs[i], data, n_frames, source_display_names[i], 'Frame', 'Time (Us)')
+
+    ### print data
+    total_time_data = events[f'{RENDER_GRAPH_PREFIX}/SVGFPass/gpuTime']['records']
+    logI(f'{source_display_names[i]}:')
+    logI(f'Total time: {np.mean(total_time_data):.3f} ms')
+    for key, value in data.items():
+        logI(f'{key}:\t{np.mean(value):.3f} ms')
+
+    execution_times.append(np.mean(total_time_data))
+
+print()
+for i, folder_name in enumerate(folder_names):
+    logI(f'{source_display_names[i]}:\t{execution_times[i]:.3f} ms')
 
 
-    plot_profile(axs[i], data, n_frames, 'Execution Time', 'Frame', 'Time (Us)')
-
+plt.tight_layout()
 plt.show()

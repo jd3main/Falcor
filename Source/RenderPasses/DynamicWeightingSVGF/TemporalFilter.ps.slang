@@ -303,22 +303,21 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     moments.g = moments.r * moments.r;
     moments = lerp(h.moments, moments, alphaMoments);
 
-    float variance = max(0.f, moments.g - moments.r * moments.r);
-    // variance *= computeVarianceScale(16, 16, alpha);
+    const float variance = max(0.f, moments.g - moments.r * moments.r);
 
     float decay = success ? (1.0f - gAlpha) : 0.0f;
     if (curLength < 8)
         decay = 1;
-    float unweightedAlpha = 1.0f / (decay * h.unweightedWeight + 1);
-    float unweightedHistoryWeight = decay * h.unweightedWeight + 1;
-    float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
+    const float unweightedAlpha = 1.0f / (decay * h.unweightedWeight + 1);
+    const float unweightedHistoryWeight = decay * h.unweightedWeight + 1;
+    const float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
 #if DW_ENABLED
     float weightedDecay = success ? (1.0f - gWeightedAlpha) : 0.0f;
     if (curLength < 8)
         weightedDecay = 1;
-    float weightedAlpha = float(sampleCount) / (weightedDecay * h.weightedWeight + float(sampleCount));
-    float weightedHistoryWeight = weightedDecay * h.weightedWeight + sampleCount;
-    float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
+    const float weightedAlpha = float(sampleCount) / (weightedDecay * h.weightedWeight + float(sampleCount));
+    const float weightedHistoryWeight = weightedDecay * h.weightedWeight + sampleCount;
+    const float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
 
     float3 delta = success ? (illumination - h.unweightedIllumination) : float3(0, 0, 0);
     delta = clamp(delta, -gMaxGradient, gMaxGradient);

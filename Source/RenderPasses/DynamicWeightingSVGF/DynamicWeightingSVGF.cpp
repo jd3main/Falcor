@@ -438,7 +438,8 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
 
         // Blit into the output texture.
         pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength)->getSRV(), pOutputHistoryLength->getRTV());
-        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Variance)->getSRV(), pOutputVariance->getRTV());
+        if (mEnableOutputVariance)
+            pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Variance)->getSRV(), pOutputVariance->getRTV());
 #if DEBUG_OUTPUT_ENABLED
         if (mEnableDebugOutput)
         {
@@ -636,7 +637,11 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
 
     mpTemporalFilter->execute(pRenderContext, mpCurTemporalFilterFbo);
 
-    pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient)->getSRV(), mpPrevGradientTexture->getRTV());
+    if (mDynamicWeighingEnabled)
+    {
+        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient)->getSRV(), mpPrevGradientTexture->getRTV());
+    }
+
     if (mEnableDebugOutput)
     {
         pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient)->getSRV(), renderData.getTexture(kOutputGradient)->getRTV());
@@ -658,7 +663,7 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
 
     // Filter unweighted history
     perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
-    perImageCB["gIllumination"] = Texture::SharedPtr();
+    // perImageCB["gIllumination"] = Texture::SharedPtr();
     perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_UnweightedHistoryIllumination);
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
 
@@ -666,7 +671,7 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
     if (mDynamicWeighingEnabled)
     {
         perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
-        perImageCB["gIllumination"] = Texture::SharedPtr();
+        // perImageCB["gIllumination"] = Texture::SharedPtr();
         perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_WeightedHistoryIllumination);
         mpFilterMoments->execute(pRenderContext, mpPingPongFbo[2]);
     }
@@ -883,6 +888,7 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     }
 
     widget.checkbox("Use Input Reprojection", mUseInputReprojection);
+    widget.checkbox("Enable Output Variance", mEnableOutputVariance);
 
     widget.text("");
     widget.text("Debug");

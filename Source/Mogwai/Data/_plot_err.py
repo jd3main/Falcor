@@ -25,8 +25,8 @@ def loadError(path, field) -> np.ndarray:
         with open(full_path, 'r') as f:
             data = np.loadtxt(f)
     except Exception as e:
-        logErr(f'cannot load error from {full_path}')
-        logErr(e)
+        logE(f'cannot load error from {full_path}')
+        logE(e)
     return data
 
 class Record:

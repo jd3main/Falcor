@@ -539,29 +539,29 @@ foveated_params_override = {
     'foveaMoveStayDuration': 0.5,
 }
 
-gt_sample_Count = 64
-use_no_filter_gt = False
+gt_sample_Count = 96
+use_no_filter_gt = True
 
 # iters, feedback, grad_iters
 iter_params = [
-    (2, -1, 0),
-    (2, 0, 1),
-    (2, 1, 2),
-    (3, -1, 0),
-    (3, 0, 1),
-    (3, 1, 2),
+    # (2, -1, 0),
+    # (2, 0, 1),
+    # (2, 1, 2),
+    # (3, -1, 0),
+    # (3, 0, 1),
+    # (3, 1, 2),
     (4, 0, 1),
-    (4, 1, 2),
+    # (4, 1, 2),
 ]
 # midpoints = [0, 0.05, 0.5, 1.0]
 # steepnesses = [0.1, 1, 10]
 # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
 blending_func_params = [(0.5, 1.0)]
 
-force_record_selections =  False
+force_record_selections = False
 force_record_step = False
-force_record_unweighted = False
-force_record_weighted = False
+force_record_unweighted = True
+force_record_weighted = True
 force_record_ground_truth = False
 
 for iters, feedback, grad_iters in iter_params:

@@ -85,6 +85,7 @@ private:
     uint32_t mSelectionMode = (uint32_t)SelectionMode::Logistic;
     uint32_t mNormalizationMode = (uint32_t)NormalizationMode::None;
     bool    mUseInputReprojection = false;
+    bool    mEnableOutputVariance = true;
 
     // Debug parameters
     bool mEnableDebugOutput = false;

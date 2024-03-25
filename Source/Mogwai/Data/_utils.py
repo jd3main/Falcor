@@ -5,6 +5,8 @@ from colorama import Fore, Back, Style
 import sys
 import json
 
+from _log_utils import *
+
 def ensurePath(path: str) -> None:
     """Ensures that the path exists.
 
@@ -46,14 +48,14 @@ def imageSequenceLoader(path, filename_pattern:str, max_frame_id=None, n_retry=5
             try:
                 img = loadImage(path, filename_pattern, frame_id)
                 if img is None:
-                    logWarn(f"Image {frame_id} is empty. Retrying... ({i+1}/{n_retry})")
+                    logW(f"Image {frame_id} is empty. Retrying... ({i+1}/{n_retry})")
                     continue
                 break
             except FileNotFoundError as e:
                 raise e
             except Exception as e:
                 if i < n_retry - 1:
-                    logErr(f"Error loading image {frame_id}: {e}. Retrying... ({i+1}/{n_retry})")
+                    logE(f"Error loading image {frame_id}: {e}. Retrying... ({i+1}/{n_retry})")
                 else:
                     raise e
         yield img
