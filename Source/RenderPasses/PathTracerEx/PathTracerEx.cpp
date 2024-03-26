@@ -35,10 +35,10 @@ const RenderPass::Info PathTracerEx::kInfo { "PathTracerEx", "Path tracer with l
 
 namespace
 {
-    const std::string kGeneratePathsFilename = "RenderPasses/PathTracer/GeneratePaths.cs.slang";
-    const std::string kTracePassFilename = "RenderPasses/PathTracer/TracePass.rt.slang";
-    const std::string kResolvePassFilename = "RenderPasses/PathTracer/ResolvePass.cs.slang";
-    const std::string kReflectTypesFile = "RenderPasses/PathTracer/ReflectTypes.cs.slang";
+    const std::string kGeneratePathsFilename = "RenderPasses/PathTracerEx/GeneratePaths.cs.slang";
+    const std::string kTracePassFilename = "RenderPasses/PathTracerEx/TracePass.rt.slang";
+    const std::string kResolvePassFilename = "RenderPasses/PathTracerEx/AccumResolvePass.cs.slang";
+    const std::string kReflectTypesFile = "RenderPasses/PathTracerEx/ReflectTypes.cs.slang";
 
     const std::string kShaderModel = "6_5";
 
@@ -143,6 +143,7 @@ namespace
 
     // Scripting options.
     const std::string kSamplesPerPixel = "samplesPerPixel";
+    const std::string kRepeat = "repeat";
     const std::string kMaxSurfaceBounces = "maxSurfaceBounces";
     const std::string kMaxDiffuseBounces = "maxDiffuseBounces";
     const std::string kMaxSpecularBounces = "maxSpecularBounces";
@@ -255,6 +256,7 @@ void PathTracerEx::parseDictionary(const Dictionary& dict)
     {
         // Rendering parameters
         if (key == kSamplesPerPixel) mStaticParams.samplesPerPixel = value;
+        else if (key == kRepeat) mParams.repeat = value;
         else if (key == kMaxSurfaceBounces) mStaticParams.maxSurfaceBounces = value;
         else if (key == kMaxDiffuseBounces) mStaticParams.maxDiffuseBounces = value;
         else if (key == kMaxSpecularBounces) mStaticParams.maxSpecularBounces = value;
@@ -371,6 +373,7 @@ Dictionary PathTracerEx::getScriptingDictionary()
 
     // Rendering parameters
     d[kSamplesPerPixel] = mStaticParams.samplesPerPixel;
+    d[kRepeat] = mParams.repeat;
     d[kMaxSurfaceBounces] = mStaticParams.maxSurfaceBounces;
     d[kMaxDiffuseBounces] = mStaticParams.maxDiffuseBounces;
     d[kMaxSpecularBounces] = mStaticParams.maxSpecularBounces;
@@ -485,34 +488,43 @@ void PathTracerEx::execute(RenderContext* pRenderContext, const RenderData& rend
     // Prepare resources.
     prepareResources(pRenderContext, renderData);
 
-    // Prepare the path tracer parameter block.
-    // This should be called after all resources have been created.
-    preparePathTracer(renderData);
-
-    // Generate paths at primary hits.
-    generatePaths(pRenderContext, renderData);
-
-    // Update RTXDI.
-    if (mpRTXDI)
+    for (int i=0; i<mParams.repeat; i++)
     {
-        const auto& pMotionVectors = renderData.getTexture(kInputMotionVectors);
-        mpRTXDI->update(pRenderContext, pMotionVectors);
+        mParams.shouldClear = (i == 0) ? 1 : 0;
+        mParams.seed += 1;
+        mOptionsChanged = true;
+
+
+        // Prepare the path tracer parameter block.
+        // This should be called after all resources have been created.
+        preparePathTracer(renderData);
+
+        // Generate paths at primary hits.
+        generatePaths(pRenderContext, renderData);
+
+        // Update RTXDI.
+        if (mpRTXDI)
+        {
+            const auto& pMotionVectors = renderData.getTexture(kInputMotionVectors);
+            mpRTXDI->update(pRenderContext, pMotionVectors);
+        }
+
+        // Trace pass.
+        FALCOR_ASSERT(mpTracePass);
+        tracePass(pRenderContext, renderData, *mpTracePass);
+
+        // Launch separate passes to trace delta reflection and transmission paths to generate respective guide buffers.
+        if (mOutputNRDAdditionalData)
+        {
+            FALCOR_ASSERT(mpTraceDeltaReflectionPass && mpTraceDeltaTransmissionPass);
+            tracePass(pRenderContext, renderData, *mpTraceDeltaReflectionPass);
+            tracePass(pRenderContext, renderData, *mpTraceDeltaTransmissionPass);
+        }
+
+
+        // Resolve pass.
+        resolvePass(pRenderContext, renderData);
     }
-
-    // Trace pass.
-    FALCOR_ASSERT(mpTracePass);
-    tracePass(pRenderContext, renderData, *mpTracePass);
-
-    // Launch separate passes to trace delta reflection and transmission paths to generate respective guide buffers.
-    if (mOutputNRDAdditionalData)
-    {
-        FALCOR_ASSERT(mpTraceDeltaReflectionPass && mpTraceDeltaTransmissionPass);
-        tracePass(pRenderContext, renderData, *mpTraceDeltaReflectionPass);
-        tracePass(pRenderContext, renderData, *mpTraceDeltaTransmissionPass);
-    }
-
-    // Resolve pass.
-    resolvePass(pRenderContext, renderData);
 
     endFrame(pRenderContext, renderData);
 }
@@ -543,6 +555,7 @@ bool PathTracerEx::renderRenderingUI(Gui::Widgets& widget)
     if (mFixedSampleCount)
     {
         dirty |= widget.var("Samples/pixel", mStaticParams.samplesPerPixel, 1u, kMaxSamplesPerPixel);
+        runtimeDirty |= widget.var("Repeat", mParams.repeat, 1u, 1024u);
     }
     else widget.text("Samples/pixel: Variable");
     widget.tooltip("Number of samples per pixel. One path is traced for each sample.\n\n"

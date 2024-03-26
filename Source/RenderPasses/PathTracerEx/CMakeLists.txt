@@ -13,7 +13,7 @@ target_sources(PathTracerEx PRIVATE
     PathTracerEx.h
     PathTracerNRD.slang
     ReflectTypes.cs.slang
-    ResolvePass.cs.slang
+    RepeatResolvePass.cs.slang
     StaticParams.slang
     TracePass.rt.slang
 )
