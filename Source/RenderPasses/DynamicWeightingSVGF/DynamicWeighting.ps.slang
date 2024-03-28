@@ -3,14 +3,10 @@ import Utils.Color.ColorHelpers;
 import RenderPasses.SVGFPass.SVGFCommon;
 import RenderPasses.ReprojectionPass.ReprojectionStruct;
 
-#include "RenderPasses/DynamicWeightingSVGF/Configs.h"
-
-#ifndef _DEBUG_TAG_ENABLED
-#define _DEBUG_TAG_ENABLED 0
-#endif
-
 #define NORMALIZATION_MODE _NORMALIZATION_MODE
 #define SELECTION_MODE _SELECTION_MODE
+#define DEBUG_OUTPUT_ENABLED _DEBUG_OUTPUT_ENABLED
+#define DEBUG_TAG_ENABLED _DEBUG_TAG_ENABLED
 
 
 // Workaround for isnan() not working in slang.
@@ -41,7 +37,7 @@ struct PS_OUT
 {
     float4 color        : SV_Target0;
 #if DEBUG_OUTPUT_ENABLED
-    float gamma         : SV_Target2;
+    float gamma         : SV_Target1;
 #endif
 };
 
@@ -80,7 +76,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
     float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 
-#if _DEBUG_TAG_ENABLED
+#if DEBUG_TAG_ENABLED
     if (ipos.x < 20 && ipos.y < 100)
     {
         float3 debugColor = float3(1, 0, 0);

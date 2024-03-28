@@ -31,8 +31,6 @@ import Utils.Color.ColorHelpers;
 import Utils.Color.ColorMap;
 import RenderPasses.SVGFPass.SVGFCommon;
 
-#include "RenderPasses/DynamicWeightingSVGF/Configs.h"
-
 #define MAX_HISTORY_LENGTH 32
 
 #define DW_ENABLED _DW_ENABLED
@@ -264,11 +262,11 @@ float computeVarianceScale(float numSamples, float loopLength, float alpha)
 
 struct PS_OUT
 {
-    float4 OutUnweightedHistoryIllumination : SV_TARGET0;
+    float4 OutIllumination                  : SV_TARGET0;
     float2 OutMoments                       : SV_TARGET1;
     float OutHistoryLength                  : SV_TARGET2;
     HistoryWeightType OutHistoryWeight      : SV_TARGET3;
-    float4 OutWeightedHistoryIllumination   : SV_TARGET4;
+    float4 OutWeightedIllumination          : SV_TARGET4;
     float OutVariance                       : SV_TARGET5;
     float4 OutGradient                      : SV_TARGET6;
 };
@@ -329,12 +327,12 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 
 
     PS_OUT psOut;
-    psOut.OutUnweightedHistoryIllumination = float4(outUnweightedIllumination, variance);
+    psOut.OutIllumination = float4(outUnweightedIllumination, variance);
     psOut.OutMoments = moments;
     psOut.OutHistoryLength = curLength;
 #if DW_ENABLED
     psOut.OutHistoryWeight = float2(historyWeight, weightedHistoryWeight);
-    psOut.OutWeightedHistoryIllumination = float4(outWeightedIllumination, variance);
+    psOut.OutWeightedIllumination = float4(outWeightedIllumination, variance);
     psOut.OutGradient.xyz = outGradient;
 #else
     psOut.OutHistoryWeight = historyWeight;

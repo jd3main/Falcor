@@ -3,7 +3,6 @@
 #include "RenderGraph/BasePasses/FullScreenPass.h"
 #include "RenderGraph/BasePasses/ComputePass.h"
 #include "Enums.h"
-#include "Configs.h"
 
 using namespace Falcor;
 
@@ -67,6 +66,7 @@ private:
 
     // parameters
     bool    mFilterEnabled = true;
+    bool    mSpatialFilterEnabled = true;
     bool    mDynamicWeighingEnabled = true;
     int32_t mFilterIterations = 4;
     int32_t mFeedbackTap = 1;
