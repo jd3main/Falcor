@@ -15,7 +15,23 @@ import json
 from typing import Union
 import numpy as np
 from DynamicWeighting_Common import *
+from _log_utils import *
 
+
+class FalcorEnoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, float2):
+            return { "__float2__": True, "x": o.x, "y": o.y }
+        return super().default(o)
+
+class FalcorDecoder(json.JSONDecoder):
+    def __init__(self, *args, **kwargs):
+        super().__init__(object_hook=self.object_hook, *args, **kwargs)
+
+    def object_hook(self, o):
+        if '__float2__' in o:
+            return float2(o['x'], o['y'])
+        return o
 
 def __eq__(self, other):
     """Overrides the default implementation"""
@@ -23,6 +39,7 @@ def __eq__(self, other):
         return self.x == other.x and self.y == other.y
     return False
 
+float2.__eq__ = __eq__
 
 loadRenderPassLibrary('DLSSPass.dll')
 loadRenderPassLibrary('AccumulatePass.dll')
@@ -82,13 +99,22 @@ class AllFrames:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
 
-def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
+def render_graph_g(iters, feedback, alpha=0.05,
+                   svgf_enabled=True, spatial_filter_enabled=True,
                    dynamic_weighting_enabled=False, dynamic_weighting_params:dict={},
                    adaptive_pass_enabled=False, adaptive_pass_params:dict={},
                    output_sample_count=False,
-                   sample_count=64,
+                   sample_count=1,
+                   repeat_sample_count=1,
                    debug_tag_enabled=False,
+                   debug_output_enabled=False,
                    **kwargs):
+
+    if sample_count > 8:
+        assert sample_count % 8 == 0
+        repeat_sample_count = sample_count // 8
+        sample_count = 8
+
     g = RenderGraph('g')
 
     GBufferRaster = createPass('GBufferRaster', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack})
@@ -121,28 +147,29 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
         PathTracer = createPass('PathTracer', {'samplesPerPixel': 1, 'maxSurfaceBounces': 10, 'maxDiffuseBounces': 3, 'maxSpecularBounces': 3, 'maxTransmissionBounces': 10, 'sampleGenerator': 0, 'useBSDFSampling': True, 'useRussianRoulette': False, 'useNEE': True, 'useMIS': True, 'misHeuristic': MISHeuristic.Balance, 'misPowerExponent': 2.0, 'emissiveSampler': EmissiveLightSamplerType.LightBVH, 'lightBVHOptions': LightBVHSamplerOptions(buildOptions=LightBVHBuilderOptions(splitHeuristicSelection=SplitHeuristic.BinnedSAOH, maxTriangleCountPerLeaf=10, binCount=16, volumeEpsilon=0.0010000000474974513, splitAlongLargest=False, useVolumeOverSA=False, useLeafCreationCost=True, createLeavesASAP=True, allowRefitting=True, usePreintegration=True, useLightingCones=True), useBoundingCone=True, useLightingCone=True, disableNodeFlux=False, useUniformTriangleSampling=True, solidAngleBoundMethod=SolidAngleBoundMethod.Sphere), 'useRTXDI': False, 'RTXDIOptions': RTXDIOptions(mode=RTXDIMode.SpatiotemporalResampling, presampledTileCount=128, presampledTileSize=1024, storeCompactLightInfo=True, localLightCandidateCount=24, infiniteLightCandidateCount=8, envLightCandidateCount=8, brdfCandidateCount=1, brdfCutoff=0.0, testCandidateVisibility=True, biasCorrection=RTXDIBiasCorrection.Basic, depthThreshold=0.10000000149011612, normalThreshold=0.5, samplingRadius=30.0, spatialSampleCount=1, spatialIterations=5, maxHistoryLength=20, boilingFilterStrength=0.0, rayEpsilon=0.0010000000474974513, useEmissiveTextures=False, enableVisibilityShortcut=False, enablePermutationSampling=False), 'useAlphaTest': True, 'adjustShadingNormals': False, 'maxNestedMaterials': 2, 'useLightsInDielectricVolumes': False, 'disableCaustics': False, 'specularRoughnessThreshold': 0.25, 'primaryLodMode': TexLODMode.Mip0, 'lodBias': 0.0, 'useNRDDemodulation': True, 'outputSize': IOSize.Default, 'colorFormat': ColorFormat.LogLuvHDR})
         g.addPass(PathTracer, 'PathTracer')
     else:
-        PathTracer = createPass('PathTracerEx', {'samplesPerPixel': sample_count, 'maxSurfaceBounces': 10, 'maxDiffuseBounces': 3, 'maxSpecularBounces': 3, 'maxTransmissionBounces': 10, 'sampleGenerator': 0, 'useBSDFSampling': True, 'useRussianRoulette': False, 'useNEE': True, 'useMIS': True, 'misHeuristic': MISHeuristic.Balance, 'misPowerExponent': 2.0, 'emissiveSampler': EmissiveLightSamplerType.LightBVH, 'lightBVHOptions': LightBVHSamplerOptions(buildOptions=LightBVHBuilderOptions(splitHeuristicSelection=SplitHeuristic.BinnedSAOH, maxTriangleCountPerLeaf=10, binCount=16, volumeEpsilon=0.0010000000474974513, splitAlongLargest=False, useVolumeOverSA=False, useLeafCreationCost=True, createLeavesASAP=True, allowRefitting=True, usePreintegration=True, useLightingCones=True), useBoundingCone=True, useLightingCone=True, disableNodeFlux=False, useUniformTriangleSampling=True, solidAngleBoundMethod=SolidAngleBoundMethod.Sphere), 'useRTXDI': False, 'RTXDIOptions': RTXDIOptions(mode=RTXDIMode.SpatiotemporalResampling, presampledTileCount=128, presampledTileSize=1024, storeCompactLightInfo=True, localLightCandidateCount=24, infiniteLightCandidateCount=8, envLightCandidateCount=8, brdfCandidateCount=1, brdfCutoff=0.0, testCandidateVisibility=True, biasCorrection=RTXDIBiasCorrection.Basic, depthThreshold=0.10000000149011612, normalThreshold=0.5, samplingRadius=30.0, spatialSampleCount=1, spatialIterations=5, maxHistoryLength=20, boilingFilterStrength=0.0, rayEpsilon=0.0010000000474974513, useEmissiveTextures=False, enableVisibilityShortcut=False, enablePermutationSampling=False), 'useAlphaTest': True, 'adjustShadingNormals': False, 'maxNestedMaterials': 2, 'useLightsInDielectricVolumes': False, 'disableCaustics': False, 'specularRoughnessThreshold': 0.25, 'primaryLodMode': TexLODMode.Mip0, 'lodBias': 0.0, 'useNRDDemodulation': True, 'outputSize': IOSize.Default, 'colorFormat': ColorFormat.LogLuvHDR})
+        PathTracer = createPass('PathTracerEx', {'samplesPerPixel': sample_count, 'repeat': repeat_sample_count, 'maxSurfaceBounces': 10, 'maxDiffuseBounces': 3, 'maxSpecularBounces': 3, 'maxTransmissionBounces': 10, 'sampleGenerator': 0, 'useBSDFSampling': True, 'useRussianRoulette': False, 'useNEE': True, 'useMIS': True, 'misHeuristic': MISHeuristic.Balance, 'misPowerExponent': 2.0, 'emissiveSampler': EmissiveLightSamplerType.LightBVH, 'lightBVHOptions': LightBVHSamplerOptions(buildOptions=LightBVHBuilderOptions(splitHeuristicSelection=SplitHeuristic.BinnedSAOH, maxTriangleCountPerLeaf=10, binCount=16, volumeEpsilon=0.0010000000474974513, splitAlongLargest=False, useVolumeOverSA=False, useLeafCreationCost=True, createLeavesASAP=True, allowRefitting=True, usePreintegration=True, useLightingCones=True), useBoundingCone=True, useLightingCone=True, disableNodeFlux=False, useUniformTriangleSampling=True, solidAngleBoundMethod=SolidAngleBoundMethod.Sphere), 'useRTXDI': False, 'RTXDIOptions': RTXDIOptions(mode=RTXDIMode.SpatiotemporalResampling, presampledTileCount=128, presampledTileSize=1024, storeCompactLightInfo=True, localLightCandidateCount=24, infiniteLightCandidateCount=8, envLightCandidateCount=8, brdfCandidateCount=1, brdfCutoff=0.0, testCandidateVisibility=True, biasCorrection=RTXDIBiasCorrection.Basic, depthThreshold=0.10000000149011612, normalThreshold=0.5, samplingRadius=30.0, spatialSampleCount=1, spatialIterations=5, maxHistoryLength=20, boilingFilterStrength=0.0, rayEpsilon=0.0010000000474974513, useEmissiveTextures=False, enableVisibilityShortcut=False, enablePermutationSampling=False), 'useAlphaTest': True, 'adjustShadingNormals': False, 'maxNestedMaterials': 2, 'useLightsInDielectricVolumes': False, 'disableCaustics': False, 'specularRoughnessThreshold': 0.25, 'primaryLodMode': TexLODMode.Mip0, 'lodBias': 0.0, 'useNRDDemodulation': True, 'outputSize': IOSize.Default, 'colorFormat': ColorFormat.LogLuvHDR})
         g.addPass(PathTracer, 'PathTracer')
 
     SVGFPass = createPass('DynamicWeightingSVGF', {
-        'Enabled': True,
+        'Enabled': svgf_enabled,
+        'SpatialFilterEnabled': spatial_filter_enabled,
         'DynamicWeighingEnabled': dynamic_weighting_enabled,
         'Iterations': iters,
         'FeedbackTap': feedback,
-        'GradientFilterIterations': grad_iters,
         'VarianceEpsilon': 0.0001,
         'PhiColor': 10.0,
         'PhiNormal': 128.0,
         'Alpha': alpha,
+        'WeightedAlpha': alpha,
         'MomentsAlpha': 0.2,
         'GradientAlpha': 0.2,
-        'GradientMidpoint': 0.01,
-        'GammaSteepness': 100.0,
-        'SelectionMode': SelectionMode.LOGISTIC,
+        'GradientMidpoint': 0.5,
+        'GammaSteepness': 1.0,
+        'SelectionMode': SelectionMode.LINEAR,
         'SampleCountOverride': -1,
-        'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
-        'UseInputReprojection': False,
+        'NormalizationMode': NormalizationMode.STD,
         'EnableDebugTag': debug_tag_enabled,
+        'EnableDebugOutput': debug_output_enabled,
         **dynamic_weighting_params})
     g.addPass(SVGFPass, 'SVGFPass')
 
@@ -210,7 +237,9 @@ def render_graph_g(iters, feedback, grad_iters, alpha=0.05,
 
 
 def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
-                 output_path=DEFAULT_OUTPUT_PATH, base_filename=DEFAULT_BASE_FILENAME):
+                 output_path=DEFAULT_OUTPUT_PATH, base_filename=DEFAULT_BASE_FILENAME,
+                 enable_profiler=True,
+                 skip_capture_for_frames = 0):
     '''
     Record images from start_time to end_time at fps.
     '''
@@ -227,15 +256,22 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
 
     renderFrame()
     print()
-
+    m.profiler.enabled = enable_profiler
+    if enable_profiler:
+        m.profiler.startCapture()
     start_frame = int(start_time * fps)
     end_frame = int(end_time * fps)
     for frame in range(start_frame, end_frame):
-        print(f"\rframe={m.clock.frame} time={m.clock.time:.3f}")
+        print(f"\rframe={m.clock.frame} time={m.clock.time:.3f}", end='')
         renderFrame()
-        if frame in frames:
+        if frame in frames and frame >= skip_capture_for_frames:
             m.frameCapture.baseFilename = base_filename
             m.frameCapture.capture()
+    print()
+    if enable_profiler:
+        capture = m.profiler.endCapture()
+        m.profiler.enabled = False
+        json.dump(capture, open(output_path/'profile.json', 'w'), indent=2)
 
 def recordVideo(start_time, end_time, fps=60, codec="Raw", bitrate_mbps=4.0, gopSize=10,
                 output_path=DEFAULT_OUTPUT_PATH, base_filename=DEFAULT_BASE_FILENAME, exit_on_done=True):
@@ -269,7 +305,7 @@ def storeMetadata(output_path: Union[str,Path], data):
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
     with open(output_path/'metadata.txt', 'w') as f:
-        json.dump(data, f)
+        json.dump(data, f, cls=FalcorEnoder, indent=2)
 
 def loadMetadata(path) -> dict:
     '''
@@ -279,9 +315,9 @@ def loadMetadata(path) -> dict:
     data = dict()
     try:
         with open(path/'metadata.txt', 'r') as f:
-            data = dict(**json.load(f))
+            data = dict(**json.load(f, cls=FalcorDecoder))
     except Exception as e:
-        print(f'cannot load metadata from {path/"metadata.txt"}')
+        logE(f'cannot load metadata from {path/"metadata.txt"}')
     return data
 
 def countImages(path, filename_pattern:str) -> int:
@@ -296,33 +332,6 @@ def countImages(path, filename_pattern:str) -> int:
 
 scene_name: str = ''
 
-def normalizeGraphParams(graph_params: dict) -> dict:
-    if 'dynamic_weighting_enabled' in graph_params:
-        if not graph_params['dynamic_weighting_enabled']:
-            graph_params['grad_iters'] = 0
-            graph_params['dynamic_weighting_params'] = {
-                'SelectionMode': SelectionMode.UNWEIGHTED,
-            }
-        elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.UNWEIGHTED:
-            graph_params['grad_iters'] = 0
-        elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.WEIGHTED:
-            graph_params['grad_iters'] = graph_params['feedback'] + 1
-            graph_params['dynamic_weighting_params'] = {
-                'SelectionMode': SelectionMode.WEIGHTED,
-            }
-
-    if 'foveated_pass_enabled' not in graph_params:
-        graph_params['foveated_pass_enabled'] = False
-    if not graph_params['foveated_pass_enabled']:
-        graph_params['foveated_pass_params'] = {}
-
-    if 'adaptive_pass_enabled' not in graph_params:
-        graph_params['adaptive_pass_enabled'] = False
-    if not graph_params['adaptive_pass_enabled']:
-        graph_params['adaptive_pass_params'] = {}
-
-    return graph_params
-
 def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
     '''
     Get the output path from graph_params and scene_name.
@@ -330,37 +339,45 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
     folder_name_parts = []
     folder_name_parts.append(scene_name)
 
-    if (graph_params['dynamic_weighting_enabled']
-        and graph_params['dynamic_weighting_params']['SelectionMode'] not in [SelectionMode.UNWEIGHTED, SelectionMode.WEIGHTED]):
-        folder_name_parts.append('iters({},{},{})'.format(
-            graph_params['iters'], graph_params['feedback'], graph_params['grad_iters']))
-    else:
+
+    if graph_params['svgf_enabled']:
         folder_name_parts.append('iters({},{})'.format(
             graph_params['iters'],  graph_params['feedback']))
 
     if graph_params['dynamic_weighting_enabled']:
-        selection_mode = graph_params['dynamic_weighting_params']['SelectionMode']
+        dw_params = graph_params['dynamic_weighting_params']
+
+        selection_mode = dw_params['SelectionMode']
         if selection_mode == SelectionMode.LINEAR:
             folder_name_parts.append('Linear({},{})'.format(
-                graph_params['dynamic_weighting_params']['GradientMidpoint'],
-                graph_params['dynamic_weighting_params']['GammaSteepness']))
+                dw_params['GradientMidpoint'],
+                dw_params['GammaSteepness']))
         elif selection_mode == SelectionMode.STEP:
             folder_name_parts.append('Step({})'.format(
-                graph_params['dynamic_weighting_params']['GradientMidpoint']))
+                dw_params['GradientMidpoint']))
         elif selection_mode == SelectionMode.LOGISTIC:
             folder_name_parts.append('Logistic({},{})'.format(
-                graph_params['dynamic_weighting_params']['GradientMidpoint'],
-                graph_params['dynamic_weighting_params']['GammaSteepness']))
+                dw_params['GradientMidpoint'],
+                dw_params['GammaSteepness']))
         elif selection_mode == SelectionMode.WEIGHTED:
             folder_name_parts.append('Weighted')
         elif selection_mode == SelectionMode.UNWEIGHTED:
             folder_name_parts.append('Unweighted')
 
+    if graph_params['svgf_enabled']:
+        folder_name_parts.append('Alpha({})'.format(graph_params['alpha']))
+
+    if graph_params['dynamic_weighting_enabled']:
+        if selection_mode not in [SelectionMode.UNWEIGHTED]:
+            folder_name_parts.append('WAlpha({})'.format(
+                dw_params['WeightedAlpha']))
+
         if selection_mode not in [SelectionMode.UNWEIGHTED, SelectionMode.WEIGHTED]:
             folder_name_parts.append('GAlpha({})'.format(
-                graph_params['dynamic_weighting_params']['GradientAlpha']))
+                dw_params['GradientAlpha']))
             folder_name_parts.append('Norm({})'.format(
-                NormalizationMode(graph_params['dynamic_weighting_params']['NormalizationMode']).name))
+                NormalizationMode(dw_params['NormalizationMode']).name))
+
 
     if graph_params['adaptive_pass_enabled']:
         folder_name_parts.append('Adaptive({},{},{},{},{})'.format(
@@ -369,23 +386,15 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
             graph_params['adaptive_pass_params']['MaxVariance'],
             graph_params['adaptive_pass_params']['MinSamplePerPixel'],
             graph_params['adaptive_pass_params']['MinSamplePerPixel']))
+    else:
+        folder_name_parts.append(f'{graph_params["sample_count"]}')
 
     folder_name = '_'.join(folder_name_parts)
     return folder_name
 
 
-def run(graph_params_override:dict={}, record_params_override:dict={}, force_record=False):
-    graph_params = {
-        'iters': 1,
-        'feedback': 0,
-        'grad_iters': 1,
-        'alpha': 0.05,
-        'dynamic_weighting_enabled': True,
-        'dynamic_weighting_params': {},
-        'adaptive_pass_enabled': False,
-        'adaptive_pass_params': {},
-        **graph_params_override
-    }
+def run(graph_params:dict={}, record_params_override:dict={}, force_record=False):
+
     graph_params = normalizeGraphParams(graph_params)
 
     record_params = {
@@ -393,6 +402,7 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
         'end_time': 20,
         'fps': 30,
         'frames': AllFrames(),
+        'enable_profiler': False,
         **record_params_override
     }
 
@@ -401,16 +411,16 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     output_path = output_path_base / folder_name
     if output_path.exists():
         if force_record:
-            print(f"[Warning] Found existing record at \"{output_path}\".\nForce continue recording.")
+            logW(f"[Warning] Found existing record at \"{output_path}\".\nForce continue recording.")
         else:
             g_params = normalizeGraphParams(loadMetadata(output_path))
             n_frames = int(record_params['fps'] * (record_params['end_time'] - record_params['start_time']))
             existing_frame_count = countImages(output_path, f'{record_params["fps"]}fps.SVGFPass.Filtered image.{{}}.exr')
             if g_params == graph_params and n_frames == existing_frame_count:
-                print(f"[Warning] Found existing record with same parameters at \"{output_path}\".\nSkip recording.")
+                logW(f"[Warning] Found existing record with same parameters at \"{output_path}\".\nSkip recording.")
                 return
             else:
-                print(f"[Warning] Found existing record with different parameters at \"{output_path}\".\nContinue recording.")
+                logW(f"[Warning] Found existing record with different parameters at \"{output_path}\".\nContinue recording.")
 
     base_filename = '{fps}fps'.format(
         fps = record_params['fps'])
@@ -419,8 +429,8 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     try:
         m.addGraph(g)
     except Exception as e:
-        print(f"Failed to add graph")
-        print(e)
+        logE(f"Failed to add graph")
+        logE(e)
         raise e
 
     recordImages(**record_params, output_path=output_path, base_filename=base_filename)
@@ -430,11 +440,24 @@ def run(graph_params_override:dict={}, record_params_override:dict={}, force_rec
     gc.collect()
 
 
-# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene'
+scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene'
 # scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
-scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
+# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
 scene_name = scene_path.stem
+
+animation_lengths = {
+    'VeachAjarAnimated': 20,
+    'VeachAjar': 20,
+    'BistroExterior': 100,
+    'BistroInterior': 59.5,
+    'BistroInterior_Wine': 59.5,
+    'EmeraldSquare_Day': 10,
+    'SunTemple': 20,
+}
 
 try:
     m.loadScene(scene_path)
@@ -447,12 +470,19 @@ except Exception as e:
 common_record_params = {
     'fps': 30,
     'start_time': 0,
-    'end_time': 10,
+    'end_time': animation_lengths[scene_name],
+    # 'end_time': 10,
 }
 
 common_graph_params = {
     'alpha': 0.05,
     'debug_tag_enabled': False,
+    'debug_output_enabled': False,
+}
+
+common_dynamic_weighting_params = {
+    'WeightedAlpha': 0.05,
+    'GradientAlpha': 0.2,
 }
 
 adaptive_params_override = {
@@ -464,18 +494,26 @@ adaptive_params_override = {
     'MaxSamplePerPixel': 8,
 }
 
-gt_sample_Count = 64
+gt_sample_Count = 128
 
-# iters, feedback, grad_iters
+generate_filtered_gt = True
+generate_temporal_filtered_gt = True
+generate_raw_gt = False
+
+# iters, feedback
 iter_params = [
-    (2, -1, 0),
-    # (2, 0, 1),
-    # (2, 1, 2),
+    (0, -1),
+    (2, 0),
+    (3, 0),
+    (3, 1),
+    (4, 0),
+    (4, 1),
 ]
-midpoints = [0, 0.05, 0.5, 1.0]
-steepnesses = [0.1, 1, 10]
-# midpoints = [0.05]
-# steepnesses = [1]
+
+# midpoints = [0, 0.05, 0.5, 1.0]
+# steepnesses = [0.1, 1, 10]
+# blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
+blending_func_params = [(0.5, 1.0)]
 
 force_record_selections =  False
 force_record_step = False
@@ -483,38 +521,36 @@ force_record_unweighted = False
 force_record_weighted = False
 force_record_ground_truth = False
 
-for iters, feedback, grad_iters in iter_params:
+for iters, feedback in iter_params:
     # Try different parameters with dynamic weighting
-    for midpoint in midpoints:
-        for steepness in steepnesses:
-            run(graph_params_override = {
-                    'iters': iters,
-                    'feedback': feedback,
-                    'grad_iters': grad_iters,
-                    'dynamic_weighting_enabled': True,
-                    'dynamic_weighting_params': {
-                        'GradientAlpha': 0.2,
-                        'GradientMidpoint': float(midpoint),
-                        'GammaSteepness': float(steepness),
-                        'SelectionMode': SelectionMode.LINEAR,
-                        'SampleCountOverride': -1,
-                        'NormalizationMode': NormalizationMode.STD,
-                    },
-                    'adaptive_pass_enabled': True,
-                    'adaptive_pass_params': adaptive_params_override,
-                    **common_graph_params
+    for midpoint, steepness in blending_func_params:
+        logI(f"Run Dynamic Weighting: iters={iters}, feedback={feedback}, midpoint={midpoint}, steepness={steepness}")
+        run(graph_params = {
+                'iters': iters,
+                'feedback': feedback,
+                'dynamic_weighting_enabled': True,
+                'dynamic_weighting_params': {
+                    'GradientMidpoint': float(midpoint),
+                    'GammaSteepness': float(steepness),
+                    'SelectionMode': SelectionMode.LINEAR,
+                    'NormalizationMode': NormalizationMode.STD,
+                    **common_dynamic_weighting_params
                 },
-                record_params_override={
-                    **common_record_params,
-                },
-                force_record=force_record_selections)
+                'adaptive_pass_enabled': True,
+                'adaptive_pass_params': adaptive_params_override,
+                **common_graph_params
+            },
+            record_params_override={
+                **common_record_params,
+                'enable_profiler': True,
+            },
+            force_record=force_record_selections)
 
 
     # for midpoint in midpoints:
-    #     run(graph_params_override = {
+    #     run(graph_params = {
     #             'iters': iters,
     #             'feedback': feedback,
-    #             'grad_iters': grad_iters,
     #             'dynamic_weighting_enabled': True,
     #             'dynamic_weighting_params': {
     #                 'GradientAlpha': 0.2,
@@ -534,14 +570,14 @@ for iters, feedback, grad_iters in iter_params:
     #         force_record=force_record_step)
 
     # Unweighted
-    print("Run Unweighted")
-    run(graph_params_override = {
+    logI("Run Unweighted")
+    run(graph_params = {
             'iters': iters,
             'feedback': feedback,
-            'grad_iters': 0,
             'dynamic_weighting_enabled': False,
             'dynamic_weighting_params': {
                 'SelectionMode': SelectionMode.UNWEIGHTED,
+                **common_dynamic_weighting_params
             },
             'adaptive_pass_enabled': True,
             'adaptive_pass_params': adaptive_params_override,
@@ -550,19 +586,20 @@ for iters, feedback, grad_iters in iter_params:
         },
         record_params_override={
             **common_record_params,
+            'enable_profiler': True,
         },
         force_record=force_record_unweighted
     )
 
     # Weighted
-    print("Run Weighted")
-    run(graph_params_override = {
+    logI("Run Weighted")
+    run(graph_params = {
             'iters': iters,
             'feedback': feedback,
-            'grad_iters': 0,
             'dynamic_weighting_enabled': True,
             'dynamic_weighting_params': {
                 'SelectionMode': SelectionMode.WEIGHTED,
+                **common_dynamic_weighting_params
             },
             'adaptive_pass_enabled': True,
             'adaptive_pass_params': adaptive_params_override,
@@ -570,26 +607,70 @@ for iters, feedback, grad_iters in iter_params:
         },
         record_params_override={
             **common_record_params,
+            'enable_profiler': False,
         },
         force_record=force_record_weighted
     )
 
+    # Generate ground truth with spatial-temporal filter
+    if generate_filtered_gt:
+        logI("Run Ground Truth (Spatial-temporal filtered)")
+        run(graph_params = {
+                'svgf_enabled': True,
+                'iters': iters,
+                'feedback': -1,
+                'dynamic_weighting_enabled': False,
+                'adaptive_pass_enabled': False,
+                'sample_count': gt_sample_Count,
+                **common_graph_params
+            },
+            record_params_override = {
+                **common_record_params,
+                'enable_profiler': False,
+            },
+            force_record=force_record_ground_truth
+        )
 
-    # Generate ground truth
-    print("Run Ground Truth")
-    run(graph_params_override = {
-            'iters': iters,
-            'feedback': feedback,
-            'grad_iters': iters,
+
+# Generate ground truth without any filter
+if generate_raw_gt:
+    logI("Run Ground Truth (No filter)")
+    run(graph_params = {
+            'svgf_enabled': False,
+            'iters': 0,
+            'feedback': -1,
             'dynamic_weighting_enabled': False,
+            'adaptive_pass_enabled': False,
             'sample_count': gt_sample_Count,
             **common_graph_params
         },
-        record_params_override={
+        record_params_override = {
             **common_record_params,
+            'enable_profiler': False,
         },
         force_record=force_record_ground_truth
     )
 
-print("All Done")
+# Generate ground truth with temporal filter
+if generate_temporal_filtered_gt:
+    logI("Run Ground Truth (Temporal filtered)")
+    run(graph_params = {
+            'svgf_enabled': True,
+            'space_filter_enabled': False,
+            'iters': 0,
+            'feedback': -1,
+            'dynamic_weighting_enabled': False,
+            'adaptive_pass_enabled': False,
+            'sample_count': gt_sample_Count,
+            **common_graph_params
+        },
+        record_params_override = {
+            **common_record_params,
+            'enable_profiler': False,
+        },
+        force_record=force_record_ground_truth
+    )
+
+
+logI("All Done")
 exit()

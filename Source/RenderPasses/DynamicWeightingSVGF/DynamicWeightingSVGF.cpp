@@ -29,7 +29,7 @@ namespace
     const char kPackLinearZAndNormalShader[] = "RenderPasses/SVGFPass/SVGFPackLinearZAndNormal.ps.slang";
     const char kTemporalFilterShader[] = "RenderPasses/DynamicWeightingSVGF/TemporalFilter.ps.slang";
     const char kAtrousShader[] = "RenderPasses/DynamicWeightingSVGF/Atrous.ps.slang";
-    const char kFilterMomentShader[] = "RenderPasses/SVGFPass/SVGFFilterMoments.ps.slang";
+    const char kFilterMomentShader[] = "RenderPasses/DynamicWeightingSVGF/FilterMoments.ps.slang";
     const char kReprojectShader[] = "RenderPasses/ReprojectionPass/Reprojection.ps.slang";
     const char kDynamicWeightingShader[] = "RenderPasses/DynamicWeightingSVGF/DynamicWeighting.ps.slang";
     const char kFinalModulateShader[] = "RenderPasses/SVGFPass/SVGFFinalModulate.ps.slang";
@@ -41,7 +41,6 @@ namespace
     const char kDynamicWeighingEnabled[] = "DynamicWeighingEnabled";
     const char kIterations[] = "Iterations";
     const char kFeedbackTap[] = "FeedbackTap";
-    const char kSelectAfterIterations[] = "GradientFilterIterations";
     const char kVarianceEpsilon[] = "VarianceEpsilon";
     const char kPhiColor[] = "PhiColor";
     const char kPhiNormal[] = "PhiNormal";
@@ -192,7 +191,6 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kDynamicWeighingEnabled) mDynamicWeighingEnabled = value;
         else if (key == kIterations) mFilterIterations = value;
         else if (key == kFeedbackTap) mFeedbackTap = value;
-        else if (key == kSelectAfterIterations) mSelectAfterIterations = value;
         else if (key == kVarianceEpsilon) mVarainceEpsilon = value;
         else if (key == kPhiColor) mPhiColor = value;
         else if (key == kPhiNormal) mPhiNormal = value;
@@ -227,7 +225,6 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kDynamicWeighingEnabled] = mDynamicWeighingEnabled;
     dict[kIterations] = mFilterIterations;
     dict[kFeedbackTap] = mFeedbackTap;
-    dict[kSelectAfterIterations] = mSelectAfterIterations;
     dict[kVarianceEpsilon] = mVarainceEpsilon;
     dict[kPhiColor] = mPhiColor;
     dict[kPhiNormal] = mPhiNormal;
@@ -368,7 +365,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         mpPackLinearZAndNormal = FullScreenPass::create(kPackLinearZAndNormalShader);
         // mpReproject = FullScreenPass::create(kReprojectShader);
         mpTemporalFilter = FullScreenPass::create(kTemporalFilterShader, defines);
-        mpFilterMoments = FullScreenPass::create(kFilterMomentShader);
+        mpFilterMoments = FullScreenPass::create(kFilterMomentShader, defines);
         mpAtrous = FullScreenPass::create(kAtrousShader, defines);
         mpDynamicWeighting = FullScreenPass::create(kDynamicWeightingShader, defines);
         mpFinalModulate = FullScreenPass::create(kFinalModulateShader);
@@ -532,12 +529,25 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
 
     {
         Fbo::Desc desc;
+        desc.setColorTarget(0, Falcor::ResourceFormat::RGBA32Float);
+        if (mDynamicWeighingEnabled)
+            desc.setColorTarget(1, Falcor::ResourceFormat::RGBA32Float);
+        mpMomentFilterFbo = Fbo::create2D(dim.x, dim.y, desc);
+    }
+
+    {
+        Fbo::Desc desc;
         desc.setColorTarget(DynamicWeightingOutFields_Color, Falcor::ResourceFormat::RGBA32Float);
-        desc.setColorTarget(DynamicWeightingOutFields_Gamma, Falcor::ResourceFormat::R32Float);
         for (int i=0; i<4; i++)
         {
             mpPingPongFbo[i] = Fbo::create2D(dim.x, dim.y, desc);
         }
+    }
+
+    {
+        Fbo::Desc desc;
+        desc.setColorTarget(DynamicWeightingOutFields_Color, Falcor::ResourceFormat::RGBA32Float);
+        desc.setColorTarget(DynamicWeightingOutFields_Gamma, Falcor::ResourceFormat::R32Float);
         mpDynamicWeightingFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
 
@@ -554,11 +564,13 @@ void DynamicWeightingSVGF::clearBuffers(RenderContext* pRenderContext, const Ren
         pRenderContext->clearFbo(mpFilteredPastFbo[i].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpCurTemporalFilterFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpPrevTemporalFilterFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
-    if (mpReprojectionFbo)
-        pRenderContext->clearFbo(mpReprojectionFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+    pRenderContext->clearFbo(mpMomentFilterFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpSpatialFilteredFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpDynamicWeightingFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpFinalFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
+
+    if (mpReprojectionFbo)
+        pRenderContext->clearFbo(mpReprojectionFbo.get(), float4(0), 1.0f, 0, FboAttachmentType::All);
 
     // Clear the internal buffers
     pRenderContext->clearTexture(renderData.getTexture(kInternalBufferPreviousLinearZAndNormal).get());
@@ -671,27 +683,23 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
 
     auto perImageCB = mpFilterMoments["PerImageCB"];
 
+    // Input textures
     perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
     perImageCB["gMoments"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Moments);
+    perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
+    perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Illumination);
+    if (mDynamicWeighingEnabled)
+        perImageCB["gWeightedIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_WeightedIllumination);
 
     // Parameters
     perImageCB["gPhiColor"] = mPhiColor;
     perImageCB["gPhiNormal"] = mPhiNormal;
 
-    // Filter unweighted history
-    perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
-    perImageCB["gIllumination"] = Texture::SharedPtr();
-    perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Illumination);
-    mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
+    mpFilterMoments->execute(pRenderContext, mpMomentFilterFbo);
 
-    // Filter weighted history
+    pRenderContext->blit(mpMomentFilterFbo->getColorTexture(0)->getSRV(), mpPingPongFbo[0]->getRenderTargetView(0));
     if (mDynamicWeighingEnabled)
-    {
-        perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
-        perImageCB["gIllumination"] = Texture::SharedPtr();
-        perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_WeightedIllumination);
-        mpFilterMoments->execute(pRenderContext, mpPingPongFbo[2]);
-    }
+        pRenderContext->blit(mpMomentFilterFbo->getColorTexture(1)->getSRV(), mpPingPongFbo[2]->getRenderTargetView(0));
 }
 
 void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pAlbedoTexture)
@@ -710,25 +718,22 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
         pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Illumination)->getSRV(), mpFilteredPastFbo[0]->getRenderTargetView(0));
         if (mDynamicWeighingEnabled)
             pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_WeightedIllumination)->getSRV(), mpFilteredPastFbo[1]->getRenderTargetView(0));
+
+        if (mDynamicWeighingEnabled)
+        {
+
+            dynamicWeighting(pRenderContext, renderData,
+                mpPingPongFbo[0]->getColorTexture(0),
+                mpPingPongFbo[2]->getColorTexture(0),
+                mpDynamicWeightingFbo);
+
+            pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields_Color)->getSRV(),
+                                mpPingPongFbo[0]->getRenderTargetView(0));
+
+            doneSelection = true;
+        }
     }
 
-    if (mDynamicWeighingEnabled && mSelectAfterIterations == 0)
-    {
-
-        dynamicWeighting(pRenderContext, renderData,
-            mpPingPongFbo[0]->getColorTexture(0),
-            mpPingPongFbo[2]->getColorTexture(0),
-            mpDynamicWeightingFbo);
-
-        pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields_Color)->getSRV(),
-                             mpPingPongFbo[0]->getRenderTargetView(0));
-
-        // pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(),
-        //                      mpPingPongFbo[1]->getRenderTargetView(0));
-        // std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
-
-        doneSelection = true;
-    }
 
     if (mEnableDebugOutput && mOutputPingPongAfterIters == 0 && mOutputPingPongIdx >= 0)
     {
@@ -776,7 +781,7 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
             std::swap(mpPingPongFbo[srcId], mpPingPongFbo[dstId]);
         }
 
-        if (mDynamicWeighingEnabled && i == mSelectAfterIterations-1)
+        if (mDynamicWeighingEnabled && i == mFeedbackTap)
         {
             dynamicWeighting(pRenderContext, renderData,
                 mpPingPongFbo[0]->getColorTexture(0),
@@ -785,7 +790,6 @@ void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderCont
 
             pRenderContext->blit(mpDynamicWeightingFbo->getColorTexture(DynamicWeightingOutFields_Color)->getSRV(),
                                  mpPingPongFbo[0]->getRenderTargetView(0));
-            // std::swap(mpPingPongFbo[0], mpPingPongFbo[1]);
 
             doneSelection = true;
         }
@@ -860,8 +864,6 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
         widget.text("    iteration feeds into future frames?");
         dirty |= widget.var("Iterations", mFilterIterations, 0, 10, 1);
         dirty |= widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 1, 1);
-        if (mDynamicWeighingEnabled)
-            dirty |= widget.var("Select After Iterations", mSelectAfterIterations, std::max(0, mFeedbackTap+1), mFilterIterations, 1);
 
         widget.text("");
         widget.text("Contol edge stopping on bilateral fitler");

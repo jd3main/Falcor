@@ -7,40 +7,44 @@ from pathlib import Path
 import json
 import matplotlib.pyplot as plt
 from enum import IntEnum, auto
-from _utils import *
 
+from _utils import *
+from DynamicWeighting_Common import *
+
+REL_MSE_EPSILON = 1e-2
+
+scene_name = 'VeachAjar'
 # scene_name = 'VeachAjarAnimated'
-scene_name = 'BistroExterior'
+# scene_name = 'BistroExterior'
 # scene_name = 'EmeraldSquare_Day'
 # scene_name = 'SunTemple'
 
 
 record_path = Path(__file__).parents[4]/'Record'
 fps = 30
-duration = 1
+duration = 20
 n_frames = int(fps * duration)
-iters = (2, -1, 0)
-ref_iters = iters[0:2]
-no_dw_iters = iters[0:2]
+iters = 2
+feedback = 0
+alpha = 0.05
 
-iters = ','.join(map(str, iters))
-ref_iters = ','.join(map(str, ref_iters))
-no_dw_iters = ','.join(map(str, no_dw_iters))
+sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Lissajous([0.400000, 0.500000],[640.000000, 360.000000])'
+
 
 # load reference images
-reference_path = record_path/f'{scene_name}_iters({ref_iters})'
+reference_path = record_path/getReferenceFolderNameFiltered(scene_name, 128, 0.05, iters=iters)
 reference_images = loadImageSequence(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
 if len(reference_images) == 0:
     print(f'cannot load reference images')
     exit()
 
 # load source images
-unweighted_path = record_path/f'{scene_name}_iters({no_dw_iters})_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-weighted_path = record_path/f'{scene_name}_iters({no_dw_iters})_Weighted_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+unweighted_path = record_path/getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling)
+weighted_path = record_path/getSourceFolderNameWeighted(scene_name, iters, feedback, alpha, alpha, sampling)
 
 midpoint = 0.5
 steepness = 1.0
-dynamic_weighted_path = record_path/f'{scene_name}_iters({iters})_Linear({midpoint},{steepness})_GAlpha(0.2)_Norm(STANDARD_DEVIATION)_Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
+dynamic_weighted_path = record_path/getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, alpha, 0.2, NormalizationMode.STD, sampling)
 
 unweighted_images = loadImageSequence(unweighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
 weighted_images = loadImageSequence(weighted_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
@@ -68,7 +72,8 @@ for source_index, source_images in enumerate(sources):
     mean_err = np.empty(len(source_images))
     max_err = np.empty(len(source_images))
     for i in range(len(source_images)):
-        err = np.linalg.norm(reference_images[i] - source_images[i], axis=-1)
+        err = np.sum((reference_images[i] - source_images[i])**2, axis=-1) / (np.sum(reference_images[i]**2, axis=-1) + REL_MSE_EPSILON)
+        # err = np.linalg.norm(reference_images[i] - source_images[i], axis=-1)
         errs[source_index, i, :, :] = err
         mean_err[i] = np.mean(err)
         max_err[i] = np.max(err)

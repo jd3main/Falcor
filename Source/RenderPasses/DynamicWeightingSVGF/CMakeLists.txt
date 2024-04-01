@@ -8,6 +8,7 @@ target_sources(DynamicWeightingSVGF PRIVATE
     DynamicWeighting.ps.slang
     TemporalFilter.ps.slang
     Atrous.ps.slang
+    FilterMoments.ps.slang
 )
 
 target_source_group(DynamicWeightingSVGF "RenderPasses")

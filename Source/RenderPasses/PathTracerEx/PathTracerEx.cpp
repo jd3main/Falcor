@@ -31,6 +31,12 @@
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include "Rendering/Lights/EmissiveUniformSampler.h"
 
+#include <iostream>
+#include <chrono>
+#include <thread>
+
+using namespace std::chrono_literals;
+
 const RenderPass::Info PathTracerEx::kInfo { "PathTracerEx", "Path tracer with larger max sample count." };
 
 namespace
@@ -490,8 +496,8 @@ void PathTracerEx::execute(RenderContext* pRenderContext, const RenderData& rend
 
     for (int i=0; i<mParams.repeat; i++)
     {
+        std::this_thread::sleep_for(mStaticParams.samplesPerPixel*2ms);
         mParams.shouldClear = (i == 0) ? 1 : 0;
-        mParams.seed += 1;
         mOptionsChanged = true;
 
 
@@ -524,6 +530,8 @@ void PathTracerEx::execute(RenderContext* pRenderContext, const RenderData& rend
 
         // Resolve pass.
         resolvePass(pRenderContext, renderData);
+
+        mParams.seed += 7001;
     }
 
     endFrame(pRenderContext, renderData);

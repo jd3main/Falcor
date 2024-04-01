@@ -92,7 +92,7 @@ img_loader = imageSequenceLoader(record_path/folder_name, file_pattern, N_FRAMES
 fourcc = cv.VideoWriter_fourcc(*'XVID')
 out = cv.VideoWriter('output.avi', fourcc, FPS, (1280, 720))
 for i, img in enumerate(img_loader):
-    t = i / float(FPS)
+    t = (i+1) / float(FPS)
     print(f"Frame {i}: t = {t}")
     foveated_img = drawFoveaLissajous(img, fovea_radius, t, (0.4, 0.5), (640, 360), (np.pi/2, 0), color=(0, 0, 255), thickness=1)
 

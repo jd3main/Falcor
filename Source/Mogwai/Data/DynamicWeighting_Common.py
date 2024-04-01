@@ -1,4 +1,5 @@
-from enum import IntEnum, auto
+from enum import IntEnum, IntFlag, auto
+import numpy as np
 
 class FoveaShape(IntEnum):
     UNIFORM = 0
@@ -32,24 +33,37 @@ class NormalizationMode(IntEnum):
     VARIANCE = VAR
     STANDARD_DEVIATION = STD
 
+class RefFilterMode(IntFlag):
+    NONE = 0
+    TEMPORAL = auto()
+    SPATIAL = auto()
+
+    SPATIAL_TEMPORAL = TEMPORAL | SPATIAL
+
+
+def getReferenceFolderNameFiltered(scene_name, sample_count, alpha, iters=0, feedback=-1):
+    return f'{scene_name}_iters({iters},{feedback})_Alpha({alpha})_{sample_count}'
+
+def getReferenceFolderNameNonFiltered(scene_name, sample_count):
+    return f'{scene_name}_{sample_count}'
 
 def getSourceFolderNameLinear(scene_name,
-                              iters, feedback, grad_iters,
+                              iters, feedback,
                               midpoint, steepness,
                               alpha, w_alpha, g_alpha,
                               norm_mode:NormalizationMode,
                               sampling,
                               **kwargs):
-    return f'{scene_name}_iters({iters},{feedback},{grad_iters})_Linear({midpoint},{steepness})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
+    return f'{scene_name}_iters({iters},{feedback})_Linear({midpoint},{steepness})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
 
 def getSourceFolderNameStep(scene_name,
-                            iters, feedback, grad_iters,
+                            iters, feedback,
                             midpoint,
                             alpha, w_alpha, g_alpha,
                             norm_mode:NormalizationMode,
                             sampling,
                             **kwargs):
-    return f'{scene_name}_iters({iters},{feedback},{grad_iters})_Step({midpoint})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
+    return f'{scene_name}_iters({iters},{feedback})_Step({midpoint})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
 
 def getSourceFolderNameWeighted(scene_name,
                                 iters, feedback,
@@ -67,19 +81,94 @@ def getSourceFolderNameUnweighted(scene_name,
 
 
 def getSourceFolderName(scene_name,
-                        iters, feedback, grad_iters=None,
+                        iters, feedback,
                         selection_func=None, midpoint=None, steepness=None,
                         alpha=None, w_alpha=None, g_alpha=None,
                         norm_mode:NormalizationMode=None,
                         sampling=None,
                         **kwargs):
     if selection_func == 'Linear':
-        return getSourceFolderNameLinear(scene_name, iters, feedback, grad_iters, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling)
+        return getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling)
     elif selection_func == 'Step':
-        return getSourceFolderNameStep(scene_name, iters, feedback, grad_iters, midpoint, alpha, w_alpha, g_alpha, norm_mode, sampling)
+        return getSourceFolderNameStep(scene_name, iters, feedback, midpoint, alpha, w_alpha, g_alpha, norm_mode, sampling)
     elif selection_func == 'Weighted':
         return getSourceFolderNameWeighted(scene_name, iters, feedback, alpha, w_alpha, sampling)
     elif selection_func == 'Unweighted':
         return getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling)
     else:
         raise ValueError(f'Invalid selection function: {selection_func}')
+
+def popKeys(d:dict, keys):
+    for k in keys:
+        if k in d:
+            d.pop(k)
+
+def normalizeGraphParams(graph_params: dict) -> dict:
+
+    # set default values for missing keys
+    default_params = {
+        'svgf_enabled': True,
+        'alpha': 0.05,
+        'spatial_filter_enabled': True,
+        'iters': 0,
+        'feedback': -1,
+        'dynamic_weighting_enabled': True,
+        'dynamic_weighting_params': {},
+        'foveated_pass_enabled': False,
+        'foveated_pass_params': {},
+        'adaptive_pass_enabled': False,
+        'adaptive_pass_params': {},
+        'output_sample_count': False,
+        'sample_count': 1,
+        'repeat_sample_count': 1,
+        'debug_tag_enabled': False,
+        'debug_output_enabled': False,
+    }
+
+    for key in default_params:
+        if key not in graph_params:
+            graph_params[key] = default_params[key]
+
+    # remove outdated keys
+    if 'weighted_alpha' in graph_params:
+        graph_params['weighted_alpha'] = graph_params['alpha']
+
+    if not graph_params['dynamic_weighting_enabled']:
+        graph_params['grad_iters'] = 0
+        if 'dynamic_weighting_params' in graph_params:
+            pop_keys = ['SelectionMode', 'GradientMidpoint', 'GammaSteepness', 'WeightedAlpha', 'GradientAlpha', 'NormalizationMode']
+            popKeys(graph_params['dynamic_weighting_params'], pop_keys)
+    elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.UNWEIGHTED:
+        graph_params['grad_iters'] = 0
+        pop_keys = ['GradientMidpoint', 'GammaSteepness', 'WeightedAlpha', 'GradientAlpha']
+        popKeys(graph_params['dynamic_weighting_params'], pop_keys)
+    elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.WEIGHTED:
+        graph_params['grad_iters'] = graph_params['feedback'] + 1
+        pop_keys = ['GradientMidpoint', 'GammaSteepness', 'GradientAlpha']
+        popKeys(graph_params['dynamic_weighting_params'], pop_keys)
+
+    if not graph_params['foveated_pass_enabled']:
+        graph_params['foveated_pass_params'] = {}
+
+    if not graph_params['adaptive_pass_enabled']:
+        graph_params['adaptive_pass_params'] = {}
+
+    if 'alpha' not in graph_params:
+        graph_params['alpha'] = 0.05
+
+    return graph_params
+
+
+def ACESFilm(x):
+    a = 2.51
+    b = 0.03
+    c = 2.43
+    d = 0.59
+    e = 0.14
+    return np.clip((x*(a*x+b))/(x*(c*x+d)+e), 0, 1)
+
+def toneMapping(img):
+    tone_mapped_img = ACESFilm(img)
+    if tone_mapped_img.dtype != np.uint8:
+        tone_mapped_img = (tone_mapped_img * 255).astype(np.uint8)
+    return tone_mapped_img

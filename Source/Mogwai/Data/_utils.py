@@ -21,6 +21,7 @@ def loadImage(path, filename_pattern:str, frame_id) -> np.ndarray:
 
     img_path = path/filename_pattern.format(frame_id)
     if not img_path.exists():
+        logE(f"Image {frame_id} not found: {img_path}")
         raise FileNotFoundError(img_path)
     img = cv.imread(str(img_path), cv.IMREAD_ANYCOLOR | cv.IMREAD_ANYDEPTH | cv.IMREAD_UNCHANGED)
     return img

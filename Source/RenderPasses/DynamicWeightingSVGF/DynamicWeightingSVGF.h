@@ -70,7 +70,6 @@ private:
     bool    mDynamicWeighingEnabled = true;
     int32_t mFilterIterations = 4;
     int32_t mFeedbackTap = 1;
-    int32_t mSelectAfterIterations = 1;
     float   mVarainceEpsilon = 1e-4f;
     float   mPhiColor = 10.0f;
     float   mPhiNormal = 128.0f;
@@ -112,17 +111,19 @@ private:
     Fbo::SharedPtr mpFilteredPastFbo[2];
     Fbo::SharedPtr mpCurTemporalFilterFbo;
     Fbo::SharedPtr mpPrevTemporalFilterFbo;
+    Fbo::SharedPtr mpMomentFilterFbo;
     Fbo::SharedPtr mpDynamicWeightingFbo;
     Fbo::SharedPtr mpSpatialFilteredFbo;
     Fbo::SharedPtr mpFinalFbo;
+
+    // Reprojection buffers
+    Texture::SharedPtr mpReprojectionTapWidthAndPrevPosTexture;
+    Texture::SharedPtr mpReprojectionW0123Texture;
+    Texture::SharedPtr mpReprojectionW4567Texture;
+    Fbo::SharedPtr mpReprojectionFbo;
 
     // Intermediate textures
     Texture::SharedPtr mpPrevLinearZAndNormalTexture;
     Texture::SharedPtr mpPrevGradientTexture;
 
-    // Intermediate buffers
-    Texture::SharedPtr mpReprojectionTapWidthAndPrevPosTexture;
-    Texture::SharedPtr mpReprojectionW0123Texture;
-    Texture::SharedPtr mpReprojectionW4567Texture;
-    Fbo::SharedPtr mpReprojectionFbo;
 };
