@@ -22,17 +22,17 @@ scene_name = 'VeachAjar'
 
 record_path = Path(__file__).parents[4]/'Record'
 fps = 30
-duration = 20
+duration = 2
 n_frames = int(fps * duration)
 iters = 2
 feedback = 0
 alpha = 0.05
 
-sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Lissajous([0.400000, 0.500000],[640.000000, 360.000000])'
+sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
 
 
 # load reference images
-reference_path = record_path/getReferenceFolderNameFiltered(scene_name, 128, 0.05, iters=iters)
+reference_path = record_path/getReferenceFolderNameFiltered(scene_name, 128, 0.05, iters=iters, feedback=feedback)
 reference_images = loadImageSequence(reference_path, f'{fps}fps.SVGFPass.Filtered image.{{}}.exr', n_frames)
 if len(reference_images) == 0:
     print(f'cannot load reference images')
@@ -110,7 +110,8 @@ class DisplayImageType(IntEnum):
 display_image_type = DisplayImageType.SOURCE
 frame_id = 0
 source_id = 0
-multplier = 1.0
+tone_mapping_enabled = True
+draw_fovea = False
 
 while True:
 
@@ -136,7 +137,13 @@ while True:
                                (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, text_color, 2, cv.LINE_AA)
     display_image = cv.putText(display_image, err_str,
                                (10, 60), cv.FONT_HERSHEY_SIMPLEX, 1, text_color, 2, cv.LINE_AA)
-    cv.imshow('image', display_image * multplier)
+
+    if tone_mapping_enabled:
+        display_image = toneMapping(display_image)
+    if draw_fovea:
+        t = frame_id / fps
+        display_image = drawFoveaLissajous(display_image, 200, t, (0.4, 0.5), (display_image.shape[1]//2, display_image.shape[0]//2), (np.pi/2, 0))
+    cv.imshow('image', display_image)
 
 
     key = cv.waitKey(0)
@@ -156,8 +163,8 @@ while True:
         display_image_type = DisplayImageType.SOURCE
     elif key == ord('3'):
         display_image_type = DisplayImageType.ERR_COMP
-    elif key == ord('+'):
-        multplier *= 1.1
-    elif key == ord('-'):
-        multplier /= 1.1
+    elif key == ord('t'):
+        tone_mapping_enabled = not tone_mapping_enabled
+    elif key == ord('f'):
+        draw_fovea = not draw_fovea
 cv.destroyAllWindows()

@@ -32,29 +32,6 @@ def makeSplitView(img1: np.ndarray, img2: np.ndarray, split_width=1, split_color
 
     return split_view
 
-def drawFoveaLissajous(img, fovea_radius, t, freq, radius, phase, color=(0, 0, 255), thickness=1) -> np.ndarray:
-    """Draws a Lissajous curve on the image.
-
-    Args:
-        img (np.ndarray): The image to draw on.
-        t (float): The time parameter.
-        freq (tuple): The frequency of the Lissajous curve.
-        radius (tuple): The radius of the Lissajous curve.
-        phase (tuple): The phase of the Lissajous curve.
-        color (tuple, optional): The color of the curve. Defaults to (0, 0, 255).
-        thickness (int, optional): The thickness of the curve. Defaults to 1.
-
-    Returns:
-        np.ndarray: The image with the Lissajous curve drawn.
-    """
-    h, w, c = img.shape
-    center = (w // 2, h // 2)
-    x = center[0] + radius[0] * np.sin(2 * np.pi * freq[0] * t + phase[0])
-    y = center[1] + radius[1] * np.sin(2 * np.pi * freq[1] * t + phase[1])
-    img = cv.circle(img, (int(x), int(y)), int(fovea_radius), color, thickness)
-
-    return img
-
 def ACESFilm(x):
     a = 2.51
     b = 0.03
@@ -66,9 +43,8 @@ def ACESFilm(x):
 
 params = {
     "scene_name": "VeachAjarAnimated",
-    "iters": 2,
-    "feedback": -1,
-    "grad_iters": 0,
+    "iters": 4,
+    "feedback": 0,
     "selection_func": "Weighted", # "Unweighted", "Weighted", "Linear", "Step"
     "midpoint": 0.5,
     "steepness": 1.0,
@@ -99,7 +75,6 @@ for i, img in enumerate(img_loader):
     tone_mapped_img = ACESFilm(foveated_img)
 
     if tone_mapped_img.dtype != np.uint8:
-        print(tone_mapped_img.dtype)
         tone_mapped_img = (tone_mapped_img * 255).astype(np.uint8)
     out.write(tone_mapped_img)
 

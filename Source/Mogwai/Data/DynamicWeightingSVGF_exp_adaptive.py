@@ -2,6 +2,7 @@ import subprocess
 import sys
 from pathlib import *
 import gc
+from time import sleep
 
 def install(package):
     python_path = Path(sys.executable).parent/'Python/python.exe'
@@ -14,8 +15,11 @@ from enum import IntEnum, auto
 import json
 from typing import Union
 import numpy as np
+from tqdm import trange
+
 from DynamicWeighting_Common import *
 from _log_utils import *
+from _animation_lengths import animation_lengths
 
 
 class FalcorEnoder(json.JSONEncoder):
@@ -120,6 +124,9 @@ def render_graph_g(iters, feedback, alpha=0.05,
     GBufferRaster = createPass('GBufferRaster', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack})
     g.addPass(GBufferRaster, 'GBufferRaster')
 
+    VBufferRT = createPass('VBufferRT', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack, 'useTraceRayInline': False, 'useDOF': True})
+    g.addPass(VBufferRT, 'VBufferRT')
+
     Composite = createPass('Composite', {'mode': CompositeMode.Add, 'scaleA': 0.5, 'scaleB': 0.5, 'outputFormat': ResourceFormat.RGBA32Float})
     g.addPass(Composite, 'Composite')
 
@@ -127,7 +134,7 @@ def render_graph_g(iters, feedback, alpha=0.05,
         AdaptiveSampling = createPass('AdaptiveSampling', {
             'Enabled': True,
             'AverageSampleCountBudget': 2.0,
-            'MinVariance': 0.01,
+            'MinVariance': 0.0,
             'MaxVariance': 100.0,
             'MinSamplePerPixel': 1,
             'MaxSamplePerPixel': 16,
@@ -178,7 +185,7 @@ def render_graph_g(iters, feedback, alpha=0.05,
 
 
     g.addEdge('GBufferRaster.viewW', 'PathTracer.viewW')
-    g.addEdge('GBufferRaster.vbuffer', 'PathTracer.vbuffer')
+    g.addEdge('VBufferRT.vbuffer', 'PathTracer.vbuffer')
     g.addEdge('GBufferRaster.mvec', 'PathTracer.mvec')
     g.addEdge('PathTracer.albedo', 'Composite.A')
     g.addEdge('PathTracer.specularAlbedo', 'Composite.B')
@@ -261,12 +268,13 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
         m.profiler.startCapture()
     start_frame = int(start_time * fps)
     end_frame = int(end_time * fps)
-    for frame in range(start_frame, end_frame):
-        print(f"\rframe={m.clock.frame} time={m.clock.time:.3f}", end='')
+    t_range = trange(start_frame, end_frame, ncols=80)
+    for frame in t_range:
         renderFrame()
         if frame in frames and frame >= skip_capture_for_frames:
             m.frameCapture.baseFilename = base_filename
             m.frameCapture.capture()
+        t_range.set_postfix_str(f"frame={m.clock.frame} time={m.clock.time:.3f}")
     print()
     if enable_profiler:
         capture = m.profiler.endCapture()
@@ -339,7 +347,6 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
     folder_name_parts = []
     folder_name_parts.append(scene_name)
 
-
     if graph_params['svgf_enabled']:
         folder_name_parts.append('iters({},{})'.format(
             graph_params['iters'],  graph_params['feedback']))
@@ -380,9 +387,8 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
 
 
     if graph_params['adaptive_pass_enabled']:
-        folder_name_parts.append('Adaptive({},{},{},{},{})'.format(
+        folder_name_parts.append('Adaptive({},{},{},{})'.format(
             graph_params['adaptive_pass_params']['AverageSampleCountBudget'],
-            graph_params['adaptive_pass_params']['MinVariance'],
             graph_params['adaptive_pass_params']['MaxVariance'],
             graph_params['adaptive_pass_params']['MinSamplePerPixel'],
             graph_params['adaptive_pass_params']['MinSamplePerPixel']))
@@ -411,16 +417,49 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
     output_path = output_path_base / folder_name
     if output_path.exists():
         if force_record:
-            logW(f"[Warning] Found existing record at \"{output_path}\".\nForce continue recording.")
+            logW(f" Found existing record at \"{output_path}\".")
+            print("Force continue recording.")
         else:
-            g_params = normalizeGraphParams(loadMetadata(output_path))
-            n_frames = int(record_params['fps'] * (record_params['end_time'] - record_params['start_time']))
-            existing_frame_count = countImages(output_path, f'{record_params["fps"]}fps.SVGFPass.Filtered image.{{}}.exr')
-            if g_params == graph_params and n_frames == existing_frame_count:
-                logW(f"[Warning] Found existing record with same parameters at \"{output_path}\".\nSkip recording.")
-                return
+            existing_params = loadMetadata(output_path)
+            if existing_params == {}:
+                logW(f"Cannot load metadata from \"{output_path}\"")
+                logW(f"Overwriting.")
             else:
-                logW(f"[Warning] Found existing record with different parameters at \"{output_path}\".\nContinue recording.")
+                g_params = normalizeGraphParams(existing_params)
+                n_frames = int(record_params['fps'] * (record_params['end_time'] - record_params['start_time']))
+                filename_pattern = f'{record_params["fps"]}fps.SVGFPass.Filtered image.{{}}.exr'
+                existing_frame_count = countImages(output_path, filename_pattern)
+                if g_params != graph_params:
+                    logW(f'[Warning] Found existing record with different parameters')
+                    logW(f'\tat: "{output_path}"')
+                    for k in g_params.keys():
+                        if k not in graph_params:
+                            print(f'key "{k}" not in graph_params')
+                    for k in graph_params.keys():
+                        if k not in g_params:
+                            print(f'key "{k}" not in g_params')
+                    for k in set(g_params.keys()).intersection(graph_params.keys()):
+                        if g_params[k] != graph_params[k]:
+                            print(f'{k}: {g_params[k]} != {graph_params[k]}')
+                    logW(f"Overwriting.")
+                elif n_frames < existing_frame_count:
+                    logW(f'[Warning] Found existing record with {existing_frame_count} frames while {n_frames} frames are needed.')
+                    logW(f'\tat: \"{output_path}\"')
+                    logW(f'Removing extra frames.')
+                    for i in range(existing_frame_count+1, n_frames+1):
+                        img_path = output_path/filename_pattern.format(i)
+                        if img_path.exists():
+                            img_path.unlink()
+                    return
+                elif n_frames > existing_frame_count:
+                    logW(f'[Warning] Found existing record with {existing_frame_count} frames while {n_frames} frames are needed.')
+                    logW(f'\tat: "{output_path}"')
+                    logW(f'Overwriting.')
+                else:
+                    logW(f'[Warning] Found existing record with same parameters.')
+                    logW(f'\tat "{output_path}".')
+                    logW(f'Skip recoding.')
+                    return
 
     base_filename = '{fps}fps'.format(
         fps = record_params['fps'])
@@ -440,38 +479,24 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
     gc.collect()
 
 
-# scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene'
-scene_path = Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene'
-# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene'
-# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx'
-# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene'
-# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene'
-# scene_path = Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene'
-scene_name = scene_path.stem
-
-animation_lengths = {
-    'VeachAjarAnimated': 20,
-    'VeachAjar': 20,
-    'BistroExterior': 100,
-    'BistroInterior': 59.5,
-    'BistroInterior_Wine': 59.5,
-    'EmeraldSquare_Day': 10,
-    'SunTemple': 20,
-}
-
-try:
-    m.loadScene(scene_path)
-except Exception as e:
-    print(f"Failed to load scene: {scene_path}")
-    print(e)
-    raise e
+scene_paths = [
+    # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Dusk.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.fbx',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_SEVEN'/'MEASURE_SEVEN.fbx',
+]
 
 
 common_record_params = {
     'fps': 30,
     'start_time': 0,
-    'end_time': animation_lengths[scene_name],
-    # 'end_time': 10,
+    'end_time': 20,
 }
 
 common_graph_params = {
@@ -496,18 +521,16 @@ adaptive_params_override = {
 
 gt_sample_Count = 128
 
-generate_filtered_gt = True
-generate_temporal_filtered_gt = True
 generate_raw_gt = False
+generate_temporal_filtered_gt = False
+generate_spatial_temporal_filtered_gt = True
 
 # iters, feedback
 iter_params = [
-    (0, -1),
+    # (1, 0),
     (2, 0),
-    (3, 0),
-    (3, 1),
-    (4, 0),
-    (4, 1),
+    # (3, 0),
+    # (4, 0),
 ]
 
 # midpoints = [0, 0.05, 0.5, 1.0]
@@ -515,109 +538,131 @@ iter_params = [
 # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
 blending_func_params = [(0.5, 1.0)]
 
-force_record_selections =  False
-force_record_step = False
+force_record_selections = False
 force_record_unweighted = False
 force_record_weighted = False
 force_record_ground_truth = False
 
-for iters, feedback in iter_params:
-    # Try different parameters with dynamic weighting
-    for midpoint, steepness in blending_func_params:
-        logI(f"Run Dynamic Weighting: iters={iters}, feedback={feedback}, midpoint={midpoint}, steepness={steepness}")
+profiler_enabled = False
+output_sample_count = True
+
+if force_record_selections or force_record_unweighted or force_record_weighted or force_record_ground_truth:
+    logW("Force record enabled.")
+
+for scene_idx, scene_path in enumerate(scene_paths):
+
+    scene_name = scene_path.stem
+    common_record_params['end_time'] = animation_lengths[scene_name]
+
+    try:
+        m.loadScene(scene_path)
+    except Exception as e:
+        print(f"Failed to load scene: {scene_path}")
+        print(e)
+        raise e
+
+    for iters, feedback in iter_params:
+        # Try different parameters with dynamic weighting
+        for midpoint, steepness in blending_func_params:
+            logI(f"Run Dynamic Weighting: iters={iters}, feedback={feedback}, midpoint={midpoint}, steepness={steepness}")
+            run(graph_params = {
+                    'iters': iters,
+                    'feedback': feedback,
+                    'dynamic_weighting_enabled': True,
+                    'dynamic_weighting_params': {
+                        'GradientMidpoint': float(midpoint),
+                        'GammaSteepness': float(steepness),
+                        'SelectionMode': SelectionMode.LINEAR,
+                        'NormalizationMode': NormalizationMode.STD,
+                        **common_dynamic_weighting_params
+                    },
+                    'adaptive_pass_enabled': True,
+                    'adaptive_pass_params': adaptive_params_override,
+                    'output_sample_count': output_sample_count,
+                    **common_graph_params
+                },
+                record_params_override={
+                    **common_record_params,
+                    'enable_profiler': profiler_enabled,
+                },
+                force_record=force_record_selections)
+            sleep(1)
+
+        # Unweighted
+        logI("Run Unweighted")
+        run(graph_params = {
+                'iters': iters,
+                'feedback': feedback,
+                'dynamic_weighting_enabled': False,
+                'dynamic_weighting_params': {
+                    'SelectionMode': SelectionMode.UNWEIGHTED,
+                    **common_dynamic_weighting_params
+                },
+                'adaptive_pass_enabled': True,
+                'adaptive_pass_params': adaptive_params_override,
+                'output_sample_count': output_sample_count,
+                **common_graph_params
+            },
+            record_params_override={
+                **common_record_params,
+                'enable_profiler': profiler_enabled,
+            },
+            force_record=force_record_unweighted
+        )
+
+        sleep(1)
+
+        # Weighted
+        logI("Run Weighted")
         run(graph_params = {
                 'iters': iters,
                 'feedback': feedback,
                 'dynamic_weighting_enabled': True,
                 'dynamic_weighting_params': {
-                    'GradientMidpoint': float(midpoint),
-                    'GammaSteepness': float(steepness),
-                    'SelectionMode': SelectionMode.LINEAR,
-                    'NormalizationMode': NormalizationMode.STD,
+                    'SelectionMode': SelectionMode.WEIGHTED,
                     **common_dynamic_weighting_params
                 },
                 'adaptive_pass_enabled': True,
                 'adaptive_pass_params': adaptive_params_override,
+                'output_sample_count': output_sample_count,
                 **common_graph_params
             },
             record_params_override={
                 **common_record_params,
-                'enable_profiler': True,
+                'enable_profiler': False,
             },
-            force_record=force_record_selections)
+            force_record=force_record_weighted
+        )
 
+        sleep(1)
 
-    # for midpoint in midpoints:
-    #     run(graph_params = {
-    #             'iters': iters,
-    #             'feedback': feedback,
-    #             'dynamic_weighting_enabled': True,
-    #             'dynamic_weighting_params': {
-    #                 'GradientAlpha': 0.2,
-    #                 'GradientMidpoint': float(midpoint),
-    #                 'GammaSteepness': float('inf'),
-    #                 'SelectionMode': SelectionMode.STEP,
-    #                 'SampleCountOverride': -1,
-    #                 'NormalizationMode': NormalizationMode.STANDARD_DEVIATION,
-    #             },
-    #            'adaptive_pass_enabled': True,
-    #            'adaptive_pass_params': adaptive_params_override,
-    #             **common_graph_params
-    #         },
-    #         record_params_override={
-    #             **common_record_params,
-    #         },
-    #         force_record=force_record_step)
+        # Generate ground truth with spatial-temporal filter
+        if generate_spatial_temporal_filtered_gt:
+            logI("Run Ground Truth (Spatial-temporal filtered)")
+            run(graph_params = {
+                    'svgf_enabled': True,
+                    'iters': iters,
+                    'feedback': feedback,
+                    'dynamic_weighting_enabled': False,
+                    'adaptive_pass_enabled': False,
+                    'sample_count': gt_sample_Count,
+                    **common_graph_params
+                },
+                record_params_override = {
+                    **common_record_params,
+                    'enable_profiler': False,
+                },
+                force_record=force_record_ground_truth
+            )
 
-    # Unweighted
-    logI("Run Unweighted")
-    run(graph_params = {
-            'iters': iters,
-            'feedback': feedback,
-            'dynamic_weighting_enabled': False,
-            'dynamic_weighting_params': {
-                'SelectionMode': SelectionMode.UNWEIGHTED,
-                **common_dynamic_weighting_params
-            },
-            'adaptive_pass_enabled': True,
-            'adaptive_pass_params': adaptive_params_override,
-            'output_sample_count': True,
-            **common_graph_params
-        },
-        record_params_override={
-            **common_record_params,
-            'enable_profiler': True,
-        },
-        force_record=force_record_unweighted
-    )
+    sleep(1)
 
-    # Weighted
-    logI("Run Weighted")
-    run(graph_params = {
-            'iters': iters,
-            'feedback': feedback,
-            'dynamic_weighting_enabled': True,
-            'dynamic_weighting_params': {
-                'SelectionMode': SelectionMode.WEIGHTED,
-                **common_dynamic_weighting_params
-            },
-            'adaptive_pass_enabled': True,
-            'adaptive_pass_params': adaptive_params_override,
-            **common_graph_params
-        },
-        record_params_override={
-            **common_record_params,
-            'enable_profiler': False,
-        },
-        force_record=force_record_weighted
-    )
-
-    # Generate ground truth with spatial-temporal filter
-    if generate_filtered_gt:
-        logI("Run Ground Truth (Spatial-temporal filtered)")
+    # Generate ground truth without any filter
+    if generate_raw_gt:
+        logI("Run Ground Truth (No filter)")
         run(graph_params = {
-                'svgf_enabled': True,
-                'iters': iters,
+                'svgf_enabled': False,
+                'iters': 0,
                 'feedback': -1,
                 'dynamic_weighting_enabled': False,
                 'adaptive_pass_enabled': False,
@@ -631,45 +676,27 @@ for iters, feedback in iter_params:
             force_record=force_record_ground_truth
         )
 
+    # Generate ground truth with temporal filter
+    if generate_temporal_filtered_gt:
+        logI("Run Ground Truth (Temporal filtered)")
+        run(graph_params = {
+                'svgf_enabled': True,
+                'space_filter_enabled': False,
+                'iters': 0,
+                'feedback': -1,
+                'dynamic_weighting_enabled': False,
+                'adaptive_pass_enabled': False,
+                'sample_count': gt_sample_Count,
+                **common_graph_params
+            },
+            record_params_override = {
+                **common_record_params,
+                'enable_profiler': False,
+            },
+            force_record=force_record_ground_truth
+        )
 
-# Generate ground truth without any filter
-if generate_raw_gt:
-    logI("Run Ground Truth (No filter)")
-    run(graph_params = {
-            'svgf_enabled': False,
-            'iters': 0,
-            'feedback': -1,
-            'dynamic_weighting_enabled': False,
-            'adaptive_pass_enabled': False,
-            'sample_count': gt_sample_Count,
-            **common_graph_params
-        },
-        record_params_override = {
-            **common_record_params,
-            'enable_profiler': False,
-        },
-        force_record=force_record_ground_truth
-    )
-
-# Generate ground truth with temporal filter
-if generate_temporal_filtered_gt:
-    logI("Run Ground Truth (Temporal filtered)")
-    run(graph_params = {
-            'svgf_enabled': True,
-            'space_filter_enabled': False,
-            'iters': 0,
-            'feedback': -1,
-            'dynamic_weighting_enabled': False,
-            'adaptive_pass_enabled': False,
-            'sample_count': gt_sample_Count,
-            **common_graph_params
-        },
-        record_params_override = {
-            **common_record_params,
-            'enable_profiler': False,
-        },
-        force_record=force_record_ground_truth
-    )
+    logI(f"Scene {scene_name} done.")
 
 
 logI("All Done")

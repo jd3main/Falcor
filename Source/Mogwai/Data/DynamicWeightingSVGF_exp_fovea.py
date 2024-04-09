@@ -23,6 +23,7 @@ from tqdm import trange
 
 from DynamicWeighting_Common import *
 from _log_utils import *
+from _animation_lengths import animation_lengths
 
 class FalcorEnoder(json.JSONEncoder):
     def default(self, o):
@@ -237,7 +238,6 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
         m.profiler.startCapture()
     start_frame = int(start_time * fps)
     end_frame = int(end_time * fps)
-    avg_calculation_time = 0
     t_range = trange(start_frame, end_frame, ncols=80)
     for frame in t_range:
         renderFrame()
@@ -245,12 +245,12 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
             m.frameCapture.baseFilename = base_filename
             m.frameCapture.capture()
         t_range.set_postfix_str(f"frame={m.clock.frame} time={m.clock.time:.3f}")
-        # print(f"\rframe={m.clock.frame} time={m.clock.time:.3f}\t | est:{avg_calculation_time} s", end='')
     print()
     if enable_profiler:
         capture = m.profiler.endCapture()
         m.profiler.enabled = False
         json.dump(capture, open(output_path/'profile.json', 'w'), indent=2)
+        print(f"Profiler data saved to {output_path/'profile.json'}")
 
 
 def recordVideo(start_time, end_time, fps=60, codec="Raw", bitrate_mbps=4.0, gopSize=10,
@@ -324,7 +324,6 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
         folder_name_parts.append('iters({},{})'.format(
             graph_params['iters'],  graph_params['feedback']))
 
-
     if graph_params['dynamic_weighting_enabled']:
         dw_params = graph_params['dynamic_weighting_params']
 
@@ -367,13 +366,21 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
             FoveaShape(fovea_params['shape']).name,
             FoveaMovePattern(fovea_params['foveaMovePattern']).name,
             fovea_params['foveaSampleCount']))
+
+        if fovea_params['shape'] == FoveaShape.CIRCLE:
+            folder_name_parts.append('Circle({:.6g})'.format(
+                fovea_params['foveaRadius']))
+
         if fovea_params['foveaMovePattern'] == FoveaMovePattern.LISSAJOUS:
-            folder_name_parts.append('Lissajous({},{})'.format(
-                fovea_params['foveaMoveFreq'],
-                fovea_params['foveaMoveRadius']))
+            folder_name_parts.append('Lissajous([{:.6g},{:.6g}],[{:.6g},{:.6g}])'.format(
+                fovea_params['foveaMoveFreq'].x,
+                fovea_params['foveaMoveFreq'].y,
+                fovea_params['foveaMoveRadius'].x,
+                fovea_params['foveaMoveRadius'].y))
         elif fovea_params['foveaMovePattern'] == FoveaMovePattern.MOVE_AND_STAY:
-            folder_name_parts.append('MoveAndStay({},{})'.format(
-                fovea_params['foveaMoveSpeed'],
+            folder_name_parts.append('MoveAndStay([{:.6g},{:.6g}],{:.6g})'.format(
+                fovea_params['foveaMoveSpeed'].x,
+                fovea_params['foveaMoveSpeed'].y,
                 fovea_params['foveaMoveStayDuration']))
     else:
         folder_name_parts.append(f'{graph_params["sample_count"]}')
@@ -410,25 +417,39 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
             else:
                 g_params = normalizeGraphParams(existing_params)
                 n_frames = int(record_params['fps'] * (record_params['end_time'] - record_params['start_time']))
-                existing_frame_count = countImages(output_path, f'{record_params["fps"]}fps.SVGFPass.Filtered image.{{}}.exr')
+                filename_pattern = f'{record_params["fps"]}fps.SVGFPass.Filtered image.{{}}.exr'
+                existing_frame_count = countImages(output_path, filename_pattern)
                 if g_params != graph_params:
-                    logW(f"[Warning] Found existing record with different parameters at: \"{output_path}\"")
+                    logW(f'[Warning] Found existing record with different parameters')
+                    logW(f'\tat: "{output_path}"')
                     for k in g_params.keys():
                         if k not in graph_params:
-                            print(f"key \"{k}\" not in graph_params")
+                            print(f'key "{k}" not in graph_params')
                     for k in graph_params.keys():
                         if k not in g_params:
-                            print(f"key \"{k}\" not in g_params")
+                            print(f'key "{k}" not in g_params')
                     for k in set(g_params.keys()).intersection(graph_params.keys()):
                         if g_params[k] != graph_params[k]:
-                            print(f"{k}: {g_params[k]} != {graph_params[k]}")
+                            print(f'{k}: {g_params[k]} != {graph_params[k]}')
                     logW(f"Overwriting.")
-                elif n_frames != existing_frame_count:
-                    logW(f"[Warning] Found existing record with different number of frames at: \"{output_path}\"")
-                    logW(f"Overwriting.")
+                elif n_frames < existing_frame_count:
+                    logW(f'[Warning] Found existing record with {existing_frame_count} frames while {n_frames} frames are needed.')
+                    logW(f'\tat: \"{output_path}\"')
+                    logW(f'Removing extra frames.')
+                    for i in range(n_frames+1, existing_frame_count+1):
+                        img_path = output_path/filename_pattern.format(i)
+                        print(f"removing {img_path}")
+                        if img_path.exists():
+                            img_path.unlink()
+                    return
+                elif n_frames > existing_frame_count:
+                    logW(f'[Warning] Found existing record with {existing_frame_count} frames while {n_frames} frames are needed.')
+                    logW(f'\tat: "{output_path}"')
+                    logW(f'Overwriting.')
                 else:
-                    logW(f"[Warning] Found existing record with same parameters at \"{output_path}\".")
-                    logW(f"Skip recoding.")
+                    logW(f'[Warning] Found existing record with same parameters.')
+                    logW(f'\tat "{output_path}".')
+                    logW(f'Skip recoding.')
                     return
 
     base_filename = '{fps}fps'.format(
@@ -451,24 +472,15 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
 scene_paths = [
     Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
     Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Dusk.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.fbx',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_SEVEN'/'MEASURE_SEVEN.fbx',
 ]
-
-animation_lengths = {
-    'VeachAjar': 20,
-    'VeachAjarAnimated': 20,
-    'BistroExterior': 100,
-    'BistroInterior': 59.5,
-    'BistroInterior_Wine': 59.5,
-    'SunTemple': 20,
-    'EmeraldSquare_Day': 64,
-    'MEASURE_ONE': 17,
-}
 
 
 common_record_params = {
@@ -490,11 +502,12 @@ common_dynamic_weighting_params = {
 
 foveated_params_override = {
     'shape': FoveaShape.CIRCLE,
-    'foveaRadius': 300.0,
+    'foveaRadius': 200.0,
     'foveaInputType': FoveaInputType.PROCEDURAL,
     'foveaSampleCount': 8.0,
     'foveaMovePattern': FoveaMovePattern.LISSAJOUS,
     'foveaMoveRadius': float2(1280/2, 720/2),
+    # 'foveaMoveRadius': float2(640.0, 0.0),
     'foveaMoveFreq': float2(0.4, 0.5),
     'foveaMovePhase': float2(math.pi/2, 0),
     'foveaMoveSpeed': 1000.0,
@@ -510,25 +523,25 @@ generate_spatial_temporal_filtered_gt = True
 # iters, feedback
 iter_params = [
     # (0, -1),
-    (1, 0),
-    # (2, 0),
-    # (2, 1),
+    # (1, 0),
+    (2, 0),
     # (3, 0),
-    # (3, 1),
     # (4, 0),
-    # (4, 1),
 ]
 # midpoints = [0.45, 0.5, 0.55]
 # steepnesses = [0.5, 1.0, 1.5]
 # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
 blending_func_params = [(0.5, 1.0)]
 
-force_record_selections = False
-force_record_unweighted = False
-force_record_weighted = False
+force_record_selections = True
+force_record_unweighted = True
+force_record_weighted = True
 force_record_ground_truth = False
 
 profiler_enabled = False
+
+if force_record_selections or force_record_unweighted or force_record_weighted or force_record_ground_truth:
+    logW("Force record enabled.")
 
 for scene_idx, scene_path in enumerate(scene_paths):
 
@@ -556,6 +569,7 @@ for scene_idx, scene_path in enumerate(scene_paths):
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
                         'NormalizationMode': NormalizationMode.STD,
+                        'FilterGradientEnabled': True,
                         **common_dynamic_weighting_params
                     },
                     'foveated_pass_enabled': True,
@@ -675,7 +689,8 @@ for scene_idx, scene_path in enumerate(scene_paths):
             },
             force_record=force_record_ground_truth
         )
-    print(f"Scene {scene_name} done.")
 
-print("All Done")
+    logI(f"Scene {scene_name} done.")
+
+logI("All Done")
 exit()

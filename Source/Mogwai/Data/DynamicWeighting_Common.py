@@ -160,6 +160,8 @@ def normalizeGraphParams(graph_params: dict) -> dict:
 
 
 def ACESFilm(x):
+    x *= 0.6
+
     a = 2.51
     b = 0.03
     c = 2.43
@@ -167,8 +169,23 @@ def ACESFilm(x):
     e = 0.14
     return np.clip((x*(a*x+b))/(x*(c*x+d)+e), 0, 1)
 
-def toneMapping(img):
-    tone_mapped_img = ACESFilm(img)
-    if tone_mapped_img.dtype != np.uint8:
-        tone_mapped_img = (tone_mapped_img * 255).astype(np.uint8)
-    return tone_mapped_img
+def applyExposure(x):
+    mExposureCompensation = 0.0
+    mFilmSpeed = 100.0
+    mShutter = 1.0
+    mFNumber = 1.0
+
+    exposureScale = 2**mExposureCompensation
+
+    normConstant = 1.0 / 100.0
+    manualExposureScale = (normConstant * mFilmSpeed) / (mShutter * mFNumber * mFNumber)
+    # Calculate final transform.
+    color_transform = exposureScale * manualExposureScale
+    # print(f'color_transform = {color_transform}')
+    return x * color_transform
+
+def toneMapping(img: np.ndarray) -> np.ndarray:
+    # img = applyExposure(img)
+    img = ACESFilm(img)
+    img = (img * 255).astype(np.uint8)
+    return img

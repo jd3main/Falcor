@@ -13,63 +13,86 @@ from DynamicWeighting_Common import *
 from _error_measure import getErrFilename, ErrorType
 
 
+RECORD_PATH = Path(__file__).parents[4]/'Record'
+
 if __name__ == '__main__':
 
-    DEFAULT_SCENE_NAME = 'VeachAjar'
-    # DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
 
     ### Argument parsing
     parser = argparse.ArgumentParser(description='Calculate errors')
-    parser.add_argument('--scene_name', type=str, default=DEFAULT_SCENE_NAME, help='scene name')
+    parser.add_argument('--scene_name', type=str, default='', help='scene name')
     parser.add_argument('--fast', action='store_true', help='fast mode')
+    parser.add_argument('--fovea', action='store_true', help='fovea')
     args = parser.parse_args()
+
 
     iter_params = [
         # (0, -1),
-        (1, 0),
-        # (2, 0),
-        # (2, 1),
+        # (1, 0),
+        (2, 0),
         # (3, 0),
-        # (3, 1),
-        (4, 0),
-        # (4, 1),
+        # (4, 0),
     ]
 
+    scene_names = [
+        'VeachAjar',
+        'VeachAjarAnimated',
+        'BistroExterior',
+        'BistroInterior',
+        'BistroInterior_Wine',
+        'SunTemple',
+        'EmeraldSquare_Day',
+        'EmeraldSquare_Dusk',
+        'MEASURE_ONE',
+        'MEASURE_SEVEN',
+    ]
+
+    scene_alter_names = {
+        'MEASURE_ONE': 'ZeroDay_MEASURE_ONE',
+        'MEASURE_SEVEN': 'ZeroDay_MEASURE_SEVEN',
+    }
+
+    if args.scene_name != '':
+        scene_names = [args.scene_name]
+
     err_type = ErrorType.REL_MSE
-    ref_temporal_filter_enabled = True
-    ref_spatial_filter_enabled = True
-
-    # print settings
-    print(f'scene_name:                     {args.scene_name}')
-    print(f'iter_params:                    {iter_params}')
-    print(f'ref_temporal_filter_enabled:    {ref_temporal_filter_enabled}')
-    print(f'ref_spatial_filter_enabled:     {ref_spatial_filter_enabled}')
-
-    configs = []
-    for iters, feedback in iter_params:
-        configs.append({
-            "scene_name": args.scene_name,
-            "iters": iters,
-            "feedback": feedback,
-            "selection_func": "Linear",
-            "midpoint": 0.5,
-            "steepness": 1.0,
-            "alpha": 0.05,
-            "w_alpha": 0.05,
-            "g_alpha": 0.2,
-            "norm_mode": NormalizationMode.STD,
-            "sampling": "Foveated(CIRCLE,LISSAJOUS,8.0)_Lissajous([0.400000, 0.500000],[640.000000, 360.000000])"
-            # "sampling": "Adaptive(2.0,0.0,10.0,1,1)"
-        })
-
-
-    RECORD_PATH = Path(__file__).parents[4]/'Record'
+    ref_filter_mode = RefFilterMode.SPATIAL_TEMPORAL
 
     fields = ["mean", "ssim"]
 
+    sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
+    # sampling = 'Adaptive(2.0,10.0,1,1)'
+
+    if args.fovea:
+        assert 'Foveated' in sampling
+
+    # print settings
+    print(f'scene_name:                     {scene_names}')
+    print(f'iter_params:                    {iter_params}')
+    print(f'sampling:                       {sampling}')
+    print(f'ref_filter_mode:                {ref_filter_mode}')
+
+    configs = []
+    for i, scene_name in enumerate(scene_names):
+        for iters, feedback in iter_params:
+            configs.append({
+                "scene_name": scene_name,
+                "iters": iters,
+                "feedback": feedback,
+                "selection_func": "Linear",
+                "midpoint": 0.5,
+                "steepness": 1.0,
+                "alpha": 0.05,
+                "w_alpha": 0.05,
+                "g_alpha": 0.2,
+                "norm_mode": NormalizationMode.STD,
+                "sampling": sampling,
+            })
+
+
 
     # load data and make table
-    table = pd.DataFrame(columns=['iters', 'feedback', 'mean'])
+    table = pd.DataFrame(columns=['scene_name', 'iters', 'feedback', 'mean'])
     rows = []
     for cid, config in enumerate(configs):
         unweighted_folder = RECORD_PATH/getSourceFolderNameUnweighted(**config)
@@ -85,11 +108,16 @@ if __name__ == '__main__':
                 logE(f'{source_folder} does not exist')
                 continue
 
+        scene_name = config['scene_name']
+        if scene_name in scene_alter_names:
+            scene_name = scene_alter_names[scene_name]
+
         row = {}
+        row['scene_name'] = scene_name
         row['iters'] = config['iters']
         row['feedback'] = config['feedback']
         for field in fields:
-            filename = getErrFilename(field, err_type, ref_temporal_filter_enabled, ref_spatial_filter_enabled, args.fast)
+            filename = getErrFilename(field, err_type, ref_filter_mode, args.fast, args.fovea)
             for source_folder, source_name in zip(source_folders, source_names):
                 full_path = source_folder/filename
                 try:
@@ -104,6 +132,36 @@ if __name__ == '__main__':
 
     table = pd.DataFrame(rows)
     print(table.to_string(index=False))
-    print(f'write to _err_table.csv')
-    table.to_csv('_err_table.csv', index=False, sep='\t')
+    output_path = Path(f'_err_table.txt')
+    print(f'write to {output_path}')
+    with open(output_path, 'w') as f:
+        f.write(f'sampling: {sampling}\n')
+        f.write(f'ref_filter_mode: {ref_filter_mode}\n')
+        f.write('\n')
+
+        csv = table.to_csv(index=False, sep='\t', lineterminator='\n')
+        f.write(csv)
+        f.write('\n')
+        latex = table.to_latex(index=False)
+        f.write(latex)
+        f.write('\n')
+
+
+        # without iters and feedback
+        no_feedback_table = table.drop(columns=['feedback'])
+        csv = no_feedback_table.to_csv(index=False, sep='\t', lineterminator='\n')
+        f.write(csv)
+        f.write('\n')
+        latex = no_feedback_table.to_latex(index=False)
+        f.write(latex)
+        f.write('\n')
+
+        # without iters and feedback
+        no_iters_table = table.drop(columns=['iters', 'feedback'])
+        csv = no_iters_table.to_csv(index=False, sep='\t', lineterminator='\n')
+        f.write(csv)
+        f.write('\n')
+        latex = no_iters_table.to_latex(index=False)
+        f.write(latex)
+        f.write('\n')
     print('done')
