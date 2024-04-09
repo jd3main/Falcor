@@ -63,18 +63,21 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 #endif
 
 #if SELECTION_MODE == SELECTION_MODE_UNWEIGHTED
-    gamma = 1.0f;
+    // gamma = 1.0f;
+    float3 outIllumination = unweightedIllumination;
 #elif SELECTION_MODE == SELECTION_MODE_WEIGHTED
-    gamma = 0.0f;
+    // gamma = 0.0f;
+    float3 outIllumination = weightedIllumination;
 #elif SELECTION_MODE == SELECTION_MODE_LINEAR
     gamma = clamp(0.5 + (gamma - gGammaMidpoint) * gGammaSteepness, 0, 1);
+    float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 #elif SELECTION_MODE == SELECTION_MODE_STEP
     gamma = (gamma >= gGammaMidpoint) ? 1 : 0;
+    float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 #elif SELECTION_MODE == SELECTION_MODE_LOGISTIC
     gamma = 1 / (1 + exp(-gGammaSteepness * (gamma - gGammaMidpoint)));
-#endif
-
     float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
+#endif
 
 #if DEBUG_TAG_ENABLED
     if (ipos.x < 20 && ipos.y < 100)

@@ -44,6 +44,7 @@ private:
         Texture::SharedPtr pLinearZTexture,
         Texture::SharedPtr pMotionoTexture,
         Texture::SharedPtr pPositionNormalFwidthTexture);
+    void computeFilterGradient(RenderContext* pRenderContext, const RenderData& renderData);
     void computeFilteredMoments(RenderContext* pRenderContext);
     void computeAtrousDecomposition(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pAlbedoTexture);
     void computeFinalModulate(RenderContext* pRenderContext, Texture::SharedPtr pAlbedoTexture, Texture::SharedPtr pEmissionTexture);
@@ -85,6 +86,7 @@ private:
     uint32_t mNormalizationMode = NORMALIZATION_MODE_NONE;
     bool    mUseInputReprojection = false;
     bool    mEnableOutputVariance = true;
+    bool    mFilterGradientEnabled = false;
 
     // Debug parameters
     bool mEnableDebugOutput = false;
@@ -98,6 +100,7 @@ private:
     FullScreenPass::SharedPtr mpPackLinearZAndNormal;
     FullScreenPass::SharedPtr mpTemporalFilter;
     FullScreenPass::SharedPtr mpFilterMoments;
+    FullScreenPass::SharedPtr mpFilterGradient;
     FullScreenPass::SharedPtr mpAtrous;
     FullScreenPass::SharedPtr mpReproject;
     FullScreenPass::SharedPtr mpDynamicWeighting;
@@ -115,6 +118,7 @@ private:
     Fbo::SharedPtr mpDynamicWeightingFbo;
     Fbo::SharedPtr mpSpatialFilteredFbo;
     Fbo::SharedPtr mpFinalFbo;
+    Fbo::SharedPtr mpFilterGradientFbo;
 
     // Reprojection buffers
     Texture::SharedPtr mpReprojectionTapWidthAndPrevPosTexture;
@@ -124,6 +128,4 @@ private:
 
     // Intermediate textures
     Texture::SharedPtr mpPrevLinearZAndNormalTexture;
-    Texture::SharedPtr mpPrevGradientTexture;
-
 };

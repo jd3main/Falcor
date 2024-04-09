@@ -34,6 +34,7 @@ namespace
     const char kDynamicWeightingShader[] = "RenderPasses/DynamicWeightingSVGF/DynamicWeighting.ps.slang";
     const char kFinalModulateShader[] = "RenderPasses/SVGFPass/SVGFFinalModulate.ps.slang";
     const char kReflectTypesShader[] = "RenderPasses/ReprojectionPass/ReflectTypes.cs.slang";
+    const char kFilterGradientShader[] = "RenderPasses/DynamicWeightingSVGF/FilterGradient.ps.slang";
 
     // Names of valid entries in the parameter dictionary.
     const char kEnabled[] = "Enabled";
@@ -60,6 +61,7 @@ namespace
     const char kEnableDebugTag[] = "EnableDebugTag";
     const char kEnableDebugOutput[] = "EnableDebugOutput";
     const char kEnableOutputVariance[] = "EnableOutputVariance";
+    const char kFilterGradientEnabled[] = "FilterGradientEnabled";
 
     // Input buffers
     const char kInputBufferAlbedo[] = "Albedo";
@@ -210,6 +212,7 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kEnableDebugTag) mEnableDebugTag = value;
         else if (key == kEnableDebugOutput) mEnableDebugOutput = value;
         else if (key == kEnableOutputVariance) mEnableOutputVariance = value;
+        else if (key == kFilterGradientEnabled) mFilterGradientEnabled = value;
         else logWarning("Unknown field '{}' in DynamicWeightingSVGF dictionary.", key);
     }
     mRecompile = true;
@@ -244,6 +247,7 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kEnableDebugTag] = mEnableDebugTag;
     dict[kEnableDebugOutput] = mEnableDebugOutput;
     dict[kEnableOutputVariance] = mEnableOutputVariance;
+    dict[kFilterGradientEnabled] = mFilterGradientEnabled;
     return dict;
 }
 
@@ -366,6 +370,7 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         // mpReproject = FullScreenPass::create(kReprojectShader);
         mpTemporalFilter = FullScreenPass::create(kTemporalFilterShader, defines);
         mpFilterMoments = FullScreenPass::create(kFilterMomentShader, defines);
+        mpFilterGradient = FullScreenPass::create(kFilterGradientShader, defines);
         mpAtrous = FullScreenPass::create(kAtrousShader, defines);
         mpDynamicWeighting = FullScreenPass::create(kDynamicWeightingShader, defines);
         mpFinalModulate = FullScreenPass::create(kFinalModulateShader);
@@ -426,6 +431,11 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
 
         if (mSpatialFilterEnabled)
         {
+            if (mFilterGradientEnabled)
+            {
+                computeFilterGradient(pRenderContext, renderData);
+            }
+
             // Do a first cross-bilateral filtering of the illumination and
             // estimate its variance, storing the result into a float4 in
             // mpPingPongFbo[0].  Takes mpCurReprojFbo as input.
@@ -525,6 +535,7 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
         }
         mpSpatialFilteredFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpFinalFbo = Fbo::create2D(dim.x, dim.y, desc);
+        mpFilterGradientFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
 
     {
@@ -626,7 +637,7 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     FALCOR_PROFILE("computeTemporalFilter");
 
     mpPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
-    mpPrevGradientTexture = renderData.getTexture(kInternalBufferPreviousGradient);
+    // Texture::SharedPtr pPrevGradientTexture = renderData.getTexture(kInternalBufferPreviousGradient);
 
     auto perImageCB = mpTemporalFilter["PerImageCB"];
 
@@ -650,7 +661,7 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     if (mDynamicWeighingEnabled)
     {
         perImageCB["gPrevWeightedIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
-        perImageCB["gPrevGradient"] = mpPrevGradientTexture;
+        perImageCB["gPrevGradient"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient);
     }
 
     // Parameters
@@ -666,15 +677,30 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
 
     mpTemporalFilter->execute(pRenderContext, mpCurTemporalFilterFbo);
 
-    if (mDynamicWeighingEnabled)
-    {
-        pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient)->getSRV(), mpPrevGradientTexture->getRTV());
-    }
-
     if (mEnableDebugOutput)
     {
         pRenderContext->blit(mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient)->getSRV(), renderData.getTexture(kOutputGradient)->getRTV());
     }
+}
+
+void DynamicWeightingSVGF::computeFilterGradient(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE("computeFilterGradient");
+
+    auto perImageCB = mpFilterGradient["PerImageCB"];
+
+    // Input textures
+    perImageCB["gGradient"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient);
+    perImageCB["gLinearZAndNormal"] = mpLinearZAndNormalFbo->getColorTexture(0);
+    perImageCB["gIllumination"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Illumination);
+
+    // Parameters
+    perImageCB["gPhiColor"] = mPhiColor;
+    perImageCB["gPhiNormal"] = mPhiNormal;
+
+    mpFilterGradient->execute(pRenderContext, mpFilterGradientFbo);
+
+    pRenderContext->blit(mpFilterGradientFbo->getColorTexture(0)->getSRV(), mpCurTemporalFilterFbo->getRenderTargetView(TemporalFilterOutFields_Gradient));
 }
 
 void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
@@ -701,6 +727,7 @@ void DynamicWeightingSVGF::computeFilteredMoments(RenderContext* pRenderContext)
     if (mDynamicWeighingEnabled)
         pRenderContext->blit(mpMomentFilterFbo->getColorTexture(1)->getSRV(), mpPingPongFbo[2]->getRenderTargetView(0));
 }
+
 
 void DynamicWeightingSVGF::computeAtrousDecomposition(RenderContext* pRenderContext, const RenderData& renderData, Texture::SharedPtr pAlbedoTexture)
 {
@@ -824,7 +851,11 @@ void DynamicWeightingSVGF::dynamicWeighting(
     // Input textures
     perImageCB["gUnweightedIllumination"] = pUnweightedIlluminationTexture;
     perImageCB["gWeightedIllumination"] = pWeightedIlluminationTexture;
-    perImageCB["gGradient"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient);
+
+    if (mFilterGradientEnabled)
+        perImageCB["gGradient"] = mpFilterGradientFbo->getColorTexture(0);
+    else
+        perImageCB["gGradient"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient);
 
     // Parameters
     perImageCB["gGammaMidpoint"] = mGammaMidpoint;
@@ -886,6 +917,7 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     mRecompile |= changed;
     if (mDynamicWeighingEnabled)
     {
+        dirty |= widget.checkbox("Filter Gradient", mFilterGradientEnabled);
         changed |= widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
         dirty |= changed;
         mRecompile |= changed;

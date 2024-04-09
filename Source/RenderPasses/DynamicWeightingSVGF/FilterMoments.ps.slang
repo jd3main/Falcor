@@ -73,7 +73,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
         const float lIlluminationCenter = luminance(illuminationCenter.rgb);
 
 #if DW_ENABLED
-        float sumWWeightedIllumination = 0.0;
+        // float sumWWeightedIllumination = 0.0;
         float3 sumWeightedIllumination = float3(0.0, 0.0, 0.0);
         const float4 weightedIlluminationCenter = gWeightedIllumination[ipos];
         const float lWeightedIlluminationCenter = luminance(weightedIlluminationCenter.rgb);
@@ -125,19 +125,19 @@ PS_OUT main(FullScreenPassVsOut vsOut)
                         nCenter, nP, gPhiNormal,
                         lIlluminationCenter, lIlluminationP, phiLIllumination);
 
-#if DW_ENABLED
-                    const float wWeighted = computeWeight(
-                        zCenter.x, zP, phiDepth * length(float2(xx, yy)),
-                        nCenter, nP, gPhiNormal,
-                        lWeightedIlluminationCenter, lWeightedIlluminationP, phiLIllumination);
-#endif
+// #if DW_ENABLED
+//                     const float wWeighted = computeWeight(
+//                         zCenter.x, zP, phiDepth * length(float2(xx, yy)),
+//                         nCenter, nP, gPhiNormal,
+//                         lWeightedIlluminationCenter, lWeightedIlluminationP, phiLIllumination);
+// #endif
 
                     sumWIllumination += w;
                     sumIllumination  += illuminationP * w;
                     sumMoments += momentsP * w;
 #if DW_ENABLED
-                    sumWWeightedIllumination += wWeighted;
-                    sumWeightedIllumination += weightedIlluminationP * wWeighted;
+                    // sumWWeightedIllumination += w;
+                    sumWeightedIllumination += weightedIlluminationP * w;
 #endif
                 }
             }
@@ -149,8 +149,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
         sumMoments /= sumWIllumination;
 
 #if DW_ENABLED
-        sumWWeightedIllumination = max(sumWWeightedIllumination, 1e-6f);
-        sumWeightedIllumination /= sumWWeightedIllumination;
+        // sumWWeightedIllumination = max(sumWWeightedIllumination, 1e-6f);
+        sumWeightedIllumination /= sumWIllumination;
 #endif
 
         // compute variance using the first and second moments
