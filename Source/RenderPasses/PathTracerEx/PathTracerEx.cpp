@@ -496,7 +496,7 @@ void PathTracerEx::execute(RenderContext* pRenderContext, const RenderData& rend
 
     for (int i=0; i<mParams.repeat; i++)
     {
-        std::this_thread::sleep_for(mStaticParams.samplesPerPixel*2ms);
+        // std::this_thread::sleep_for(mStaticParams.samplesPerPixel*3ms);
         mParams.shouldClear = (i == 0) ? 1 : 0;
         mOptionsChanged = true;
 
@@ -533,6 +533,8 @@ void PathTracerEx::execute(RenderContext* pRenderContext, const RenderData& rend
 
         mParams.seed += 7001;
     }
+
+    // std::this_thread::sleep_for(mStaticParams.samplesPerPixel*3ms);
 
     endFrame(pRenderContext, renderData);
 }

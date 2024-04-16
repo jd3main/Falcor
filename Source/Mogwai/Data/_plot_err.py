@@ -36,11 +36,11 @@ if __name__ == '__main__':
     ref_filter_mode = RefFilterMode.SPATIAL_TEMPORAL
 
     # DEFAULT_SCENE_NAME = 'VeachAjar'
-    # DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+    DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
     # DEFAULT_SCENE_NAME = 'BistroExterior'
     # DEFAULT_SCENE_NAME = 'BistroInterior'
     # DEFAULT_SCENE_NAME = 'BistroInterior_Wine'
-    DEFAULT_SCENE_NAME = 'SunTemple'
+    # DEFAULT_SCENE_NAME = 'SunTemple'
 
     ### Argument parsing
     parser = argparse.ArgumentParser(description='Calculate errors')
@@ -57,8 +57,8 @@ if __name__ == '__main__':
 
     iters = 2
     feedback = 0
-    # sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
-    sampling = 'Adaptive(2.0,10.0,1,1)'
+    sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
+    # sampling = 'Adaptive(2.0,10.0,1,1)'
     alpha = 0.05
     w_alpha = 0.05
     g_alpha = 0.2

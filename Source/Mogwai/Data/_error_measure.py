@@ -173,17 +173,13 @@ DEFAULT_ERR_TYPE = ErrorType.REL_MSE
 REL_MSE_EPSILON = 1e-2
 
 DEFAULT_SELECTION_FUNC = "Linear"
-# DEFAULT_SELECTION_FUNC = "Step"
-# DEFAULT_SELECTION_FUNC = "Logistic"
 
 DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
-# DEFAULT_NORMALZATION_MODE = NormalizationMode.NONE
-# DEFAULT_NORMALZATION_MODE = NormalizationMode.LUM
 
 
 # DEFAULT_SAMPLING_METHOD = 'Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-# DEFAULT_SAMPLING_METHOD = 'Adaptive(2.0,10.0,1,1)'
 DEFAULT_SAMPLING_METHOD = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
+# DEFAULT_SAMPLING_METHOD = 'Adaptive(2.0,10.0,1,1)'
 
 
 if __name__ == '__main__':
@@ -223,16 +219,16 @@ if __name__ == '__main__':
     g_alpha = 0.2
 
     scene_names = [
-        # 'VeachAjar',
+        'VeachAjar',
         'VeachAjarAnimated',
-        # 'BistroExterior',
-        # 'BistroInterior',
-        # 'BistroInterior_Wine',
-        # 'SunTemple',
-        # 'EmeraldSquare_Day',
-        # 'EmeraldSquare_Dusk',
-        # 'MEASURE_ONE',
-        # 'MEASURE_SEVEN',
+        'BistroExterior',
+        'BistroInterior',
+        'BistroInterior_Wine',
+        'SunTemple',
+        'EmeraldSquare_Day',
+        'EmeraldSquare_Dusk',
+        'MEASURE_ONE',
+        'MEASURE_SEVEN',
     ]
 
     if args.scene_name != '':
@@ -461,13 +457,17 @@ if __name__ == '__main__':
                     if 'ssim' in fields and not loaded['ssim']:
                         tone_mapped_reference = toneMapping(_reference_image)
                         tone_mapped_source = toneMapping(_source_image)
-                        mssim, ssim_img = ssim(tone_mapped_reference, tone_mapped_source,
+                        mssim, _ssim_img = ssim(tone_mapped_reference, tone_mapped_source,
                                                 gaussian_weights = True,
                                                 sigma = 1.5,
                                                 use_sample_covariance = False,
                                                 data_range = 255,
                                                 channel_axis = -1,
                                                 full = True)
+                        if args.cuda:
+                            ssim_img = cp.asarray(_ssim_img)
+                        else:
+                            ssim_img = _ssim_img
                         # cv.imshow('ssim', ssim_img)
                         if args.fovea:
                             mssim = xp.mean(ssim_img[mask>0])

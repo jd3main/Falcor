@@ -851,6 +851,8 @@ void DynamicWeightingSVGF::dynamicWeighting(
     // Input textures
     perImageCB["gUnweightedIllumination"] = pUnweightedIlluminationTexture;
     perImageCB["gWeightedIllumination"] = pWeightedIlluminationTexture;
+    if (mNormalizationMode == NORMALIZATION_MODE_STANDARDDEVIATION2)
+        perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
 
     if (mFilterGradientEnabled)
         perImageCB["gGradient"] = mpFilterGradientFbo->getColorTexture(0);
@@ -860,6 +862,7 @@ void DynamicWeightingSVGF::dynamicWeighting(
     // Parameters
     perImageCB["gGammaMidpoint"] = mGammaMidpoint;
     perImageCB["gGammaSteepness"] = mGammaSteepness;
+    perImageCB["gAlpha"] = mAlpha;
 
     mpDynamicWeighting->execute(pRenderContext, pOutputFbo);
 
@@ -884,50 +887,46 @@ void DynamicWeightingSVGF::computeFinalModulate(RenderContext* pRenderContext, T
 void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
 {
     bool changed = false;
-    bool dirty = 0;
-    dirty |= widget.checkbox("Enable SVGF", mFilterEnabled);
+    bool dirty = false;
+    bool runtimeDirty = 0;
 
-    dirty |= widget.checkbox("Enable Spatial Filtering", mSpatialFilterEnabled);
+    runtimeDirty |= widget.checkbox("Enable SVGF", mFilterEnabled);
+
+    runtimeDirty |= widget.checkbox("Enable Spatial Filtering", mSpatialFilterEnabled);
     if (mSpatialFilterEnabled)
     {
         widget.text("");
         widget.text("Number of filter iterations.  Which");
         widget.text("    iteration feeds into future frames?");
-        dirty |= widget.var("Iterations", mFilterIterations, 0, 10, 1);
-        dirty |= widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 1, 1);
+        runtimeDirty |= widget.var("Iterations", mFilterIterations, 0, 10, 1);
+        runtimeDirty |= widget.var("Feedback", mFeedbackTap, -1, mFilterIterations - 1, 1);
 
         widget.text("");
         widget.text("Contol edge stopping on bilateral fitler");
-        dirty |= widget.var("For Color", mPhiColor, 0.0f, 10000.0f, 0.01f);
-        dirty |= widget.var("For Normal", mPhiNormal, 0.001f, 1000.0f, 0.2f);
+        runtimeDirty |= widget.var("For Color", mPhiColor, 0.0f, 10000.0f, 0.01f);
+        runtimeDirty |= widget.var("For Normal", mPhiNormal, 0.001f, 1000.0f, 0.2f);
     }
 
 
     widget.text("");
     widget.text("How much history should be used?");
     widget.text("    (alpha; 0 = full reuse; 1 = no reuse)");
-    dirty |= widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= widget.var("Weighted Alpha", mWeightedAlpha, 0.0f, 1.0f, 0.001f);
-    dirty |= widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
+    runtimeDirty |= widget.var("Alpha", mAlpha, 0.0f, 1.0f, 0.001f);
+    runtimeDirty |= widget.var("Weighted Alpha", mWeightedAlpha, 0.0f, 1.0f, 0.001f);
+    runtimeDirty |= widget.var("Moments Alpha", mMomentsAlpha, 0.0f, 1.0f, 0.001f);
 
     widget.text("");
     widget.text("Dynamic Weighting");
-    changed = widget.checkbox("Enable Dynamic Weighting", mDynamicWeighingEnabled);
-    dirty |= changed;
-    mRecompile |= changed;
+    dirty |= widget.checkbox("Enable Dynamic Weighting", mDynamicWeighingEnabled);
     if (mDynamicWeighingEnabled)
     {
-        dirty |= widget.checkbox("Filter Gradient", mFilterGradientEnabled);
-        changed |= widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
-        dirty |= changed;
-        mRecompile |= changed;
-        dirty |= widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
-        dirty |= widget.var("Max Gradient", mMaxGradient, 0.0f, 1e6f, 0.1f, false, "%.2f");
-        dirty |= widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
-        dirty |= widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
-        changed |= widget.dropdown("Normalization Mode", kNormalizationModeList, mNormalizationMode);
-        dirty |= changed;
-        mRecompile |= changed;
+        runtimeDirty |= widget.checkbox("Filter Gradient", mFilterGradientEnabled);
+        dirty |= widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
+        runtimeDirty |= widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
+        runtimeDirty |= widget.var("Max Gradient", mMaxGradient, 0.0f, 1e6f, 0.1f, false, "%.2f");
+        runtimeDirty |= widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
+        runtimeDirty |= widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
+        dirty |= widget.dropdown("Normalization Mode", kNormalizationModeList, mNormalizationMode);
 
         if (mSelectionMode == SELECTION_MODE_LOGISTIC)
         {
@@ -942,15 +941,12 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     widget.text("");
     widget.text("Debug");
     mBuffersNeedClear |= widget.button("Clear History");
-    dirty |= widget.var("Sample Count Override", mSampleCountOverride, -1, 16, 1);
-    changed = widget.checkbox("Enable Debug Tag", mEnableDebugTag);
-    dirty |= changed;
-    mRecompile |= changed;
-    changed |= widget.checkbox("Enable Debug Output", mEnableDebugOutput);
-    dirty |= changed;
-    mRecompile |= changed;
+    runtimeDirty |= widget.var("Sample Count Override", mSampleCountOverride, -1, 16, 1);
+    dirty = widget.checkbox("Enable Debug Tag", mEnableDebugTag);
+    dirty |= widget.checkbox("Enable Debug Output", mEnableDebugOutput);
     widget.var("Output PingPong After Iters", mOutputPingPongAfterIters, 0, mFilterIterations, 1);
     widget.var("Output PingPong Idx", mOutputPingPongIdx, 0, 3, 1);
 
-    if (dirty) mBuffersNeedClear = true;
+    if (dirty) mRecompile = true;
+    if (runtimeDirty) mBuffersNeedClear = true;
 }

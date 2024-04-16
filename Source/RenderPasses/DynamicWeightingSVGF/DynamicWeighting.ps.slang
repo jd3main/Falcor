@@ -7,7 +7,7 @@ import RenderPasses.ReprojectionPass.ReprojectionStruct;
 #define SELECTION_MODE _SELECTION_MODE
 #define DEBUG_OUTPUT_ENABLED _DEBUG_OUTPUT_ENABLED
 #define DEBUG_TAG_ENABLED _DEBUG_TAG_ENABLED
-
+#define NEW_NORM_ENABLED
 
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
@@ -27,10 +27,12 @@ cbuffer PerImageCB
     Texture2D gUnweightedIllumination;
     Texture2D gWeightedIllumination;
     Texture2D gGradient;
+    Texture2D gHistoryLength;
 
     // Parameters
     float gGammaMidpoint;
     float gGammaSteepness;
+    float gAlpha;
 };
 
 struct PS_OUT
@@ -60,7 +62,15 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     gamma = gamma / max(variance, 1e-6f);
 #elif NORMALIZATION_MODE == NORMALIZATION_MODE_STANDARDDEVIATION
     gamma = gamma / sqrt(max(variance, 1e-6f));
+#elif NORMALIZATION_MODE == NORMALIZATION_MODE_STANDARDDEVIATION2
+    gamma = gamma / sqrt(max(variance, 1e-6f));
+    // const float h = gHistoryLength[ipos].r;
+    // const float beta = 1 - gAlpha;
+    // const float var_y = (1 - beta) / beta * ((1 + pow(beta, h)) / (1 - pow(beta, h + 1)));
+    // const float std_y = sqrt(var_y);
+    gamma = gamma / 0.5503262028604377;
 #endif
+
 
 #if SELECTION_MODE == SELECTION_MODE_UNWEIGHTED
     // gamma = 1.0f;
@@ -78,6 +88,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     gamma = 1 / (1 + exp(-gGammaSteepness * (gamma - gGammaMidpoint)));
     float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 #endif
+
 
 #if DEBUG_TAG_ENABLED
     if (ipos.x < 20 && ipos.y < 100)

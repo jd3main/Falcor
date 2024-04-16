@@ -28,6 +28,7 @@ class NormalizationMode(IntEnum):
     LUM = auto()
     VAR = auto()
     STD = auto()
+    STD2 = auto()
 
     LUMINANCE = LUM
     VARIANCE = VAR
@@ -123,6 +124,8 @@ def normalizeGraphParams(graph_params: dict) -> dict:
         'repeat_sample_count': 1,
         'debug_tag_enabled': False,
         'debug_output_enabled': False,
+        'output_sample_count': False,
+        'output_tone_mappped': False,
     }
 
     for key in default_params:
@@ -140,11 +143,11 @@ def normalizeGraphParams(graph_params: dict) -> dict:
             popKeys(graph_params['dynamic_weighting_params'], pop_keys)
     elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.UNWEIGHTED:
         graph_params['grad_iters'] = 0
-        pop_keys = ['GradientMidpoint', 'GammaSteepness', 'WeightedAlpha', 'GradientAlpha']
+        pop_keys = ['GradientMidpoint', 'GammaSteepness', 'WeightedAlpha', 'GradientAlpha', 'NormalizationMode']
         popKeys(graph_params['dynamic_weighting_params'], pop_keys)
     elif graph_params['dynamic_weighting_params']['SelectionMode'] == SelectionMode.WEIGHTED:
         graph_params['grad_iters'] = graph_params['feedback'] + 1
-        pop_keys = ['GradientMidpoint', 'GammaSteepness', 'GradientAlpha']
+        pop_keys = ['GradientMidpoint', 'GammaSteepness', 'GradientAlpha', 'NormalizationMode']
         popKeys(graph_params['dynamic_weighting_params'], pop_keys)
 
     if not graph_params['foveated_pass_enabled']:
@@ -159,33 +162,22 @@ def normalizeGraphParams(graph_params: dict) -> dict:
     return graph_params
 
 
-def ACESFilm(x):
-    x *= 0.6
-
+def ACESFilm(x:np.ndarray):
+    x = x * 0.6
     a = 2.51
     b = 0.03
     c = 2.43
     d = 0.59
     e = 0.14
-    return np.clip((x*(a*x+b))/(x*(c*x+d)+e), 0, 1)
+    return np.clip((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0)
 
-def applyExposure(x):
-    mExposureCompensation = 0.0
-    mFilmSpeed = 100.0
-    mShutter = 1.0
-    mFNumber = 1.0
 
-    exposureScale = 2**mExposureCompensation
+def gammaCorrection(img: np.ndarray, gamma: float) -> np.ndarray:
+    return np.power(img, gamma)
 
-    normConstant = 1.0 / 100.0
-    manualExposureScale = (normConstant * mFilmSpeed) / (mShutter * mFNumber * mFNumber)
-    # Calculate final transform.
-    color_transform = exposureScale * manualExposureScale
-    # print(f'color_transform = {color_transform}')
-    return x * color_transform
-
-def toneMapping(img: np.ndarray) -> np.ndarray:
-    # img = applyExposure(img)
+def toneMapping(img: np.ndarray, gamma=1/1.22) -> np.ndarray:
     img = ACESFilm(img)
+    img = gammaCorrection(img, gamma)
     img = (img * 255).astype(np.uint8)
     return img
+

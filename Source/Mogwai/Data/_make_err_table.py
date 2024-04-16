@@ -14,15 +14,16 @@ from _error_measure import getErrFilename, ErrorType
 
 
 RECORD_PATH = Path(__file__).parents[4]/'Record'
+DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
 
 if __name__ == '__main__':
-
 
     ### Argument parsing
     parser = argparse.ArgumentParser(description='Calculate errors')
     parser.add_argument('--scene_name', type=str, default='', help='scene name')
     parser.add_argument('--fast', action='store_true', help='fast mode')
     parser.add_argument('--fovea', action='store_true', help='fovea')
+    parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
     args = parser.parse_args()
 
 
@@ -57,6 +58,7 @@ if __name__ == '__main__':
 
     err_type = ErrorType.REL_MSE
     ref_filter_mode = RefFilterMode.SPATIAL_TEMPORAL
+    norm_mode = NormalizationMode[args.norm_mode.upper()]
 
     fields = ["mean", "ssim"]
 
@@ -85,7 +87,7 @@ if __name__ == '__main__':
                 "alpha": 0.05,
                 "w_alpha": 0.05,
                 "g_alpha": 0.2,
-                "norm_mode": NormalizationMode.STD,
+                "norm_mode": norm_mode,
                 "sampling": sampling,
             })
 

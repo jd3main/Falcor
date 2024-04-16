@@ -526,6 +526,9 @@ namespace Falcor
             // Upload the image manually and flip it vertically
             bool scanlineCopy = exportAlpha ? bytesPerPixel == 16 : bytesPerPixel == 12;
 
+            // float rMax = 0.0;
+            // float rSum = 0.0;
+
             pImage = FreeImage_AllocateT(exportAlpha ? FIT_RGBAF : FIT_RGBF, width, height);
             BYTE* head = (BYTE*)pData;
             for (unsigned y = 0; y < height; y++)
@@ -540,6 +543,10 @@ namespace Falcor
                     FALCOR_ASSERT(exportAlpha == false);
                     for (unsigned x = 0; x < width; x++)
                     {
+                        // const float r = (((float*)head)[x*4 + 0]);
+                        // rMax = std::max(rMax, r);
+                        // rSum += r;
+
                         dstBits[x*3 + 0] = (((float*)head)[x*4 + 0]);
                         dstBits[x*3 + 1] = (((float*)head)[x*4 + 1]);
                         dstBits[x*3 + 2] = (((float*)head)[x*4 + 2]);
@@ -547,6 +554,8 @@ namespace Falcor
                 }
                 head += bytesPerPixel * width;
             }
+
+            // std::cerr << "\nrMax = " << rMax << ", rMean = " << rSum/(width*height) << std::endl;
 
             if (fileFormat == Bitmap::FileFormat::ExrFile)
             {

@@ -114,6 +114,7 @@ def render_graph_g(iters, feedback, alpha=0.05,
                    repeat_sample_count=1,
                    debug_tag_enabled=False,
                    debug_output_enabled=False,
+                   output_tone_mappped=False,
                    **kwargs):
 
     if sample_count > 8:
@@ -182,6 +183,11 @@ def render_graph_g(iters, feedback, alpha=0.05,
         **dynamic_weighting_params})
     g.addPass(SVGFPass, 'SVGFPass')
 
+    if output_tone_mappped:
+        ToneMapper = createPass('ToneMapper', {'outputSize': IOSize.Default, 'useSceneMetadata': True, 'exposureCompensation': 0.0, 'autoExposure': False, 'filmSpeed': 100.0, 'whiteBalance': False, 'whitePoint': 6500.0, 'operator': ToneMapOp.Aces, 'clamp': True, 'whiteMaxLuminance': 1.0, 'whiteScale': 11.199999809265137, 'fNumber': 1.0, 'shutter': 1.0, 'exposureMode': ExposureMode.AperturePriority})
+        g.addPass(ToneMapper, 'ToneMapper')
+
+    # Edges
     g.addEdge('GBufferRaster.viewW', 'PathTracer.viewW')
     g.addEdge('VBufferRT.vbuffer', 'PathTracer.vbuffer')
     g.addEdge('GBufferRaster.mvec', 'PathTracer.mvec')
@@ -199,9 +205,18 @@ def render_graph_g(iters, feedback, alpha=0.05,
         g.addEdge('FoveatedPass.sampleCount', 'PathTracer.sampleCount')
         g.addEdge('FoveatedPass.sampleCount', 'SVGFPass.SampleCount')
 
+    if output_tone_mappped:
+        g.addEdge('SVGFPass.Filtered image', 'ToneMapper.src')
+
+
+    # Outputs
     g.markOutput('SVGFPass.Filtered image')
     if output_sample_count and foveated_pass_enabled:
         g.markOutput('FoveatedPass.sampleCount')
+
+    if output_tone_mappped:
+        g.markOutput('ToneMapper.dst')
+
     # g.markOutput('SVGFPass.OutGradient')
     # g.markOutput('SVGFPass.Illumination_U')
     # g.markOutput('SVGFPass.Illumination_W')
@@ -539,6 +554,8 @@ force_record_weighted = True
 force_record_ground_truth = False
 
 profiler_enabled = False
+output_sample_count = False
+output_tone_mappped = False
 
 if force_record_selections or force_record_unweighted or force_record_weighted or force_record_ground_truth:
     logW("Force record enabled.")
@@ -569,11 +586,12 @@ for scene_idx, scene_path in enumerate(scene_paths):
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
                         'NormalizationMode': NormalizationMode.STD,
-                        'FilterGradientEnabled': True,
+                        'FilterGradientEnabled': False,
                         **common_dynamic_weighting_params
                     },
                     'foveated_pass_enabled': True,
                     'foveated_pass_params': foveated_params_override,
+                    'output_tone_mappped': output_tone_mappped,
                     **common_graph_params
                 },
                 record_params_override={
@@ -595,7 +613,8 @@ for scene_idx, scene_path in enumerate(scene_paths):
                 },
                 'foveated_pass_enabled': True,
                 'foveated_pass_params': foveated_params_override,
-                'output_sample_count': True,
+                'output_sample_count': output_sample_count,
+                'output_tone_mappped': output_tone_mappped,
                 **common_graph_params
             },
             record_params_override={
@@ -619,6 +638,7 @@ for scene_idx, scene_path in enumerate(scene_paths):
                 },
                 'foveated_pass_enabled': True,
                 'foveated_pass_params': foveated_params_override,
+                'output_tone_mappped': output_tone_mappped,
                 **common_graph_params
             },
             record_params_override={
@@ -693,4 +713,5 @@ for scene_idx, scene_path in enumerate(scene_paths):
     logI(f"Scene {scene_name} done.")
 
 logI("All Done")
+print('\a')
 exit()

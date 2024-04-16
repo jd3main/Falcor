@@ -133,8 +133,8 @@ bool loadHistory(float2 posH, out History history)
     float3 unweightedHistoryIllum = float3(0, 0, 0);
 #if DW_ENABLED
     float3 weightedHistoryIllum = float3(0, 0, 0);
-#endif
     float3 gradient = float3(0, 0, 0);
+#endif
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -303,26 +303,21 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     moments = lerp(h.moments, moments, alphaMoments);
 
     const float variance = max(0.f, moments.g - moments.r * moments.r);
+    const bool isHistoryShort = curLength < 8;
 
-
-    float decay = success ? (1.0f - gAlpha) : 0.0f;
-    if (curLength < 8)
-        decay = 1;
+    const float decay = isHistoryShort ? 1.0 : (success ? (1.0f - gAlpha) : 0.0f);
     const float unweightedAlpha = 1.0f / (decay * h.weight.x + 1);
     const float historyWeight = decay * h.weight.x + 1;
     const float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
 
 #if DW_ENABLED
-    float weightedDecay = success ? (1.0f - gWeightedAlpha) : 0.0f;
-    if (curLength < 8)
-        weightedDecay = 1;
+    const float weightedDecay = isHistoryShort ? 1.0 : (success ? (1.0f - gWeightedAlpha) : 0.0f);
     const float weightedAlpha = float(sampleCount) / (weightedDecay * h.weight.y + float(sampleCount));
     const float weightedHistoryWeight = weightedDecay * h.weight.y + sampleCount;
     const float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
 
-    float3 delta = success ? (illumination - h.unweightedIllumination) : float3(0, 0, 0);
-    delta = clamp(delta, -gMaxGradient, gMaxGradient);
-    const float3 outGradient = success ? lerp(h.gradient, delta, gGradientAlpha) : 0;
+    const float3 delta = clamp((illumination - h.unweightedIllumination), -gMaxGradient, gMaxGradient);
+    const float3 outGradient = success ? lerp(h.gradient, delta, gGradientAlpha) : delta;
 #endif
 
 

@@ -112,6 +112,7 @@ def render_graph_g(iters, feedback, alpha=0.05,
                    repeat_sample_count=1,
                    debug_tag_enabled=False,
                    debug_output_enabled=False,
+                   output_tone_mappped=False,
                    **kwargs):
 
     if sample_count > 8:
@@ -183,7 +184,12 @@ def render_graph_g(iters, feedback, alpha=0.05,
     ReprojectionPass = createPass('ReprojectionPass')
     g.addPass(ReprojectionPass, 'ReprojectionPass')
 
+    if output_tone_mappped:
+        ToneMapper = createPass('ToneMapper', {'outputSize': IOSize.Default, 'useSceneMetadata': True, 'exposureCompensation': 0.0, 'autoExposure': False, 'filmSpeed': 100.0, 'whiteBalance': False, 'whitePoint': 6500.0, 'operator': ToneMapOp.Aces, 'clamp': True, 'whiteMaxLuminance': 1.0, 'whiteScale': 11.199999809265137, 'fNumber': 1.0, 'shutter': 1.0, 'exposureMode': ExposureMode.AperturePriority})
+        g.addPass(ToneMapper, 'ToneMapper')
 
+
+    # Edges
     g.addEdge('GBufferRaster.viewW', 'PathTracer.viewW')
     g.addEdge('VBufferRT.vbuffer', 'PathTracer.vbuffer')
     g.addEdge('GBufferRaster.mvec', 'PathTracer.mvec')
@@ -202,6 +208,9 @@ def render_graph_g(iters, feedback, alpha=0.05,
     g.addEdge('GBufferRaster.mvec', 'ReprojectionPass.MotionVec')
     g.addEdge('GBufferRaster.linearZ', 'ReprojectionPass.LinearZ')
     g.addEdge('GBufferRaster.pnFwidth', 'ReprojectionPass.PositionNormalFwidth')
+
+    if output_tone_mappped:
+        g.addEdge('SVGFPass.Filtered image', 'ToneMapper.src')
 
     # g.addEdge('ReprojectionPass.TapWidthAndPrevPos', 'SVGFPass.TapWidthAndPrevPos')
     # g.addEdge('ReprojectionPass.W0123', 'SVGFPass.W0123')
@@ -228,9 +237,13 @@ def render_graph_g(iters, feedback, alpha=0.05,
         g.addEdge('ReprojectionPass.W4567', 'AdaptiveSampling.W4567')
 
 
+    # Outputs
     g.markOutput('SVGFPass.Filtered image')
     if output_sample_count and adaptive_pass_enabled:
         g.markOutput('AdaptiveSampling.sampleCount')
+
+    if output_tone_mappped:
+        g.markOutput('ToneMapper.dst')
 
     # g.markOutput('SVGFPass.OutGradient')
     # g.markOutput('SVGFPass.Illumination_U')
@@ -480,12 +493,12 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
 
 
 scene_paths = [
-    # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Dusk.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.fbx',
@@ -538,13 +551,14 @@ iter_params = [
 # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
 blending_func_params = [(0.5, 1.0)]
 
-force_record_selections = False
-force_record_unweighted = False
-force_record_weighted = False
+force_record_selections = True
+force_record_unweighted = True
+force_record_weighted = True
 force_record_ground_truth = False
 
 profiler_enabled = False
-output_sample_count = True
+output_sample_count = False
+output_tone_mappped = False
 
 if force_record_selections or force_record_unweighted or force_record_weighted or force_record_ground_truth:
     logW("Force record enabled.")

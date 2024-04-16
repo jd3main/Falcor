@@ -21,7 +21,7 @@ scene_name = 'VeachAjarAnimated'
 
 
 record_path = Path(__file__).parents[4]/'Record'
-MAX_FRAMES = 10000
+MAX_FRAMES = 20
 fps = 30
 iters = 2
 feedback = 0
@@ -48,36 +48,35 @@ pattern = f'{fps}fps.SVGFPass.Filtered image.{{}}.exr'
 
 image_sequences = []
 
-try:
-    image_sequences.append(("Reference", loadImageSequence(ref_folder_path, pattern, MAX_FRAMES)))
-    image_sequences.append(("Unweighted", loadImageSequence(unweighted_path, pattern, MAX_FRAMES)))
-    image_sequences.append(("Weighted", loadImageSequence(weighted_path, pattern, MAX_FRAMES)))
-    image_sequences.append(("Blended", loadImageSequence(blended_path, pattern, MAX_FRAMES)))
-except FileNotFoundError as e:
-    logE(e)
-    exit()
-
 for name, images in image_sequences:
     print(f'{name}: {len(images)} images')
 
-frame_id = 0
+frame_id = 450
 image_seq_index = 0
 multplier = 1.0
-n_images = len(image_sequences[0][1])
+n_images = countImages(ref_folder_path, pattern)
 tone_mapping_enabled = True
 draw_fovea = False
+draw_text = True
 
 while True:
-    display_image = image_sequences[image_seq_index][1][frame_id]
-    display_image_name = image_sequences[image_seq_index][0]
+
+    sources = []
+    sources.append(("Reference", loadImage(ref_folder_path, pattern, frame_id)))
+    sources.append(("Unweighted", loadImage(unweighted_path, pattern, frame_id)))
+    sources.append(("Weighted", loadImage(weighted_path, pattern, frame_id)))
+    sources.append(("Blended", loadImage(blended_path, pattern, frame_id)))
+
+    display_image_name, display_image = sources[image_seq_index]
 
     if tone_mapping_enabled:
         display_image = toneMapping(display_image)
     if draw_fovea:
-        t = (frame_id+1) / fps
+        t = frame_id / fps
         display_image = drawFoveaLissajous(display_image, 200, t, (0.4, 0.5), (display_image.shape[1]//2, display_image.shape[0]//2), (np.pi/2, 0))
 
-    display_image = cv.putText(display_image, f'frame {frame_id} {display_image_name}', (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv.LINE_AA)
+    if draw_text:
+        display_image = cv.putText(display_image, f'frame {frame_id} {display_image_name}', (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv.LINE_AA)
     cv.imshow('image', display_image)
 
     key = cv.waitKey(0)
@@ -88,12 +87,16 @@ while True:
     elif key == ord('d'):
         frame_id = (frame_id + 1) % n_images
     elif key == ord('w'):
-        image_seq_index = (image_seq_index + 1) % len(image_sequences)
+        image_seq_index = (image_seq_index + 1) % len(sources)
     elif key == ord('s'):
-        image_seq_index = (image_seq_index - 1) % len(image_sequences)
+        image_seq_index = (image_seq_index - 1) % len(sources)
     elif key == ord('t'):
         tone_mapping_enabled = not tone_mapping_enabled
     elif key == ord('f'):
         draw_fovea = not draw_fovea
+    elif key == ord('\t'):
+        draw_text = not draw_text
+
+
 cv.destroyAllWindows()
 
