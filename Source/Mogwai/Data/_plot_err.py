@@ -35,8 +35,8 @@ if __name__ == '__main__':
 
     ref_filter_mode = RefFilterMode.SPATIAL_TEMPORAL
 
-    # DEFAULT_SCENE_NAME = 'VeachAjar'
-    DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+    DEFAULT_SCENE_NAME = 'VeachAjar'
+    # DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
     # DEFAULT_SCENE_NAME = 'BistroExterior'
     # DEFAULT_SCENE_NAME = 'BistroInterior'
     # DEFAULT_SCENE_NAME = 'BistroInterior_Wine'
@@ -47,6 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('--scene_name', type=str, default=DEFAULT_SCENE_NAME, help='scene name')
     parser.add_argument('--fast', action='store_true', help='fast mode')
     parser.add_argument('--fovea', action='store_true', help='fovea')
+    parser.add_argument('--filter_gradient', action='store_true', help='filter gradient')
     args = parser.parse_args()
 
 
@@ -54,6 +55,7 @@ if __name__ == '__main__':
     scene_name = args.scene_name
     fast_mode = args.fast
     fovea = args.fovea
+    filter_gradient = args.filter_gradient
 
     iters = 2
     feedback = 0
@@ -84,7 +86,7 @@ if __name__ == '__main__':
         ),
         Record(
             f'Two-history',
-            getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling)
+            getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling, filter_gradient)
         ),
     ]
 

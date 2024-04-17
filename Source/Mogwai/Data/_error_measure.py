@@ -197,6 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('--fast', action='store_true', help='fast mode')
     parser.add_argument('--cuda', action='store_true', help='use cuda')
     parser.add_argument('--fovea', action='store_true', help='calculate error in foveated area only')
+    parser.add_argument('--filter_gradient', action='store_true', help='filter gradient')
     args = parser.parse_args()
 
     xp = cp if args.cuda else np
@@ -213,6 +214,7 @@ if __name__ == '__main__':
     sampling = args.sampling
     force_recalculate = args.force
     selection_func = args.selection_func
+    filter_gradient = args.filter_gradient
 
     alpha = 0.05
     w_alpha = 0.05
@@ -273,6 +275,7 @@ if __name__ == '__main__':
         print(f'midpoints:          {midpoints}')
         print(f'steepnesses:        {steepnesses}')
         print(f'sampling:           {sampling}')
+        print(f'filter_gradient:    {filter_gradient}')
         print(f'ref_sample_count:   {ref_sample_count}')
         print(f'ref_filter_mode:    {ref_filter_mode}')
 
@@ -313,13 +316,15 @@ if __name__ == '__main__':
                                                             iters, feedback, midpoint, steepness,
                                                             alpha, w_alpha, g_alpha,
                                                             normalization_mode,
-                                                            sampling)
+                                                            sampling,
+                                                            filter_gradient)
                 elif selection_func == 'Step':
                     folder_name = getSourceFolderNameStep(scene_name,
                                                         iters, feedback, midpoint,
                                                         alpha, w_alpha, g_alpha,
                                                         normalization_mode,
-                                                        sampling)
+                                                        sampling,
+                                                        filter_gradient)
 
                 source_folders.append(record_path/folder_name)
 

@@ -66,6 +66,7 @@ parser.add_argument('--midpoint', type=float, default=DEFALT_MIDPOINT, help='mid
 parser.add_argument('--steepness', type=float, default=DEFAULT_STEEPNESS, help='steepness of selection function')
 parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
 parser.add_argument('--sampling', type=str, default=DEFAULT_SAMPLING_METHOD, help='sampling method and params')
+parser.add_argument('--filter_gradient', action='store_true', help='filter gradient')
 args = parser.parse_args()
 
 ### Load parameters
@@ -84,6 +85,7 @@ steepness = args.steepness
 
 normalization_mode = NormalizationMode[args.norm_mode.upper()]
 sampling = args.sampling
+filter_gradient = args.filter_gradient
 
 iters = 2
 feedback = 0
@@ -103,7 +105,7 @@ print(f'sampling:           {sampling}')
 
 
 folder_names = [
-    getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling),
+    getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling, filter_gradient),
     getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling),
 ]
 

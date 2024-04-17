@@ -54,8 +54,9 @@ def getSourceFolderNameLinear(scene_name,
                               alpha, w_alpha, g_alpha,
                               norm_mode:NormalizationMode,
                               sampling,
+                              filter_gradient,
                               **kwargs):
-    return f'{scene_name}_iters({iters},{feedback})_Linear({midpoint},{steepness})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
+    return f'{scene_name}_iters({iters},{feedback}){"_FG" if filter_gradient else ""}_Linear({midpoint},{steepness})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
 
 def getSourceFolderNameStep(scene_name,
                             iters, feedback,
@@ -63,8 +64,9 @@ def getSourceFolderNameStep(scene_name,
                             alpha, w_alpha, g_alpha,
                             norm_mode:NormalizationMode,
                             sampling,
+                            filter_gradient,
                             **kwargs):
-    return f'{scene_name}_iters({iters},{feedback})_Step({midpoint})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
+    return f'{scene_name}_iters({iters},{feedback}){"_FG" if filter_gradient else ""}_Step({midpoint})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
 
 def getSourceFolderNameWeighted(scene_name,
                                 iters, feedback,
@@ -87,11 +89,12 @@ def getSourceFolderName(scene_name,
                         alpha=None, w_alpha=None, g_alpha=None,
                         norm_mode:NormalizationMode=None,
                         sampling=None,
+                        filter_gradient=False,
                         **kwargs):
     if selection_func == 'Linear':
-        return getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling)
+        return getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient)
     elif selection_func == 'Step':
-        return getSourceFolderNameStep(scene_name, iters, feedback, midpoint, alpha, w_alpha, g_alpha, norm_mode, sampling)
+        return getSourceFolderNameStep(scene_name, iters, feedback, midpoint, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient)
     elif selection_func == 'Weighted':
         return getSourceFolderNameWeighted(scene_name, iters, feedback, alpha, w_alpha, sampling)
     elif selection_func == 'Unweighted':

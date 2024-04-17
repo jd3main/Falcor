@@ -104,8 +104,8 @@ PS_OUT main(FullScreenPassVsOut vsOut)
             {
                 const int2 p     = ipos + int2(xx, yy);
                 const bool inside = all(p >= int2(0,0)) && all(p < screenSize);
-                const bool samePixel = (xx ==0 && yy == 0);
-                const float kernel = 1.0;
+                // const bool samePixel = (xx ==0 && yy == 0);
+                // const float kernel = 1.0;
 
                 if (inside)
                 {

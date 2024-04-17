@@ -551,6 +551,8 @@ iter_params = [
 # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
 blending_func_params = [(0.5, 1.0)]
 
+filter_gradient = False
+
 force_record_selections = True
 force_record_unweighted = True
 force_record_weighted = True
@@ -588,6 +590,7 @@ for scene_idx, scene_path in enumerate(scene_paths):
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
                         'NormalizationMode': NormalizationMode.STD,
+                        'FilterGradientEnabled': filter_gradient,
                         **common_dynamic_weighting_params
                     },
                     'adaptive_pass_enabled': True,

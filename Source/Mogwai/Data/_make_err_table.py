@@ -24,6 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('--fast', action='store_true', help='fast mode')
     parser.add_argument('--fovea', action='store_true', help='fovea')
     parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
+    parser.add_argument('--filter_gradient', action='store_true', help='filter gradient')
     args = parser.parse_args()
 
 
@@ -99,7 +100,7 @@ if __name__ == '__main__':
     for cid, config in enumerate(configs):
         unweighted_folder = RECORD_PATH/getSourceFolderNameUnweighted(**config)
         weighted_folder = RECORD_PATH/getSourceFolderNameWeighted(**config)
-        dynamic_folder = RECORD_PATH/getSourceFolderName(**config)
+        dynamic_folder = RECORD_PATH/getSourceFolderName(**config, filter_gradient=args.filter_gradient)
 
         source_folders = [unweighted_folder, weighted_folder, dynamic_folder]
         source_names = ['Unweighted', 'Weighted', 'Ours']

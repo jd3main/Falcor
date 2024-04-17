@@ -10,8 +10,8 @@ from enum import IntEnum, auto
 from _utils import *
 from DynamicWeighting_Common import *
 
-# scene_name = 'VeachAjar'
-scene_name = 'VeachAjarAnimated'
+scene_name = 'VeachAjar'
+# scene_name = 'VeachAjarAnimated'
 # scene_name = 'BistroExterior'
 # scene_name = 'BistroInterior'
 # scene_name = 'BistroInterior_Wine'
@@ -29,9 +29,10 @@ midpoint = 0.5
 steepness = 1.0
 g_alpha = 0.2
 norm_mode = NormalizationMode.STD
+filter_graidient = True
 
-# sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
-sampling = 'Adaptive(2.0,10.0,1,1)'
+sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
+# sampling = 'Adaptive(2.0,10.0,1,1)'
 
 fovea_radius = 200.0
 
@@ -40,7 +41,7 @@ fovea_radius = 200.0
 ref_folder_path = record_path/getReferenceFolderNameFiltered(scene_name, ref_sample_count, alpha, iters, feedback)
 unweighted_path = record_path/getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling)
 weighted_path = record_path/getSourceFolderNameWeighted(scene_name, iters, feedback, alpha, alpha, sampling)
-blended_path = record_path/getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, alpha, g_alpha, norm_mode, sampling)
+blended_path = record_path/getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, alpha, g_alpha, norm_mode, sampling, filter_graidient)
 
 pattern = f'{fps}fps.SVGFPass.Filtered image.{{}}.exr'
 
@@ -69,9 +70,9 @@ while True:
         loadImage(weighted_path, pattern, frame_id),
         loadImage(blended_path, pattern, frame_id),
         # loadImage(unweighted_path, '30fps.FoveatedPass.sampleCount.{}.png', frame_id),
-        loadImage(unweighted_path, '30fps.AdaptiveSampling.sampleCount.{}.png', frame_id) * sample_count_scale,
-        loadImage(weighted_path, '30fps.AdaptiveSampling.sampleCount.{}.png', frame_id) * sample_count_scale,
-        loadImage(blended_path, '30fps.AdaptiveSampling.sampleCount.{}.png', frame_id) * sample_count_scale,
+        # loadImage(unweighted_path, '30fps.AdaptiveSampling.sampleCount.{}.png', frame_id) * sample_count_scale,
+        # loadImage(weighted_path, '30fps.AdaptiveSampling.sampleCount.{}.png', frame_id) * sample_count_scale,
+        # loadImage(blended_path, '30fps.AdaptiveSampling.sampleCount.{}.png', frame_id) * sample_count_scale,
     ]
 
 

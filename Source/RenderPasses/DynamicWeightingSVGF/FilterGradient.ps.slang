@@ -35,7 +35,6 @@ import RenderPasses.SVGFPass.SVGFCommon;
 cbuffer PerImageCB
 {
     Texture2D gGradient;
-    Texture2D gHistoryLength;
     Texture2D gLinearZAndNormal;
     Texture2D gIllumination;
 
@@ -50,78 +49,64 @@ struct PS_OUT
 
 PS_OUT main(FullScreenPassVsOut vsOut)
 {
-    const float4 posH = vsOut.posH;
-    const int2 ipos = int2(posH.xy);
-
-    const float h = gHistoryLength[ipos].x;
+    const int2 ipos = int2(vsOut.posH.xy);
     const int2 screenSize = getTextureDims(gIllumination, 0);
 
-    // if (h < 4.0)
+    float sumW = 0.0;
+    float3 sumGradient = float3(0.0, 0.0, 0.0);
+
+    const float4 illuminationCenter = gIllumination[ipos];
+    const float lIlluminationCenter = luminance(illuminationCenter.rgb);
+
+    const float2 zCenter = gLinearZAndNormal[ipos].xy;
+    if (zCenter.x < 0)
     {
-        float sumW = 0.0;
-        float3 sumGradient = float3(0.0, 0.0, 0.0);
+        // current pixel does not a valid depth => must be envmap => do nothing
+        return {
+            illuminationCenter,
+        };
+    }
+    const float3 nCenter = oct_to_ndir_snorm(gLinearZAndNormal[ipos].zw);
+    const float phiLIllumination   = gPhiColor;
+    const float phiDepth     = max(zCenter.y, 1e-8) * 3.0;
 
-        const float4 illuminationCenter = gIllumination[ipos];
-        const float lIlluminationCenter = luminance(illuminationCenter.rgb);
+    // compute first and second moment spatially. This code also applies cross-bilateral
+    // filtering on the input illumination.
+    const int radius = 1;
 
-        const float2 zCenter = gLinearZAndNormal[ipos].xy;
-        if (zCenter.x < 0)
+    for (int yy = -radius; yy <= radius; yy++)
+    {
+        for (int xx = -radius; xx <= radius; xx++)
         {
-            // current pixel does not a valid depth => must be envmap => do nothing
-            return {
-                illuminationCenter,
-            };
-        }
-        const float3 nCenter = oct_to_ndir_snorm(gLinearZAndNormal[ipos].zw);
-        const float phiLIllumination   = gPhiColor;
-        const float phiDepth     = max(zCenter.y, 1e-8) * 3.0;
+            const int2 p     = ipos + int2(xx, yy);
+            const bool inside = all(p >= int2(0,0)) && all(p < screenSize);
+            // const bool samePixel = (xx ==0 && yy == 0);
+            // const float kernel = 1.0;
 
-        // compute first and second moment spatially. This code also applies cross-bilateral
-        // filtering on the input illumination.
-        const int radius = 1;
-
-        for (int yy = -radius; yy <= radius; yy++)
-        {
-            for (int xx = -radius; xx <= radius; xx++)
+            if (inside)
             {
-                const int2 p     = ipos + int2(xx, yy);
-                const bool inside = all(p >= int2(0,0)) && all(p < screenSize);
-                const bool samePixel = (xx ==0 && yy == 0);
-                const float kernel = 1.0;
+                const float3 illuminationP = gIllumination[p].rgb;
+                const float3 gradientP     = gGradient[p].rgb;
+                const float lIlluminationP = luminance(illuminationP.rgb);
+                const float zP = gLinearZAndNormal[p].x;
+                const float3 nP = oct_to_ndir_snorm(gLinearZAndNormal[p].zw);
 
-                if (inside)
-                {
-                    const float3 illuminationP = gIllumination[p].rgb;
-                    const float3 gradientP     = gGradient[p].rgb;
-                    const float lIlluminationP = luminance(illuminationP.rgb);
-                    const float zP = gLinearZAndNormal[p].x;
-                    const float3 nP = oct_to_ndir_snorm(gLinearZAndNormal[p].zw);
+                const float w = computeWeight(
+                    zCenter.x, zP, phiDepth * length(float2(xx, yy)),
+                    nCenter, nP, gPhiNormal,
+                    lIlluminationCenter, lIlluminationP, phiLIllumination);
 
-                    const float w = computeWeight(
-                        zCenter.x, zP, phiDepth * length(float2(xx, yy)),
-                        nCenter, nP, gPhiNormal,
-                        lIlluminationCenter, lIlluminationP, phiLIllumination);
-
-                    sumW += w;
-                    sumGradient += gradientP * w;
-                }
+                sumW += w;
+                sumGradient += gradientP * w;
             }
         }
-
-        // Clamp sum to >0 to avoid NaNs.
-        sumW = max(sumW, 1e-6f);
-        sumGradient /= sumW;
-
-        return {
-            float4(sumGradient, 0.0),
-        };
     }
-    /*
-    else
-    {
-        return {
-            gGradient[ipos],
-        };
-    }
-    */
+
+    // Clamp sum to >0 to avoid NaNs.
+    sumW = max(sumW, 1e-6f);
+    sumGradient /= sumW;
+
+    return {
+        float4(sumGradient, 0.0),
+    };
 }
