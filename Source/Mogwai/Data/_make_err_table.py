@@ -24,7 +24,9 @@ if __name__ == '__main__':
     parser.add_argument('--fast', action='store_true', help='fast mode')
     parser.add_argument('--fovea', action='store_true', help='fovea')
     parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
-    parser.add_argument('--filter_gradient', action='store_true', help='filter gradient')
+    parser.add_argument('--fg', action='store_true', help='filter gradient')
+    parser.add_argument('--bg', action='store_true', help='best gamma')
+    parser.add_argument('-s', '--sampling', type=str, default='f', help='sampling preset')
     args = parser.parse_args()
 
 
@@ -60,11 +62,12 @@ if __name__ == '__main__':
     err_type = ErrorType.REL_MSE
     ref_filter_mode = RefFilterMode.SPATIAL_TEMPORAL
     norm_mode = NormalizationMode[args.norm_mode.upper()]
+    filter_gradient = args.fg
+    best_gamma = args.bg
 
     fields = ["mean", "ssim"]
 
-    sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
-    # sampling = 'Adaptive(2.0,10.0,1,1)'
+    sampling = getSamplingPreset(args.sampling)
 
     if args.fovea:
         assert 'Foveated' in sampling
@@ -73,6 +76,9 @@ if __name__ == '__main__':
     print(f'scene_name:                     {scene_names}')
     print(f'iter_params:                    {iter_params}')
     print(f'sampling:                       {sampling}')
+    print(f'norm_mode:                      {norm_mode}')
+    print(f'filter_gradient:                {filter_gradient}')
+    print(f'best_gamma:                     {best_gamma}')
     print(f'ref_filter_mode:                {ref_filter_mode}')
 
     configs = []
@@ -100,7 +106,7 @@ if __name__ == '__main__':
     for cid, config in enumerate(configs):
         unweighted_folder = RECORD_PATH/getSourceFolderNameUnweighted(**config)
         weighted_folder = RECORD_PATH/getSourceFolderNameWeighted(**config)
-        dynamic_folder = RECORD_PATH/getSourceFolderName(**config, filter_gradient=args.filter_gradient)
+        dynamic_folder = RECORD_PATH/getSourceFolderName(**config, filter_gradient=filter_gradient, best_gamma=best_gamma)
 
         source_folders = [unweighted_folder, weighted_folder, dynamic_folder]
         source_names = ['Unweighted', 'Weighted', 'Ours']

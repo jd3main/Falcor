@@ -50,6 +50,7 @@ namespace
     const char kMomentsAlpha[] = "MomentsAlpha";
     const char kGradientAlpha[] = "GradientAlpha";
     const char kMaxGradient[] = "MaxGradient";
+    const char kAutoMidpoint[] = "AutoMidpoint";
     const char kGradientMidpoint[] = "GradientMidpoint";
     const char kGammaSteepness[] = "GammaSteepness";
     const char kSelectionMode[] = "SelectionMode";
@@ -62,6 +63,8 @@ namespace
     const char kEnableDebugOutput[] = "EnableDebugOutput";
     const char kEnableOutputVariance[] = "EnableOutputVariance";
     const char kFilterGradientEnabled[] = "FilterGradientEnabled";
+    const char kBestGammaEnabled[] = "BestGammaEnabled";
+    const char kOptimalWeightingEnabled[] = "OptimalWeightingEnabled";
 
     // Input buffers
     const char kInputBufferAlbedo[] = "Albedo";
@@ -137,6 +140,8 @@ namespace
         TemporalFilterOutFields_WeightedIllumination,
         TemporalFilterOutFields_Variance,
         TemporalFilterOutFields_Gradient,
+        TemporalFilterOutFields_SampleCountMoments = 7,
+        TemporalFilterOutFields_OptimalWeighAccum = 7
     };
 
     enum DynamicWeightingOutFields
@@ -201,6 +206,7 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kMomentsAlpha) mMomentsAlpha = value;
         else if (key == kGradientAlpha) mGradientAlpha = value;
         else if (key == kMaxGradient) mMaxGradient = value;
+        else if (key == kAutoMidpoint) mAutoMidpoint = value;
         else if (key == kGradientMidpoint) mGammaMidpoint = value;
         else if (key == kGammaSteepness) mGammaSteepness = value;
         else if (key == kSelectionMode) mSelectionMode = value;
@@ -213,6 +219,8 @@ DynamicWeightingSVGF::DynamicWeightingSVGF(const Dictionary& dict)
         else if (key == kEnableDebugOutput) mEnableDebugOutput = value;
         else if (key == kEnableOutputVariance) mEnableOutputVariance = value;
         else if (key == kFilterGradientEnabled) mFilterGradientEnabled = value;
+        else if (key == kBestGammaEnabled) mBestGammaEnabled = value;
+        else if (key == kOptimalWeightingEnabled) mOptinalWeightingEnabled = value;
         else logWarning("Unknown field '{}' in DynamicWeightingSVGF dictionary.", key);
     }
     mRecompile = true;
@@ -236,6 +244,7 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kMomentsAlpha] = mMomentsAlpha;
     dict[kGradientAlpha] = mGradientAlpha;
     dict[kMaxGradient] = mMaxGradient;
+    dict[kAutoMidpoint] = mAutoMidpoint;
     dict[kGradientMidpoint] = mGammaMidpoint;
     dict[kGammaSteepness] = mGammaSteepness;
     dict[kSelectionMode] = mSelectionMode;
@@ -248,6 +257,8 @@ Dictionary DynamicWeightingSVGF::getScriptingDictionary()
     dict[kEnableDebugOutput] = mEnableDebugOutput;
     dict[kEnableOutputVariance] = mEnableOutputVariance;
     dict[kFilterGradientEnabled] = mFilterGradientEnabled;
+    dict[kBestGammaEnabled] = mBestGammaEnabled;
+    dict[kOptimalWeightingEnabled] = mOptinalWeightingEnabled;
     return dict;
 }
 
@@ -357,6 +368,8 @@ void DynamicWeightingSVGF::execute(RenderContext* pRenderContext, const RenderDa
         defines.add("_DW_ENABLED", mDynamicWeighingEnabled ? "1" : "0");
         defines.add("_DEBUG_TAG_ENABLED", mEnableDebugTag ? "1" : "0");
         defines.add("_DEBUG_OUTPUT_ENABLED", mEnableDebugOutput ? "1" : "0");
+        defines.add("_BEST_GAMMA_ENABLED", mDynamicWeighingEnabled && mBestGammaEnabled ? "1" : "0");
+        defines.add("_OPTIMAL_WEIGHTING_ENABLED", mDynamicWeighingEnabled && mOptinalWeightingEnabled ? "1" : "0");
 
         #define X(x) defines.add(toUpperCase(#x), std::to_string(x));
         FOR_SELECTION_MODES(X)
@@ -505,6 +518,10 @@ void DynamicWeightingSVGF::allocateFbos(uint2 dim, RenderContext* pRenderContext
         desc.setColorTarget(TemporalFilterOutFields_WeightedIllumination, Falcor::ResourceFormat::RGBA32Float);
         desc.setColorTarget(TemporalFilterOutFields_Variance, Falcor::ResourceFormat::R32Float);
         desc.setColorTarget(TemporalFilterOutFields_Gradient, Falcor::ResourceFormat::RGBA32Float);
+        if (mBestGammaEnabled)
+            desc.setColorTarget(TemporalFilterOutFields_SampleCountMoments, Falcor::ResourceFormat::RGBA32Float);
+        else if (mOptinalWeightingEnabled)
+            desc.setColorTarget(TemporalFilterOutFields_OptimalWeighAccum, Falcor::ResourceFormat::R32Float);
         mpCurTemporalFilterFbo = Fbo::create2D(dim.x, dim.y, desc);
         mpPrevTemporalFilterFbo = Fbo::create2D(dim.x, dim.y, desc);
     }
@@ -662,6 +679,10 @@ void DynamicWeightingSVGF::computeTemporalFilter(RenderContext* pRenderContext,
     {
         perImageCB["gPrevWeightedIllum"] = mpFilteredPastFbo[1]->getColorTexture(0);
         perImageCB["gPrevGradient"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient);
+        if (mBestGammaEnabled)
+            perImageCB["gPrevSampleCountMoments"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_SampleCountMoments);
+        if (mOptinalWeightingEnabled)
+            perImageCB["gPrevOptimalWeightAccum"] = mpPrevTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_OptimalWeighAccum);
     }
 
     // Parameters
@@ -843,6 +864,7 @@ void DynamicWeightingSVGF::dynamicWeighting(
 {
     FALCOR_PROFILE("dynamicWeighting");
 
+    Texture::SharedPtr pInputSampleCountTexture = renderData.getTexture(kInputBufferSampleCount);
     Texture::SharedPtr pOutputGammaTexture = renderData.getTexture(kOutputGamma);
 
     // cerr << "dynamicWeighting()" << endl;
@@ -851,13 +873,20 @@ void DynamicWeightingSVGF::dynamicWeighting(
     // Input textures
     perImageCB["gUnweightedIllumination"] = pUnweightedIlluminationTexture;
     perImageCB["gWeightedIllumination"] = pWeightedIlluminationTexture;
-    if (mNormalizationMode == NORMALIZATION_MODE_STANDARDDEVIATION2)
+    if (mBestGammaEnabled)
+    {
         perImageCB["gHistoryLength"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryLength);
+        perImageCB["gHistoryWeight"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_HistoryWeight);
+        perImageCB["gSampleCountMoments"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_SampleCountMoments);
+    }
+
 
     if (mFilterGradientEnabled)
         perImageCB["gGradient"] = mpFilterGradientFbo->getColorTexture(0);
     else
         perImageCB["gGradient"] = mpCurTemporalFilterFbo->getColorTexture(TemporalFilterOutFields_Gradient);
+
+
 
     // Parameters
     perImageCB["gGammaMidpoint"] = mGammaMidpoint;
@@ -920,12 +949,21 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     dirty |= widget.checkbox("Enable Dynamic Weighting", mDynamicWeighingEnabled);
     if (mDynamicWeighingEnabled)
     {
+        dirty |= widget.checkbox("Optimal Weighting", mOptinalWeightingEnabled);
+        dirty |= widget.checkbox("Best Gamma", mBestGammaEnabled);
         runtimeDirty |= widget.checkbox("Filter Gradient", mFilterGradientEnabled);
         dirty |= widget.dropdown("Selection Mode", kSelectionModeList, mSelectionMode);
         runtimeDirty |= widget.var("Gradient Alpha", mGradientAlpha, 0.0f, 1.0f, 0.001f);
         runtimeDirty |= widget.var("Max Gradient", mMaxGradient, 0.0f, 1e6f, 0.1f, false, "%.2f");
-        runtimeDirty |= widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
         runtimeDirty |= widget.var("Gamma Steepness", mGammaSteepness, 0.0f, 1e6f, 0.1f);
+        runtimeDirty |= widget.checkbox("Auto Midpoint", mAutoMidpoint);
+        if (!mAutoMidpoint)
+            runtimeDirty |= widget.var("Gamma Midpoint", mGammaMidpoint, -1e6f, 1e6f, 0.1f);
+        else
+        {
+            mGammaMidpoint = 0.5 / mGammaSteepness;
+            runtimeDirty |= widget.var("Gamma Midpoint", mGammaMidpoint, mGammaMidpoint, mGammaMidpoint);
+        }
         dirty |= widget.dropdown("Normalization Mode", kNormalizationModeList, mNormalizationMode);
 
         if (mSelectionMode == SELECTION_MODE_LOGISTIC)
@@ -942,11 +980,11 @@ void DynamicWeightingSVGF::renderUI(Gui::Widgets& widget)
     widget.text("Debug");
     mBuffersNeedClear |= widget.button("Clear History");
     runtimeDirty |= widget.var("Sample Count Override", mSampleCountOverride, -1, 16, 1);
-    dirty = widget.checkbox("Enable Debug Tag", mEnableDebugTag);
+    dirty |= widget.checkbox("Enable Debug Tag", mEnableDebugTag);
     dirty |= widget.checkbox("Enable Debug Output", mEnableDebugOutput);
     widget.var("Output PingPong After Iters", mOutputPingPongAfterIters, 0, mFilterIterations, 1);
     widget.var("Output PingPong Idx", mOutputPingPongIdx, 0, 3, 1);
 
     if (dirty) mRecompile = true;
-    if (runtimeDirty) mBuffersNeedClear = true;
+    if (dirty || runtimeDirty) mBuffersNeedClear = true;
 }

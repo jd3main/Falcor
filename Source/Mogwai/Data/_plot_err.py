@@ -34,6 +34,7 @@ class Record:
 if __name__ == '__main__':
 
     ref_filter_mode = RefFilterMode.SPATIAL_TEMPORAL
+    DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
 
     DEFAULT_SCENE_NAME = 'VeachAjar'
     # DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
@@ -43,7 +44,8 @@ if __name__ == '__main__':
     # DEFAULT_SCENE_NAME = 'SunTemple'
 
     ### Argument parsing
-    parser = argparse.ArgumentParser(description='Calculate errors')
+    parser = argparse.ArgumentParser(description='Plot errors')
+    parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
     parser.add_argument('--scene_name', type=str, default=DEFAULT_SCENE_NAME, help='scene name')
     parser.add_argument('--fast', action='store_true', help='fast mode')
     parser.add_argument('--fovea', action='store_true', help='fovea')
@@ -52,6 +54,7 @@ if __name__ == '__main__':
 
 
     record_path = Path(__file__).parents[4]/'Record'
+    norm_mode = NormalizationMode[args.norm_mode.upper()]
     scene_name = args.scene_name
     fast_mode = args.fast
     fovea = args.fovea
@@ -64,7 +67,6 @@ if __name__ == '__main__':
     alpha = 0.05
     w_alpha = 0.05
     g_alpha = 0.2
-    normalization_mode = NormalizationMode.STD
 
     selection_func = 'Linear'
     midpoint = 0.5
@@ -86,7 +88,7 @@ if __name__ == '__main__':
         ),
         Record(
             f'Two-history',
-            getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling, filter_gradient)
+            getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient)
         ),
     ]
 

@@ -61,7 +61,7 @@ def render_graph_g():
     g.addPass(CountToColor1, 'CountToColor1')
     CountToColor2 = createPass('CountToColor', {'MaxValue': 256})
     g.addPass(CountToColor2, 'CountToColor2')
-    DynamicWeightingSVGF = createPass('DynamicWeightingSVGF', {'Enabled': True, 'SpatialFilterEnabled': True, 'DynamicWeighingEnabled': True, 'Iterations': 2, 'FeedbackTap': 0, 'VarianceEpsilon': 9.999999747378752e-05, 'PhiColor': 10.0, 'PhiNormal': 128.0, 'Alpha': 0.05000000074505806, 'WeightedAlpha': 0.05000000074505806, 'MomentsAlpha': 0.20000000298023224, 'GradientAlpha': 0.20000000298023224, 'MaxGradient': 1000000.0, 'GradientMidpoint': 0.5, 'GammaSteepness': 1.0, 'SelectionMode': 2, 'SampleCountOverride': -1, 'NormalizationMode': 3, 'UseInputReprojection': False, 'OutputPingPongAfterIters': 0, 'OutputPingPongIdx': 0, 'EnableDebugTag': False, 'EnableDebugOutput': True, 'EnableOutputVariance': True, 'FilterGradientEnabled': False})
+    DynamicWeightingSVGF = createPass('DynamicWeightingSVGF', {'Enabled': True, 'SpatialFilterEnabled': True, 'DynamicWeighingEnabled': True, 'Iterations': 2, 'FeedbackTap': 0, 'VarianceEpsilon': 9.999999747378752e-05, 'PhiColor': 10.0, 'PhiNormal': 128.0, 'Alpha': 0.05000000074505806, 'WeightedAlpha': 0.05000000074505806, 'MomentsAlpha': 0.20000000298023224, 'GradientAlpha': 0.20000000298023224, 'MaxGradient': 1000000.0, 'AutoMidpoint': False, 'GradientMidpoint': 0.5, 'GammaSteepness': 1.0, 'SelectionMode': 2, 'SampleCountOverride': -1, 'NormalizationMode': 3, 'UseInputReprojection': False, 'OutputPingPongAfterIters': 0, 'OutputPingPongIdx': 0, 'EnableDebugTag': False, 'EnableDebugOutput': True, 'EnableOutputVariance': True, 'FilterGradientEnabled': False, 'BestGammaEnabled': False, 'OptimalWeightingEnabled': True})
     g.addPass(DynamicWeightingSVGF, 'DynamicWeightingSVGF')
     ColorMapPass = createPass('ColorMapPass', {'colorMap': ColorMap.Jet, 'channel': 0, 'autoRange': False, 'minValue': -1.0, 'maxValue': 1.0})
     g.addPass(ColorMapPass, 'ColorMapPass')
@@ -73,6 +73,8 @@ def render_graph_g():
     g.addPass(ColorMapPass2, 'ColorMapPass2')
     VBufferRT = createPass('VBufferRT', {'outputSize': IOSize.Default, 'samplePattern': SamplePattern.Center, 'sampleCount': 16, 'useAlphaTest': True, 'adjustShadingNormals': True, 'forceCullMode': False, 'cull': CullMode.CullBack, 'useTraceRayInline': False, 'useDOF': True})
     g.addPass(VBufferRT, 'VBufferRT')
+    ColorMapPass3 = createPass('ColorMapPass', {'colorMap': ColorMap.Jet, 'channel': 0, 'autoRange': True, 'minValue': 0.0, 'maxValue': 1.0})
+    g.addPass(ColorMapPass3, 'ColorMapPass3')
     g.addEdge('GBufferRaster.viewW', 'PathTracer.viewW')
     g.addEdge('GBufferRaster.mvec', 'PathTracer.mvec')
     g.addEdge('FoveatedPass.sampleCount', 'PathTracer.sampleCount')
@@ -99,6 +101,7 @@ def render_graph_g():
     g.addEdge('FoveatedPass.sampleCount', 'ColorMapPass2.input')
     g.addEdge('DynamicWeightingSVGF.Filtered image', 'ToneMapper.src')
     g.addEdge('VBufferRT.vbuffer', 'PathTracer.vbuffer')
+    g.addEdge('DynamicWeightingSVGF.Illumination_W', 'ColorMapPass3.input')
     g.markOutput('ToneMapper.dst')
     g.markOutput('SplitScreenPass2.output')
     g.markOutput('ColorMapPass.output')
@@ -107,6 +110,7 @@ def render_graph_g():
     g.markOutput('SplitScreenPass.output')
     g.markOutput('DynamicWeightingSVGF.PingPong')
     g.markOutput('DynamicWeightingSVGF.Filtered image')
+    g.markOutput('ColorMapPass3.output')
     return g
 
 g = render_graph_g()

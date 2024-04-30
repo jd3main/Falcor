@@ -6,6 +6,7 @@ import math
 from pprint import pprint
 import json
 from time import sleep
+import argparse
 
 def install(package):
     python_path = Path(sys.executable).parent/'Python/python.exe'
@@ -345,6 +346,9 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
         if 'FilterGradientEnabled' in dw_params and dw_params['FilterGradientEnabled']:
             folder_name_parts.append('FG')
 
+        if 'BestGammaEnabled' in dw_params and dw_params['BestGammaEnabled']:
+            folder_name_parts.append('BG')
+
         selection_mode = dw_params['SelectionMode']
         if selection_mode == SelectionMode.LINEAR:
             folder_name_parts.append('Linear({},{})'.format(
@@ -488,7 +492,7 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
     gc.collect()
 
 scene_paths = [
-    # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
     Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
@@ -496,9 +500,31 @@ scene_paths = [
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Dusk.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.fbx',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_SEVEN'/'MEASURE_SEVEN.fbx',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.fbx',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_SEVEN'/'MEASURE_SEVEN.fbx',
 ]
+
+
+
+### Argument parsing
+
+argv = ' '.join([
+    '-n STD',
+    '--bg',
+    # '--fg',
+    # '--profile',
+    # '--output_sample_count',
+    # '--output_tone_mappped',
+]).split(' ')
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-n', '--norm_mode', type=str, default=NormalizationMode.STD.name, help='normalization mode')
+parser.add_argument('--fg', action='store_true', help='filter gradient')
+parser.add_argument('--bg', action='store_true', help='best gamma')
+parser.add_argument('--profile', action='store_true', help='enable profiler')
+parser.add_argument('--output_sample_count', action='store_true', help='output sample count')
+parser.add_argument('--output_tone_mappped', action='store_true', help='output tone mapped')
+args = parser.parse_args(argv)
 
 
 common_record_params = {
@@ -550,17 +576,19 @@ iter_params = [
 # steepnesses = [0.5, 1.0, 1.5]
 # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
 blending_func_params = [(0.5, 1.0)]
+filter_gradient = args.fg
+normalization_mode = NormalizationMode[args.norm_mode]
+best_gamma_enabled = args.bg
+optimal_weighting_enabled = False
 
-filter_gradient = False
-
-force_record_selections = False
-force_record_unweighted = True
+force_record_selections = True
+force_record_unweighted = False
 force_record_weighted = False
 force_record_ground_truth = False
 
-profiler_enabled = True
-output_sample_count = False
-output_tone_mappped = False
+profiler_enabled = args.profile
+output_sample_count = args.output_sample_count
+output_tone_mappped = args.output_tone_mappped
 
 if force_record_selections or force_record_unweighted or force_record_weighted or force_record_ground_truth:
     logW("Force record enabled.")
@@ -590,8 +618,10 @@ for scene_idx, scene_path in enumerate(scene_paths):
                         'GradientMidpoint': float(midpoint),
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
-                        'NormalizationMode': NormalizationMode.STD,
+                        'NormalizationMode': normalization_mode,
                         'FilterGradientEnabled': filter_gradient,
+                        'BestGammaEnabled': best_gamma_enabled,
+                        'OptimalWeightingEnabled': optimal_weighting_enabled,
                         **common_dynamic_weighting_params
                     },
                     'foveated_pass_enabled': True,
@@ -639,6 +669,7 @@ for scene_idx, scene_path in enumerate(scene_paths):
                 'dynamic_weighting_enabled': True,
                 'dynamic_weighting_params': {
                     'SelectionMode': SelectionMode.WEIGHTED,
+                    'OptimalWeightingEnabled': optimal_weighting_enabled,
                     **common_dynamic_weighting_params
                 },
                 'foveated_pass_enabled': True,

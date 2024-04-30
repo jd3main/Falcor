@@ -56,7 +56,7 @@ DEFALT_MIDPOINT = 0.5
 DEFAULT_STEEPNESS = 1.0
 
 ### Argument parsing
-parser = argparse.ArgumentParser(description='Calculate errors')
+parser = argparse.ArgumentParser(description='Plot profile')
 parser.add_argument('--scene_name', type=str, default=DEFAULT_SCENE_NAME, help='scene name')
 parser.add_argument('-r', '--record_path', type=str, default=DEFAULT_RECORD_PATH, help='record path')
 parser.add_argument('-f', '--fps', type=int, default=DEFAULT_FPS, help='fps')
@@ -66,7 +66,8 @@ parser.add_argument('--midpoint', type=float, default=DEFALT_MIDPOINT, help='mid
 parser.add_argument('--steepness', type=float, default=DEFAULT_STEEPNESS, help='steepness of selection function')
 parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
 parser.add_argument('--sampling', type=str, default=DEFAULT_SAMPLING_METHOD, help='sampling method and params')
-parser.add_argument('--filter_gradient', action='store_true', help='filter gradient')
+parser.add_argument('--fg', action='store_true', help='filter gradient')
+parser.add_argument('--bg', action='store_true', help='best gamma')
 args = parser.parse_args()
 
 ### Load parameters
@@ -85,7 +86,8 @@ steepness = args.steepness
 
 normalization_mode = NormalizationMode[args.norm_mode.upper()]
 sampling = args.sampling
-filter_gradient = args.filter_gradient
+filter_gradient = args.fg
+best_gamma = args.bg
 
 iters = 2
 feedback = 0
@@ -101,11 +103,14 @@ print(f'iter_params:        {iters}, {feedback}')
 print(f'midpoint:           {midpoint}')
 print(f'steepness:          {steepness}')
 print(f'sampling:           {sampling}')
+print(f'filter_gradient:    {filter_gradient}')
+print(f'best_gamma:         {best_gamma}')
 
 
 
 folder_names = [
-    getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling, filter_gradient),
+    getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling,
+                              filter_gradient, best_gamma),
     getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling),
 ]
 

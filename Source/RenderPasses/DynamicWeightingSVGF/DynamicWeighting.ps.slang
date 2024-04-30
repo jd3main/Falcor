@@ -7,7 +7,7 @@ import RenderPasses.ReprojectionPass.ReprojectionStruct;
 #define SELECTION_MODE _SELECTION_MODE
 #define DEBUG_OUTPUT_ENABLED _DEBUG_OUTPUT_ENABLED
 #define DEBUG_TAG_ENABLED _DEBUG_TAG_ENABLED
-#define NEW_NORM_ENABLED
+#define BEST_GAMMA_ENABLED _BEST_GAMMA_ENABLED
 
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
@@ -21,13 +21,24 @@ bool isNaN(float3 f)
     return isNaN(f.x) || isNaN(f.y) || isNaN(f.z);
 }
 
+float max(float3 v)
+{
+    return max(max(v.x, v.y), v.z);
+}
+
 cbuffer PerImageCB
 {
     // Input buffer
     Texture2D gUnweightedIllumination;
     Texture2D gWeightedIllumination;
     Texture2D gGradient;
+
+#if BEST_GAMMA_ENABLED
     Texture2D gHistoryLength;
+    Texture2D gHistoryWeight;
+    Texture2D gSampleCountMoments;
+#endif
+
 
     // Parameters
     float gGammaMidpoint;
@@ -53,7 +64,10 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     const float3 weightedIllumination = gWeightedIllumination[ipos].rgb;
     const float3 gradient = gGradient[ipos].rgb;
 
+
+    float3 outIllumination;
     float gamma = luminance(abs(gradient));
+
 
 // normalize
 #if NORMALIZATION_MODE == NORMALIZATION_MODE_LUMINANCE
@@ -64,31 +78,53 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     gamma = gamma / sqrt(max(variance, 1e-6f));
 #elif NORMALIZATION_MODE == NORMALIZATION_MODE_STANDARDDEVIATION2
     gamma = gamma / sqrt(max(variance, 1e-6f));
-    // const float h = gHistoryLength[ipos].r;
-    // const float beta = 1 - gAlpha;
-    // const float var_y = (1 - beta) / beta * ((1 + pow(beta, h)) / (1 - pow(beta, h + 1)));
-    // const float std_y = sqrt(var_y);
-    gamma = gamma / 0.5503262028604377;
+    const float h = gHistoryLength[ipos].r;
+    const float beta = 1 - gAlpha;
+    const float var_y = (1 - beta) / beta * ((1 + pow(beta, h)) / (1 - pow(beta, h + 1)));
+    const float std_y = sqrt(var_y);
+    gamma = gamma / std_y;
+    // gamma = gamma / 0.5503262028604377;
 #endif
 
 
 #if SELECTION_MODE == SELECTION_MODE_UNWEIGHTED
     // gamma = 1.0f;
-    float3 outIllumination = unweightedIllumination;
+    outIllumination = unweightedIllumination;
 #elif SELECTION_MODE == SELECTION_MODE_WEIGHTED
     // gamma = 0.0f;
-    float3 outIllumination = weightedIllumination;
+    outIllumination = weightedIllumination;
 #elif SELECTION_MODE == SELECTION_MODE_LINEAR
     gamma = clamp(0.5 + (gamma - gGammaMidpoint) * gGammaSteepness, 0, 1);
-    float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 #elif SELECTION_MODE == SELECTION_MODE_STEP
     gamma = (gamma >= gGammaMidpoint) ? 1 : 0;
-    float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 #elif SELECTION_MODE == SELECTION_MODE_LOGISTIC
     gamma = 1 / (1 + exp(-gGammaSteepness * (gamma - gGammaMidpoint)));
-    float3 outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
 #endif
 
+#if BEST_GAMMA_ENABLED
+    const float2 weights = gHistoryWeight[ipos].rg;
+    const float3 scm = gSampleCountMoments[ipos].rgb;
+    // const float wu2 = weights.x * weights.x;
+    // const float wuww = weights.x * weights.y;
+    // const float ww2 = weights.y * weights.y;
+    // float best_gamma = (wu2 * scm.x - wuww * scm.y) / (wu2 * scm.x - 2 * wuww * scm.y + ww2 * scm.z);
+    const float X = weights[0] * (weights[0] * scm.x - weights[1] * scm.y);
+    const float Y = weights[1] * (weights[0] * scm.y - weights[1] * scm.z);
+    float best_gamma = X / (X - Y);
+    if (isNaN(best_gamma))
+    {
+        best_gamma = 0.0;
+    }
+    best_gamma = saturate(best_gamma);
+    // gamma = max(best_gamma, gamma);
+    gamma = lerp(best_gamma, 1.0, gamma);
+    gamma = saturate(gamma);
+#endif
+
+
+#if SELECTION_MODE == SELECTION_MODE_LINEAR || SELECTION_MODE == SELECTION_MODE_STEP || SELECTION_MODE == SELECTION_MODE_LOGISTIC
+    outIllumination = lerp(weightedIllumination, unweightedIllumination, gamma);
+#endif
 
 #if DEBUG_TAG_ENABLED
     if (ipos.x < 20 && ipos.y < 100)
@@ -97,6 +133,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
         outIllumination = debugColor;
     }
 #endif
+
 
     PS_OUT psOut;
     psOut.color = float4(outIllumination, variance);

@@ -79,7 +79,7 @@ private:
     float   mMomentsAlpha = 0.2f;
     float   mGradientAlpha = 0.2f;
     float   mMaxGradient = 1e6f;
-    float   mExpectedDelay = -10;
+    bool    mAutoMidpoint = false;
     float   mGammaMidpoint = 0.01f;
     float   mGammaSteepness = 100;
     uint32_t mSelectionMode = SELECTION_MODE_LOGISTIC;
@@ -87,6 +87,8 @@ private:
     bool    mUseInputReprojection = false;
     bool    mEnableOutputVariance = true;
     bool    mFilterGradientEnabled = false;
+    bool    mBestGammaEnabled = false;
+    bool    mOptinalWeightingEnabled = false;
 
     // Debug parameters
     bool mEnableDebugOutput = false;

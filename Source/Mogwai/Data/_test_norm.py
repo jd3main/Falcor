@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
-T = 10
+T = 20
 A = 0.2
 B = 1.0 - A
 
@@ -56,7 +56,7 @@ mean_y = (1/w) * sum([y(i,B,T) * B**(T-i) for i in range(0, T+1)])
 mean_y_direct = 0.0
 print(f'mean_y: {mean_y}')
 print(f'mean_y_direct: {mean_y_direct}')
-# assert mean_y == mean_y_direct
+assert abs(mean_y - mean_y_direct) < 1e-6
 
 
 ys = [y(i,B,T) for i in range(0, T+1)]
@@ -76,7 +76,7 @@ varY = lambda b,t: (1-b) / b * ((1+b**t)/(1-b**(t+1)))
 var_y = varY(B, T)
 print(f'_var_y: {_var_y}')
 print(f'var_y: {var_y}')
-assert _var_y == var_y
+assert abs(_var_y - var_y) < 1e-6
 
 # plt.plot([varY(B,t) for t in range(1, 100)])
 

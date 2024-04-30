@@ -34,6 +34,8 @@ import RenderPasses.SVGFPass.SVGFCommon;
 #define MAX_HISTORY_LENGTH 32
 
 #define DW_ENABLED _DW_ENABLED
+#define BEST_GAMMA_ENABLED _BEST_GAMMA_ENABLED
+#define OPTIMAL_WEIGHTING_ENABLED _OPTIMAL_WEIGHTING_ENABLED
 
 #if DW_ENABLED
 typedef float2 HistoryWeightType;
@@ -64,6 +66,12 @@ cbuffer PerImageCB
     Texture2D gPrevHistoryWeight;
     Texture2D gPrevUnweightedIllum;
     Texture2D gPrevLinearZAndNormal;
+#if BEST_GAMMA_ENABLED
+    Texture2D gPrevSampleCountMoments;
+#endif
+#if OPTIMAL_WEIGHTING_ENABLED
+    Texture2D gPrevOptimalWeightAccum; // \sum_{i=0}^{t-1}(B_{i,t-1}^2 * n_i)
+#endif
 
     float gAlpha;
     float gWeightedAlpha;
@@ -110,7 +118,13 @@ struct History
 #if DW_ENABLED
     float3 weightedIllumination;
     float3 gradient;
-#endif
+#if BEST_GAMMA_ENABLED
+    float3 sampleCountMoments;
+#endif // BEST_GAMMA_ENABLED
+#if OPTIMAL_WEIGHTING_ENABLED
+    float optimalWeightAccum;
+#endif // OPTIMAL_WEIGHTING_ENABLED
+#endif // DW_ENABLED
 };
 
 bool loadHistory(float2 posH, out History history)
@@ -134,7 +148,14 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
     float3 weightedHistoryIllum = float3(0, 0, 0);
     float3 gradient = float3(0, 0, 0);
+#if BEST_GAMMA_ENABLED
+    float3 sampleCountMoments = float3(0, 0, 0);
 #endif
+#if OPTIMAL_WEIGHTING_ENABLED
+    float optimalWeightAccum = 0;
+#endif
+#endif // DW_ENABLED
+
 
     bool v[4];
     const float2 posPrev = floor(posH.xy) + motion.xy * imageDim;
@@ -181,7 +202,13 @@ bool loadHistory(float2 posH, out History history)
                 historyWeight += w[sampleIdx] * gPrevHistoryWeight[loc].xy;
                 weightedHistoryIllum += w[sampleIdx] * gPrevWeightedIllum[loc].xyz;
                 gradient += w[sampleIdx] * gPrevGradient[loc].xyz;
+#if BEST_GAMMA_ENABLED
+                sampleCountMoments += w[sampleIdx] * gPrevSampleCountMoments[loc].xyz;
 #endif
+#if OPTIMAL_WEIGHTING_ENABLED
+                optimalWeightAccum += w[sampleIdx] * gPrevOptimalWeightAccum[loc].x;
+#endif
+#endif // DW_ENABLED
             }
         }
 
@@ -194,7 +221,13 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
         weightedHistoryIllum = valid ? weightedHistoryIllum / sumw : float3(0, 0, 0);
         gradient = valid ? gradient / sumw : 0;
+#if BEST_GAMMA_ENABLED
+        sampleCountMoments = valid ? sampleCountMoments / sumw : 0;
 #endif
+#if OPTIMAL_WEIGHTING_ENABLED
+        optimalWeightAccum = valid ? optimalWeightAccum / sumw : 0;
+#endif
+#endif // DW_ENABLED
     }
 
     if (!valid) // perform cross-bilateral filter in the hope to find some suitable samples somewhere
@@ -223,6 +256,12 @@ bool loadHistory(float2 posH, out History history)
                     historyWeight += gPrevHistoryWeight[p].xy;
                     weightedHistoryIllum += gPrevWeightedIllum[p].xyz;
                     gradient += gPrevGradient[p].xyz;
+#if BEST_GAMMA_ENABLED
+                    sampleCountMoments += gPrevSampleCountMoments[p].xyz;
+#endif
+#if OPTIMAL_WEIGHTING_ENABLED
+                    optimalWeightAccum += gPrevOptimalWeightAccum[p].x;
+#endif
 #endif
                 }
             }
@@ -237,6 +276,12 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
             weightedHistoryIllum /= nValid;
             gradient /= nValid;
+#if BEST_GAMMA_ENABLED
+            sampleCountMoments /= nValid;
+#endif
+#if OPTIMAL_WEIGHTING_ENABLED
+            optimalWeightAccum /= nValid;
+#endif
 #endif
         }
     }
@@ -248,8 +293,13 @@ bool loadHistory(float2 posH, out History history)
 #if DW_ENABLED
     history.weightedIllumination = weightedHistoryIllum;
     history.gradient = gradient;
+#if BEST_GAMMA_ENABLED
+    history.sampleCountMoments = sampleCountMoments;
 #endif
-
+#if OPTIMAL_WEIGHTING_ENABLED
+    history.optimalWeightAccum = optimalWeightAccum;
+#endif
+#endif // DW_ENABLED
     return valid;
 }
 // not used currently
@@ -269,6 +319,12 @@ struct PS_OUT
     float4 OutWeightedIllumination          : SV_TARGET4;
     float OutVariance                       : SV_TARGET5;
     float4 OutGradient                      : SV_TARGET6;
+#if BEST_GAMMA_ENABLED
+    float4 OutsampleCountMoments            : SV_TARGET7;
+#endif
+#if OPTIMAL_WEIGHTING_ENABLED
+    float OutOptimalWeighAccum              : SV_TARGET7;
+#endif
 };
 
 // PS_OUT main(FullScreenPassVsOut vsOut)
@@ -306,19 +362,51 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     const bool isHistoryShort = curLength < 8;
 
     const float decay = isHistoryShort ? 1.0 : (success ? (1.0f - gAlpha) : 0.0f);
-    const float unweightedAlpha = 1.0f / (decay * h.weight.x + 1);
-    const float historyWeight = decay * h.weight.x + 1;
+    const float historyWeight = decay * h.weight.x + 1.0;
+    const float unweightedAlpha = 1.0f / historyWeight;
     const float3 outUnweightedIllumination = success ? lerp(h.unweightedIllumination, illumination, unweightedAlpha) : illumination;
 
 #if DW_ENABLED
+
     const float weightedDecay = isHistoryShort ? 1.0 : (success ? (1.0f - gWeightedAlpha) : 0.0f);
-    const float weightedAlpha = float(sampleCount) / (weightedDecay * h.weight.y + float(sampleCount));
+
+#if OPTIMAL_WEIGHTING_ENABLED
+    // beta^2
+    const float optimalWeightAccumDecay = weightedDecay * weightedDecay;
+
+    // B_t
+    float optimalWeight = success ? (weightedDecay * h.optimalWeightAccum / max(h.weight.x, 0.001)) : 1;
+    optimalWeight = max(optimalWeight, 1.0 / sampleCount);
+
+    // sum_{i=1}^{t-1}(B_{i,t-1}^2 * n_i)
+    float optimalWeightAccum = h.optimalWeightAccum * optimalWeightAccumDecay + optimalWeight * optimalWeight / sampleCount;
+
+    const float weightedHistoryWeight = weightedDecay * h.weight.y + optimalWeight * sampleCount;
+    const float weightedAlpha = optimalWeight * sampleCount / weightedHistoryWeight;
+    float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
+#else
     const float weightedHistoryWeight = weightedDecay * h.weight.y + sampleCount;
+    const float weightedAlpha = sampleCount / weightedHistoryWeight;
     const float3 outWeightedIllumination = success ? lerp(h.weightedIllumination, illumination, weightedAlpha) : illumination;
+#endif // OPTIMAL_WEIGHTING_ENABLED
+
 
     const float3 delta = clamp((illumination - h.unweightedIllumination), -gMaxGradient, gMaxGradient);
     const float3 outGradient = success ? lerp(h.gradient, delta, gGradientAlpha) : delta;
-#endif
+
+#if BEST_GAMMA_ENABLED
+    float3 sampleCountMoments = float3(
+        sampleCount,
+        1.0,
+        1.0 / sampleCount
+    );
+    const float gGradientDecay = 1.0 - gGradientAlpha;
+    const float sameplCountMomentsAlpha = 1.0 - gGradientDecay * gGradientDecay;
+    sampleCountMoments = lerp(h.sampleCountMoments, sampleCountMoments, sameplCountMomentsAlpha);
+#endif // BEST_GAMMA_ENABLED
+
+#endif // DW_ENABLED
+
 
 
     PS_OUT psOut;
@@ -331,8 +419,17 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     psOut.OutGradient.xyz = outGradient;
 #else
     psOut.OutHistoryWeight = historyWeight;
-#endif
+#endif // DW_ENABLED
+
     psOut.OutVariance = variance;
+
+#if BEST_GAMMA_ENABLED
+    psOut.OutsampleCountMoments.xyz = sampleCountMoments;
+#endif // BEST_GAMMA_ENABLED
+
+#if OPTIMAL_WEIGHTING_ENABLED
+    psOut.OutOptimalWeighAccum = optimalWeightAccum;
+#endif // OPTIMAL_WEIGHTING_ENABLED
 
     return psOut;
 }

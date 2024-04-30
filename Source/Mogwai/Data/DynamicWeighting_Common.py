@@ -54,9 +54,23 @@ def getSourceFolderNameLinear(scene_name,
                               alpha, w_alpha, g_alpha,
                               norm_mode:NormalizationMode,
                               sampling,
-                              filter_gradient,
+                              filter_gradient:bool,
+                              best_gamma:bool=False,
                               **kwargs):
-    return f'{scene_name}_iters({iters},{feedback}){"_FG" if filter_gradient else ""}_Linear({midpoint},{steepness})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
+    parts = []
+    parts.append(scene_name)
+    parts.append(f'iters({iters},{feedback})')
+    if filter_gradient:
+        parts.append('FG')
+    if best_gamma:
+        parts.append('BG')
+    parts.append(f'Linear({midpoint},{steepness})')
+    parts.append(f'Alpha({alpha})')
+    parts.append(f'WAlpha({w_alpha})')
+    parts.append(f'GAlpha({g_alpha})')
+    parts.append(f'Norm({norm_mode.name})')
+    parts.append(sampling)
+    return '_'.join(parts)
 
 def getSourceFolderNameStep(scene_name,
                             iters, feedback,
@@ -65,8 +79,22 @@ def getSourceFolderNameStep(scene_name,
                             norm_mode:NormalizationMode,
                             sampling,
                             filter_gradient,
+                            best_gamma:bool=False,
                             **kwargs):
-    return f'{scene_name}_iters({iters},{feedback}){"_FG" if filter_gradient else ""}_Step({midpoint})_Alpha({alpha})_WAlpha({w_alpha})_GAlpha({g_alpha})_Norm({norm_mode.name})_{sampling}'
+    parts = []
+    parts.append(scene_name)
+    parts.append(f'iters({iters},{feedback})')
+    if filter_gradient:
+        parts.append('FG')
+    if best_gamma:
+        parts.append('BG')
+    parts.append(f'Step({midpoint})')
+    parts.append(f'Alpha({alpha})')
+    parts.append(f'WAlpha({w_alpha})')
+    parts.append(f'GAlpha({g_alpha})')
+    parts.append(f'Norm({norm_mode.name})')
+    parts.append(sampling)
+    return '_'.join(parts)
 
 def getSourceFolderNameWeighted(scene_name,
                                 iters, feedback,
@@ -90,11 +118,12 @@ def getSourceFolderName(scene_name,
                         norm_mode:NormalizationMode=None,
                         sampling=None,
                         filter_gradient=False,
+                        best_gamma=False,
                         **kwargs):
     if selection_func == 'Linear':
-        return getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient)
+        return getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient, best_gamma)
     elif selection_func == 'Step':
-        return getSourceFolderNameStep(scene_name, iters, feedback, midpoint, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient)
+        return getSourceFolderNameStep(scene_name, iters, feedback, midpoint, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient, best_gamma)
     elif selection_func == 'Weighted':
         return getSourceFolderNameWeighted(scene_name, iters, feedback, alpha, w_alpha, sampling)
     elif selection_func == 'Unweighted':
@@ -117,7 +146,11 @@ def normalizeGraphParams(graph_params: dict) -> dict:
         'iters': 0,
         'feedback': -1,
         'dynamic_weighting_enabled': True,
-        'dynamic_weighting_params': {},
+        'dynamic_weighting_params': {
+            'FilterGradientEnabled': False,
+            'BestGammaEnabled': False,
+            'OptimalWeightingEnabled': False,
+        },
         'foveated_pass_enabled': False,
         'foveated_pass_params': {},
         'adaptive_pass_enabled': False,
@@ -131,9 +164,11 @@ def normalizeGraphParams(graph_params: dict) -> dict:
         'output_tone_mappped': False,
     }
 
+    graph_params = {**default_params, **graph_params}
+
     for key in default_params:
-        if key not in graph_params:
-            graph_params[key] = default_params[key]
+        if type(default_params[key]) is dict:
+            graph_params[key] = {**default_params[key], **graph_params[key]}
 
     # remove outdated keys
     if 'weighted_alpha' in graph_params:
@@ -183,4 +218,11 @@ def toneMapping(img: np.ndarray, gamma=1/1.22) -> np.ndarray:
     img = gammaCorrection(img, gamma)
     img = (img * 255).astype(np.uint8)
     return img
+
+def getSamplingPreset(s: str):
+    s = s.lower()
+    if s[0]=='f':
+        return 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
+    if s[0]=='a':
+        return 'Adaptive(2.0,10.0,1,1)'
 

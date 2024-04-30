@@ -177,10 +177,6 @@ DEFAULT_SELECTION_FUNC = "Linear"
 DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
 
 
-# DEFAULT_SAMPLING_METHOD = 'Foveated(SPLIT_HORIZONTALLY,SHM,8.0)'
-DEFAULT_SAMPLING_METHOD = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
-# DEFAULT_SAMPLING_METHOD = 'Adaptive(2.0,10.0,1,1)'
-
 
 if __name__ == '__main__':
 
@@ -189,15 +185,16 @@ if __name__ == '__main__':
     parser.add_argument('--scene_name', type=str, default='', help='scene name')
     parser.add_argument('-r', '--record_path', type=str, default=DEFAULT_RECORD_PATH, help='record path')
     parser.add_argument('-f', '--fps', type=int, default=DEFAULT_FPS, help='fps')
-    parser.add_argument('-s', '--selection_func', type=str, default=DEFAULT_SELECTION_FUNC, help='selection function')
+    parser.add_argument('--selection_func', type=str, default=DEFAULT_SELECTION_FUNC, help='selection function')
     parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
     parser.add_argument('-e', '--err_type', type=str, default=DEFAULT_ERR_TYPE.name, help='error type')
-    parser.add_argument('--sampling', type=str, default=DEFAULT_SAMPLING_METHOD, help='sampling method and params')
     parser.add_argument('--force', action='store_true', help='force recalculate')
     parser.add_argument('--fast', action='store_true', help='fast mode')
     parser.add_argument('--cuda', action='store_true', help='use cuda')
     parser.add_argument('--fovea', action='store_true', help='calculate error in foveated area only')
-    parser.add_argument('--filter_gradient', action='store_true', help='filter gradient')
+    parser.add_argument('--fg', action='store_true', help='filter gradient')
+    parser.add_argument('--bg', action='store_true', help='best gamma')
+    parser.add_argument('-s', '--sampling', type=str, default='f', help='sampling preset')
     args = parser.parse_args()
 
     xp = cp if args.cuda else np
@@ -211,10 +208,11 @@ if __name__ == '__main__':
 
     normalization_mode = NormalizationMode[args.norm_mode.upper()]
     err_type = ErrorType[args.err_type.upper()]
-    sampling = args.sampling
+    sampling = getSamplingPreset(args.sampling)
     force_recalculate = args.force
     selection_func = args.selection_func
-    filter_gradient = args.filter_gradient
+    filter_gradient = args.fg
+    best_gamma = args.bg
 
     alpha = 0.05
     w_alpha = 0.05
@@ -250,9 +248,10 @@ if __name__ == '__main__':
     # steepnesses = [0.1, 1.0, 10.0]
     # midpoints = [0.4, 0.45, 0.5, 0.55, 0.6]
     # steepnesses = [0.1, 0.5, 1.0, 1.5, 10.0, 20.0]
-    midpoints = [0.5]
-    steepnesses = [1.0]
-    selection_func_args = [(m,s) for m in midpoints for s in steepnesses]
+    # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
+    blending_func_params = [(0.5, 1.0)]
+    midpoints = [params[0] for params in blending_func_params]
+    steepnesses = [params[1] for params in blending_func_params]
 
     ref_sample_count = 128
     ref_filter_mode = RefFilterMode.SPATIAL_TEMPORAL
@@ -266,18 +265,19 @@ if __name__ == '__main__':
         duration = animation_lengths[scene_name]
         n_frames = int(fps * duration)
 
-        print(f'scene_name:         {scene_name}')
-        print(f'duration:           {duration} ({n_frames} frames)')
-        print(f'selection_func:     {selection_func}')
-        print(f'normalization_mode: {normalization_mode.name}')
-        print(f'err_type:           {err_type.name}')
-        print(f'iter_params:        {iter_params}')
-        print(f'midpoints:          {midpoints}')
-        print(f'steepnesses:        {steepnesses}')
-        print(f'sampling:           {sampling}')
-        print(f'filter_gradient:    {filter_gradient}')
-        print(f'ref_sample_count:   {ref_sample_count}')
-        print(f'ref_filter_mode:    {ref_filter_mode}')
+        logI(f'scene_name:         {scene_name}')
+        logI(f'duration:           {duration} ({n_frames} frames)')
+        logI(f'selection_func:     {selection_func}')
+        logI(f'normalization_mode: {normalization_mode.name}')
+        logI(f'err_type:           {err_type.name}')
+        logI(f'iter_params:        {iter_params}')
+        logI(f'midpoints:          {midpoints}')
+        logI(f'steepnesses:        {steepnesses}')
+        logI(f'sampling:           {sampling}')
+        logI(f'filter_gradient:    {filter_gradient}')
+        logI(f'best_gamma:         {best_gamma}')
+        logI(f'ref_sample_count:   {ref_sample_count}')
+        logI(f'ref_filter_mode:    {ref_filter_mode}')
 
         iter_step = 1
         if fast_mode:
@@ -310,21 +310,23 @@ if __name__ == '__main__':
 
             # setup source folders
             source_folders: list[Path] = []
-            for midpoint, steepness in selection_func_args:
+            for midpoint, steepness in blending_func_params:
                 if selection_func == 'Linear':
                     folder_name = getSourceFolderNameLinear(scene_name,
                                                             iters, feedback, midpoint, steepness,
                                                             alpha, w_alpha, g_alpha,
                                                             normalization_mode,
                                                             sampling,
-                                                            filter_gradient)
+                                                            filter_gradient,
+                                                            best_gamma)
                 elif selection_func == 'Step':
                     folder_name = getSourceFolderNameStep(scene_name,
                                                         iters, feedback, midpoint,
                                                         alpha, w_alpha, g_alpha,
                                                         normalization_mode,
                                                         sampling,
-                                                        filter_gradient)
+                                                        filter_gradient,
+                                                        best_gamma)
 
                 source_folders.append(record_path/folder_name)
 

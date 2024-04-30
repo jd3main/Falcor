@@ -367,6 +367,12 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
     if graph_params['dynamic_weighting_enabled']:
         dw_params = graph_params['dynamic_weighting_params']
 
+        if 'FilterGradientEnabled' in dw_params and dw_params['FilterGradientEnabled']:
+            folder_name_parts.append('FG')
+
+        if 'BestGammaEnabled' in dw_params and dw_params['BestGammaEnabled']:
+            folder_name_parts.append('BG')
+
         selection_mode = dw_params['SelectionMode']
         if selection_mode == SelectionMode.LINEAR:
             folder_name_parts.append('Linear({},{})'.format(
@@ -494,7 +500,7 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
 
 scene_paths = [
     Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene',
@@ -549,13 +555,16 @@ iter_params = [
 # midpoints = [0, 0.05, 0.5, 1.0]
 # steepnesses = [0.1, 1, 10]
 # blending_func_params = [(m,s) for m in midpoints for s in steepnesses]
-blending_func_params = [(0.5, 1.0)]
-
+# blending_func_params = [(0.5, 1.0)]
+blending_func_params = [(0.25, 2.0), (0.5, 1.0), (1.0, 0.5), (1.5, 0.33), (2.0, 0.25)]
 filter_gradient = False
+normalization_mode = NormalizationMode.STD
+best_gamma_enabled = True
+optimal_weighting_enabled = False
 
-force_record_selections = True
-force_record_unweighted = True
-force_record_weighted = True
+force_record_selections = False
+force_record_unweighted = False
+force_record_weighted = False
 force_record_ground_truth = False
 
 profiler_enabled = False
@@ -589,8 +598,10 @@ for scene_idx, scene_path in enumerate(scene_paths):
                         'GradientMidpoint': float(midpoint),
                         'GammaSteepness': float(steepness),
                         'SelectionMode': SelectionMode.LINEAR,
-                        'NormalizationMode': NormalizationMode.STD,
+                        'NormalizationMode': normalization_mode,
                         'FilterGradientEnabled': filter_gradient,
+                        'BestGammaEnabled': best_gamma_enabled,
+                        'OptimalWeightingEnabled': optimal_weighting_enabled,
                         **common_dynamic_weighting_params
                     },
                     'adaptive_pass_enabled': True,
@@ -637,6 +648,7 @@ for scene_idx, scene_path in enumerate(scene_paths):
                 'dynamic_weighting_enabled': True,
                 'dynamic_weighting_params': {
                     'SelectionMode': SelectionMode.WEIGHTED,
+                    'OptimalWeightingEnabled': optimal_weighting_enabled,
                     **common_dynamic_weighting_params
                 },
                 'adaptive_pass_enabled': True,
