@@ -7,7 +7,8 @@ $ScriptPath = "..\..\..\Source\Mogwai\Data\DynamicWeightingSVGF_exp_fovea.py"
 
 $MogwaiPath = $BinPath+"Mogwai.exe"
 
-$Command = $MogwaiPath+" --script "+$scriptPath+$scriptName+" --precise --deferred"
+
+$Command = $MogwaiPath+" --script "+$scriptPath+$scriptName+" --precise --deferred "+$args
 Write-Output $Command
 Invoke-Expression -Command $Command
 

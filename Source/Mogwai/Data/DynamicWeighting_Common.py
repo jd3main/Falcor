@@ -56,6 +56,7 @@ def getSourceFolderNameLinear(scene_name,
                               sampling,
                               filter_gradient:bool,
                               best_gamma:bool=False,
+                              debug=False,
                               **kwargs):
     parts = []
     parts.append(scene_name)
@@ -70,6 +71,8 @@ def getSourceFolderNameLinear(scene_name,
     parts.append(f'GAlpha({g_alpha})')
     parts.append(f'Norm({norm_mode.name})')
     parts.append(sampling)
+    if debug:
+        parts.append('d')
     return '_'.join(parts)
 
 def getSourceFolderNameStep(scene_name,
@@ -80,6 +83,7 @@ def getSourceFolderNameStep(scene_name,
                             sampling,
                             filter_gradient,
                             best_gamma:bool=False,
+                            debug=False,
                             **kwargs):
     parts = []
     parts.append(scene_name)
@@ -94,40 +98,60 @@ def getSourceFolderNameStep(scene_name,
     parts.append(f'GAlpha({g_alpha})')
     parts.append(f'Norm({norm_mode.name})')
     parts.append(sampling)
+    parts.append('d')
     return '_'.join(parts)
 
 def getSourceFolderNameWeighted(scene_name,
                                 iters, feedback,
                                 alpha, w_alpha,
                                 sampling,
+                                debug=False,
                                 **kwargs):
+    parts = []
+    parts.append(scene_name)
+    parts.append(f'iters({iters},{feedback})')
+    parts.append(f'Weighted')
+    parts.append(f'Alpha({alpha})')
+    parts.append(f'WAlpha({w_alpha})')
+    parts.append(sampling)
+    if debug:
+        parts.append('d')
     return f'{scene_name}_iters({iters},{feedback})_Weighted_Alpha({alpha})_WAlpha({w_alpha})_{sampling}'
 
 def getSourceFolderNameUnweighted(scene_name,
                                   iters, feedback,
                                   alpha,
                                   sampling,
+                                  debug=False,
                                   **kwargs):
-    return f'{scene_name}_iters({iters},{feedback})_Alpha({alpha})_{sampling}'
+    parts = []
+    parts.append(scene_name)
+    parts.append(f'iters({iters},{feedback})')
+    parts.append(f'Alpha({alpha})')
+    parts.append(sampling)
+    if debug:
+        parts.append('d')
+    return '_'.join(parts)
 
 
 def getSourceFolderName(scene_name,
                         iters, feedback,
-                        selection_func=None, midpoint=None, steepness=None,
+                        selection_func:SelectionMode=None, midpoint=None, steepness=None,
                         alpha=None, w_alpha=None, g_alpha=None,
                         norm_mode:NormalizationMode=None,
                         sampling=None,
                         filter_gradient=False,
                         best_gamma=False,
+                        debug=False,
                         **kwargs):
-    if selection_func == 'Linear':
-        return getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient, best_gamma)
-    elif selection_func == 'Step':
-        return getSourceFolderNameStep(scene_name, iters, feedback, midpoint, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient, best_gamma)
-    elif selection_func == 'Weighted':
-        return getSourceFolderNameWeighted(scene_name, iters, feedback, alpha, w_alpha, sampling)
-    elif selection_func == 'Unweighted':
-        return getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling)
+    if selection_func == SelectionMode.LINEAR:
+        return getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient, best_gamma, debug)
+    elif selection_func == SelectionMode.STEP:
+        return getSourceFolderNameStep(scene_name, iters, feedback, midpoint, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient, best_gamma, debug)
+    elif selection_func == SelectionMode.WEIGHTED:
+        return getSourceFolderNameWeighted(scene_name, iters, feedback, alpha, w_alpha, sampling, debug)
+    elif selection_func == SelectionMode.UNWEIGHTED:
+        return getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling, debug)
     else:
         raise ValueError(f'Invalid selection function: {selection_func}')
 
@@ -201,28 +225,33 @@ def normalizeGraphParams(graph_params: dict) -> dict:
 
 
 def ACESFilm(x:np.ndarray):
-    x = x * 0.6
+    x = x.copy()
+    x *= 0.6
     a = 2.51
     b = 0.03
     c = 2.43
     d = 0.59
     e = 0.14
-    return np.clip((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0)
+    return (x*(a*x+b))/(x*(c*x+d)+e)
 
 
 def gammaCorrection(img: np.ndarray, gamma: float) -> np.ndarray:
-    return np.power(img, gamma)
+    return np.power(np.maximum(img,0), gamma)
 
-def toneMapping(img: np.ndarray, gamma=1/1.22) -> np.ndarray:
-    img = ACESFilm(img)
+def toneMapping(img: np.ndarray, gamma=1/2.2) -> np.ndarray:
     img = gammaCorrection(img, gamma)
-    img = (img * 255).astype(np.uint8)
+    img = ACESFilm(img)
+    img = np.clip(img, 0, 1)
+    img = (img*255).astype(np.uint8)
     return img
 
 def getSamplingPreset(s: str):
     s = s.lower()
-    if s[0]=='f':
+    if s.startswith('f1'):
         return 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
-    if s[0]=='a':
+    elif s.startswith('f2'):
+        return 'Foveated(CIRCLE,MOVE_AND_STAY,8.0)_Circle(200)_MoveAndStay(1000,0.5)'
+    elif s.startswith('a'):
         return 'Adaptive(2.0,10.0,1,1)'
-
+    else:
+        raise ValueError(f'Invalid sampling preset: {s}')

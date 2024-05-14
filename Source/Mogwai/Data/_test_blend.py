@@ -16,7 +16,7 @@ def W(n, beta=BETA):
 
 def estimateVar(estimator, ns, sigma=SIGMA):
     avgs = []
-    for _ in range(1000):
+    for _ in range(100):
         x = []
         for n in ns:
             x.append(np.mean(np.random.normal(0, sigma, n)))
@@ -95,11 +95,11 @@ def getBestGamma(n):
     # best_r = min(max(best_r, 0), 1)
     return best_r
 
-T = 2
+T = 100
 n = np.full(T, 1)
 n[-1] = 8
-# for i in range(10,20):
-#     n[i] = 8
+# for i in range(10):
+#     n[-i] = 8
 
 print(f'n: {n}')
 print(f'best: {analyticVars(n, getBestGamma(n))}')
@@ -112,8 +112,8 @@ for r in rs:
     estimator = lambda x, r=r: estimateBlend(x, n, r)
     estimators.append(estimator)
 
-vars = [estimateVar(estimator, n) for estimator in estimators]
-plt.plot(rs, vars)
+# vars = [estimateVar(estimator, n) for estimator in estimators]
+# plt.plot(rs, vars)
 
 
 # Draw analytic vars
@@ -125,22 +125,30 @@ nw = sum(nBs)
 
 analytic_vars = [analyticVars(n,r) for r in rs]
 print(analytic_vars)
-plt.plot(rs, analytic_vars, color='tab:orange')
+plt.plot(rs, analytic_vars, color='tab:blue')
 
 best_r = getBestGamma(n)
 blend_weights = [lerp(nBs[i]/nw, Bs[i]/w, best_r) for i in range(T)]
 print(f'blend_weights = {blend_weights}')
 
 print(f'best_r = {best_r}')
-plt.stem(best_r, analyticVars(n,best_r), markerfmt='ro', linefmt='r-')
+markerline, stemlines, baseline = plt.stem(best_r, analyticVars(n,best_r))
+plt.setp(markerline, color='tab:purple')
+plt.setp(stemlines, color='tab:purple')
 
-plt.stem(0, analyticVars(n,0), markerfmt='go', linefmt='g-')
-plt.stem(1, analyticVars(n,1), markerfmt='bo', linefmt='b-')
-# plt.ylim(0, max(vars)*1.1)
+markerline, stemlines, baseline = plt.stem(0, analyticVars(n,0))
+plt.setp(markerline, color='red')
+plt.setp(stemlines, color='red')
+markerline, stemlines, baseline = plt.stem(1, analyticVars(n,1))
+plt.setp(markerline, color='orange')
+plt.setp(stemlines, color='orange')
 
 # for r in rs:
 #     weights = [lerp(n[i]*B(i,T), B(i,T), r) for i in range(T)]
 #     plt.plot(weights, label=f'r={r}')
 # plt.legend()
+
+plt.xlabel('p')
+plt.ylabel('Variance')
 
 plt.show()

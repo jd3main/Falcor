@@ -36,12 +36,21 @@ if __name__ == '__main__':
     ref_filter_mode = RefFilterMode.SPATIAL_TEMPORAL
     DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
 
-    DEFAULT_SCENE_NAME = 'VeachAjar'
+    # DEFAULT_SCENE_NAME = 'VeachAjar'
     # DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
+    # DEFAULT_SCENE_NAME = 'VeachAjarAnimated2'
     # DEFAULT_SCENE_NAME = 'BistroExterior'
     # DEFAULT_SCENE_NAME = 'BistroInterior'
     # DEFAULT_SCENE_NAME = 'BistroInterior_Wine'
     # DEFAULT_SCENE_NAME = 'SunTemple'
+    # DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
+    DEFAULT_SCENE_NAME = 'EmeraldSquare_Dusk'
+    # DEFAULT_SCENE_NAME = 'MEASURE_ONE'
+    # DEFAULT_SCENE_NAME = 'MEASURE_SEVEN'
+    # DEFAULT_SCENE_NAME = 'ZeroDay_1'
+    # DEFAULT_SCENE_NAME = 'ZeroDay_7'
+    # DEFAULT_SCENE_NAME = 'ZeroDay_7c'
+
 
     ### Argument parsing
     parser = argparse.ArgumentParser(description='Plot errors')
@@ -49,7 +58,9 @@ if __name__ == '__main__':
     parser.add_argument('--scene_name', type=str, default=DEFAULT_SCENE_NAME, help='scene name')
     parser.add_argument('--fast', action='store_true', help='fast mode')
     parser.add_argument('--fovea', action='store_true', help='fovea')
-    parser.add_argument('--filter_gradient', action='store_true', help='filter gradient')
+    parser.add_argument('-s', '--sampling', type=str, default='f1', help='sampling preset')
+    parser.add_argument('--fg', action='store_true', help='filter gradient')
+    parser.add_argument('--bg', action='store_true', help='best gamma')
     args = parser.parse_args()
 
 
@@ -58,12 +69,12 @@ if __name__ == '__main__':
     scene_name = args.scene_name
     fast_mode = args.fast
     fovea = args.fovea
-    filter_gradient = args.filter_gradient
+    filter_gradient = args.fg
+    best_gamma = args.bg
 
     iters = 2
     feedback = 0
-    sampling = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
-    # sampling = 'Adaptive(2.0,10.0,1,1)'
+    sampling = getSamplingPreset(args.sampling)
     alpha = 0.05
     w_alpha = 0.05
     g_alpha = 0.2
@@ -88,7 +99,7 @@ if __name__ == '__main__':
         ),
         Record(
             f'Two-history',
-            getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient)
+            getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, norm_mode, sampling, filter_gradient, best_gamma)
         ),
     ]
 

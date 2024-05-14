@@ -40,10 +40,12 @@ def loadImageSequence(path, filename_pattern:str, max_frame_id=None) -> list:
         frame_id += 1
     return dataset
 
-def imageSequenceLoader(path, filename_pattern:str, max_frame_id=None, n_retry=5):
+def imageSequenceLoader(path, filename_pattern:str, start_frame_id=1, end_frame_id=-1, n_retry=5):
     path = Path(path)
-    frame_id = 1
-    while (max_frame_id is None) or (frame_id <= max_frame_id):
+    if not path.exists():
+        raise FileNotFoundError(path)
+    frame_id = start_frame_id
+    while (end_frame_id < 0) or (frame_id <= end_frame_id):
         for i in range(n_retry):
             try:
                 img = loadImage(path, filename_pattern, frame_id)
@@ -96,6 +98,11 @@ RE_WHITESPACES = r"\s*"
 
 
 
+def getLissajousPoint(t, freq, radius, phase):
+    x = radius[0] * np.sin(2 * np.pi * freq[0] * t + phase[0])
+    y = radius[1] * np.sin(2 * np.pi * freq[1] * t + phase[1])
+    return x, y
+
 def drawFoveaLissajous(img, fovea_radius, t, freq, radius, phase, color=(0, 0, 255), thickness=1, **kargs) -> np.ndarray:
     """Draws a Lissajous curve on the image.
 
@@ -114,8 +121,11 @@ def drawFoveaLissajous(img, fovea_radius, t, freq, radius, phase, color=(0, 0, 2
     """
     h, w = img.shape[:2]
     center = (w // 2, h // 2)
-    x = center[0] + radius[0] * np.sin(2 * np.pi * freq[0] * t + phase[0])
-    y = center[1] + radius[1] * np.sin(2 * np.pi * freq[1] * t + phase[1])
+    # x = center[0] + radius[0] * np.sin(2 * np.pi * freq[0] * t + phase[0])
+    # y = center[1] + radius[1] * np.sin(2 * np.pi * freq[1] * t + phase[1])
+    x, y = getLissajousPoint(t, freq, radius, phase)
+    x = center[0] + x
+    y = center[1] + y
     img = cv.circle(img, (int(x), int(y)), int(fovea_radius), color, thickness, **kargs)
 
     return img

@@ -26,7 +26,7 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--norm_mode', type=str, default=DEFAULT_NORMALZATION_MODE.name, help='normalization mode')
     parser.add_argument('--fg', action='store_true', help='filter gradient')
     parser.add_argument('--bg', action='store_true', help='best gamma')
-    parser.add_argument('-s', '--sampling', type=str, default='f', help='sampling preset')
+    parser.add_argument('-s', '--sampling', type=str, default='f1', help='sampling preset')
     args = parser.parse_args()
 
 
@@ -49,6 +49,9 @@ if __name__ == '__main__':
         'EmeraldSquare_Dusk',
         'MEASURE_ONE',
         'MEASURE_SEVEN',
+        'ZeroDay_1',
+        'ZeroDay_7',
+        'ZeroDay_7c',
     ]
 
     scene_alter_names = {
@@ -88,7 +91,7 @@ if __name__ == '__main__':
                 "scene_name": scene_name,
                 "iters": iters,
                 "feedback": feedback,
-                "selection_func": "Linear",
+                "selection_func": SelectionMode.LINEAR,
                 "midpoint": 0.5,
                 "steepness": 1.0,
                 "alpha": 0.05,

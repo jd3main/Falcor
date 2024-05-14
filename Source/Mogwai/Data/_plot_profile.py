@@ -8,6 +8,7 @@ import re
 from _utils import *
 from DynamicWeighting_Common import *
 from _log_utils import *
+from _animation_lengths import *
 
 
 def plot_profile(ax:plt.Axes, data:dict, n_frames:int, title, xlabel, ylabel, colors=None):
@@ -21,19 +22,6 @@ def plot_profile(ax:plt.Axes, data:dict, n_frames:int, title, xlabel, ylabel, co
     ax.legend(loc='upper right')
 
 
-DEFAULT_SCENE_NAME = 'VeachAjarAnimated'
-# DEFAULT_SCENE_NAME = 'VeachAjar'
-# DEFAULT_SCENE_NAME = 'BistroExterior'
-# DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
-# DEFAULT_SCENE_NAME = 'SunTemple'
-
-SCENE_DURATIONS = {
-    'VeachAjarAnimated': 20,
-    'VeachAjar': 20,
-    'BistroExterior': 100,
-    'EmeraldSquare_Day': 10,
-    'SunTemple': 10,
-}
 
 DEFAULT_RECORD_PATH = Path(__file__).parents[4]/'Record'
 DEFAULT_FPS = 30
@@ -55,12 +43,23 @@ DEFAULT_SAMPLING_METHOD = 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous(
 DEFALT_MIDPOINT = 0.5
 DEFAULT_STEEPNESS = 1.0
 
+scene_names = [
+    # 'VeachAjar',
+    'VeachAjarAnimated',
+    # 'BistroExterior',
+    # 'BistroInterior',
+    # 'BistroInterior_Wine',
+    # 'SunTemple',
+    # 'EmeraldSquare_Day',
+    # 'EmeraldSquare_Dusk',
+    # 'MEASURE_ONE',
+    # 'MEASURE_SEVEN',
+]
+
 ### Argument parsing
 parser = argparse.ArgumentParser(description='Plot profile')
-parser.add_argument('--scene_name', type=str, default=DEFAULT_SCENE_NAME, help='scene name')
 parser.add_argument('-r', '--record_path', type=str, default=DEFAULT_RECORD_PATH, help='record path')
 parser.add_argument('-f', '--fps', type=int, default=DEFAULT_FPS, help='fps')
-parser.add_argument('-d', '--duration', type=int, default=DEFAULT_RECORD_SECONDS, help='duration in seconds')
 parser.add_argument('-s', '--selection_func', type=str, default=DEFAULT_SELECTION_FUNC, help='selection function')
 parser.add_argument('--midpoint', type=float, default=DEFALT_MIDPOINT, help='midpoint of selection function')
 parser.add_argument('--steepness', type=float, default=DEFAULT_STEEPNESS, help='steepness of selection function')
@@ -71,14 +70,9 @@ parser.add_argument('--bg', action='store_true', help='best gamma')
 args = parser.parse_args()
 
 ### Load parameters
-scene_name = args.scene_name
 record_path = Path(args.record_path)
 
 fps = args.fps
-duration = args.duration
-if duration < 0:
-    duration = SCENE_DURATIONS[scene_name]
-n_frames = int(fps * duration)
 
 selection_func = args.selection_func
 midpoint = args.midpoint
@@ -95,112 +89,119 @@ alpha = 0.05
 w_alpha = 0.05
 g_alpha = 0.2
 
-print(f'scene_name:         {scene_name}')
-print(f'n_frames:           {n_frames}')
-print(f'selection_func:     {selection_func}')
-print(f'normalization_mode: {normalization_mode.name}')
-print(f'iter_params:        {iters}, {feedback}')
-print(f'midpoint:           {midpoint}')
-print(f'steepness:          {steepness}')
-print(f'sampling:           {sampling}')
-print(f'filter_gradient:    {filter_gradient}')
-print(f'best_gamma:         {best_gamma}')
+
+for scene_name in scene_names:
+    duration = animation_lengths[scene_name]
+    n_frames = int(fps * duration)
+
+    print(f'scene_name:         {scene_name}')
+    print(f'n_frames:           {n_frames}')
+    print(f'selection_func:     {selection_func}')
+    print(f'normalization_mode: {normalization_mode.name}')
+    print(f'iter_params:        {iters}, {feedback}')
+    print(f'midpoint:           {midpoint}')
+    print(f'steepness:          {steepness}')
+    print(f'sampling:           {sampling}')
+    print(f'filter_gradient:    {filter_gradient}')
+    print(f'best_gamma:         {best_gamma}')
 
 
 
-folder_names = [
-    getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling,
-                              filter_gradient, best_gamma),
-    getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling),
-]
-
-source_display_names = [
-    f'{scene_name} - {iters} iters - Two-history',
-    f'{scene_name} - {iters} iters - Unweighted',
-    # f'{scene_name} - {iters} iters - Weighted',
-]
-
-fig, axs = plt.subplots(len(folder_names), 1, sharex=True, sharey=True)
-
-execution_times = []
-
-for i, folder_name in enumerate(folder_names):
-    full_folder_path = record_path/folder_name
-
-    ### Load data
-    print(f'Loading from: {full_folder_path}')
-    if not full_folder_path.exists():
-        logE(f'Folder not found: \"{full_folder_path}\"')
-        exit()
-    if not (full_folder_path/'profile.json').exists():
-        logE(f'profile.json not found in \"{full_folder_path}\"')
-        exit()
-    profile = json.load(open(full_folder_path/'profile.json'))
-
-    ### Plot
-    # pprint(profile)
-    n_frames = profile['frameCount']
-    events = profile['events']
-    print(f"{n_frames} frames")
-
-    # print("Keys:")
-    # for key in profile['events']:
-    #     print(key)
-
-    patterns = [
-        r'^.*/SVGFPass/[^/]*/gpuTime$',
-        r'^.*/SVGFPass/computeAtrousDecomposition/dynamicWeighting/gpuTime$'
+    folder_names = [
+        getSourceFolderNameLinear(scene_name, iters, feedback, midpoint, steepness, alpha, w_alpha, g_alpha, normalization_mode, sampling,
+                                filter_gradient, best_gamma),
+        getSourceFolderNameUnweighted(scene_name, iters, feedback, alpha, sampling),
     ]
 
-    RENDER_GRAPH_PREFIX = '/onFrameRender/RenderGraphExe::execute()'
+    print(f'folder_names: {folder_names}')
 
-    # print("Matching keys:")
+    source_display_names = [
+        f'{scene_name} - {iters} iters - Two-history',
+        f'{scene_name} - {iters} iters - Unweighted',
+        # f'{scene_name} - {iters} iters - Weighted',
+    ]
 
-    data = dict()
-    for key in events:
-        if any(re.match(pattern, key) for pattern in patterns):
-            name = key.replace(RENDER_GRAPH_PREFIX,'').replace('/gpuTime','')
-            data[name] = np.array(events[key]['records'])
-        # else:
-        #     if 'Others' not in data:
-        #         data['Others'] = np.array(events[key]['records'])
-        #     data['Others'] += np.array(events[key]['records'])
+    fig, axs = plt.subplots(len(folder_names), 1, sharex=True, sharey=True)
 
-    if '/SVGFPass/computeAtrousDecomposition/dynamicWeighting' in data:
-        data['/SVGFPass/computeAtrousDecomposition'] -= data['/SVGFPass/computeAtrousDecomposition/dynamicWeighting']
+    execution_times = []
 
-    total_time_data = events[f'{RENDER_GRAPH_PREFIX}/SVGFPass/gpuTime']['records']
-    data['Others'] = total_time_data - np.sum(list(data.values()), axis=0)
+    for i, folder_name in enumerate(folder_names):
+        full_folder_path = record_path/folder_name
 
-    color_mapping = {
-        '/SVGFPass/computeLinearZAndNormal': 'tab:blue',
-        '/SVGFPass/computeTemporalFilter': 'tab:orange',
-        '/SVGFPass/computeFilterGradient': 'tab:green',
-        '/SVGFPass/computeFilteredMoments': 'tab:red',
-        '/SVGFPass/computeAtrousDecomposition': 'tab:purple',
-        '/SVGFPass/computeAtrousDecomposition/dynamicWeighting': 'tab:brown',
-        '/SVGFPass/computeFinalModulate': 'tab:pink',
-        'Others': 'tab:gray'
-    }
+        ### Load data
+        print(f'Loading from: {full_folder_path}')
+        if not full_folder_path.exists():
+            logE(f'Folder not found: \"{full_folder_path}\"')
+            exit()
+        if not (full_folder_path/'profile.json').exists():
+            logE(f'profile.json not found in \"{full_folder_path}\"')
+            exit()
+        profile = json.load(open(full_folder_path/'profile.json'))
 
-    colors = []
-    for key in data:
-        colors.append(color_mapping[key])
+        ### Plot
+        # pprint(profile)
+        n_frames = profile['frameCount']
+        events = profile['events']
+        print(f"{n_frames} frames")
 
-    plot_profile(axs[i], data, n_frames, source_display_names[i], 'Frame', 'Time (Us)', colors)
+        # print("Keys:")
+        # for key in profile['events']:
+        #     print(key)
 
-    ### print data
-    logI(f'{source_display_names[i]}:')
-    logI(f'Total time: {np.mean(total_time_data[1:]):.3f} ms')
-    for key, value in data.items():
-        logI(f'{key}:\t{np.mean(value[1:]):.3f} ms')
+        patterns = [
+            r'^.*/SVGFPass/[^/]*/gpuTime$',
+            r'^.*/SVGFPass/computeAtrousDecomposition/dynamicWeighting/gpuTime$'
+        ]
 
-    execution_times.append(np.mean(total_time_data[1:]))
+        RENDER_GRAPH_PREFIX = '/onFrameRender/RenderGraphExe::execute()'
 
-print()
-for i, folder_name in enumerate(folder_names):
-    logI(f'{source_display_names[i]}:\t{execution_times[i]:.3f} ms')
+        # print("Matching keys:")
+
+        data = dict()
+        for key in events:
+            if any(re.match(pattern, key) for pattern in patterns):
+                name = key.replace(RENDER_GRAPH_PREFIX,'').replace('/gpuTime','')
+                data[name] = np.array(events[key]['records'])
+            # else:
+            #     if 'Others' not in data:
+            #         data['Others'] = np.array(events[key]['records'])
+            #     data['Others'] += np.array(events[key]['records'])
+
+        if '/SVGFPass/computeAtrousDecomposition/dynamicWeighting' in data:
+            data['/SVGFPass/computeAtrousDecomposition'] -= data['/SVGFPass/computeAtrousDecomposition/dynamicWeighting']
+
+        total_time_data = events[f'{RENDER_GRAPH_PREFIX}/SVGFPass/gpuTime']['records']
+        data['Others'] = total_time_data - np.sum(list(data.values()), axis=0)
+
+        color_mapping = {
+            '/SVGFPass/computeLinearZAndNormal': 'tab:blue',
+            '/SVGFPass/computeTemporalFilter': 'tab:orange',
+            '/SVGFPass/computeFilterGradient': 'tab:green',
+            '/SVGFPass/computeFilteredMoments': 'tab:red',
+            '/SVGFPass/computeAtrousDecomposition': 'tab:purple',
+            '/SVGFPass/computeAtrousDecomposition/dynamicWeighting': 'tab:brown',
+            '/SVGFPass/computeFinalModulate': 'tab:pink',
+            'Others': 'tab:gray'
+        }
+
+        colors = []
+        for key in data:
+            colors.append(color_mapping[key])
+
+        plot_profile(axs[i], data, n_frames, source_display_names[i], 'Frame', 'Time (Us)', colors)
+
+        ### print data
+        logI(f'{source_display_names[i]}:')
+        logI(f'Total time: {np.mean(total_time_data[1:]):.3f} ms')
+        for key, value in data.items():
+            logI(f'{key}:\t{np.mean(value[1:]):.3f} ms')
+
+        execution_times.append(np.mean(total_time_data[1:]))
+
+    print()
+    for i, folder_name in enumerate(folder_names):
+        logI(f'{source_display_names[i]}:\t{execution_times[i]:.3f} ms')
 
 
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    plt.show()

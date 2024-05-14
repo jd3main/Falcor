@@ -194,7 +194,7 @@ if __name__ == '__main__':
     parser.add_argument('--fovea', action='store_true', help='calculate error in foveated area only')
     parser.add_argument('--fg', action='store_true', help='filter gradient')
     parser.add_argument('--bg', action='store_true', help='best gamma')
-    parser.add_argument('-s', '--sampling', type=str, default='f', help='sampling preset')
+    parser.add_argument('-s', '--sampling', type=str, default='f1', help='sampling preset')
     args = parser.parse_args()
 
     xp = cp if args.cuda else np
@@ -219,16 +219,20 @@ if __name__ == '__main__':
     g_alpha = 0.2
 
     scene_names = [
-        'VeachAjar',
-        'VeachAjarAnimated',
-        'BistroExterior',
-        'BistroInterior',
-        'BistroInterior_Wine',
-        'SunTemple',
+        # 'VeachAjar',
+        # 'VeachAjarAnimated',
+        # 'VeachAjarAnimated2',
+        # 'BistroExterior',
+        # 'BistroInterior',
+        # 'BistroInterior_Wine',
+        # 'SunTemple',
         'EmeraldSquare_Day',
         'EmeraldSquare_Dusk',
         'MEASURE_ONE',
         'MEASURE_SEVEN',
+        # 'ZeroDay_1',
+        # 'ZeroDay_7',
+        # 'ZeroDay_7c',
     ]
 
     if args.scene_name != '':
@@ -419,7 +423,7 @@ if __name__ == '__main__':
                         _mask = drawFoveaLissajous(np.zeros((h,w)), 200, t, (0.4, 0.5), (640, 360), (np.pi/2, 0), 1, cv.FILLED)
                         mask_pix_count = xp.sum(_mask)
                         # cv.imshow('mask', _mask)
-                        _src = drawFoveaLissajous(toneMapping(_source_image), 200, t, (0.4, 0.5), (640, 360), (np.pi/2, 0), (0,0,255))
+                        # _src = drawFoveaLissajous(toneMapping(_source_image), 200, t, (0.4, 0.5), (640, 360), (np.pi/2, 0), (0,0,255))
                         # cv.imshow('source', _src)
 
                     if args.cuda:

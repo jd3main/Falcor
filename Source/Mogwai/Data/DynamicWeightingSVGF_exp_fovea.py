@@ -116,6 +116,7 @@ def render_graph_g(iters, feedback, alpha=0.05,
                    debug_tag_enabled=False,
                    debug_output_enabled=False,
                    output_tone_mappped=False,
+                   no_record=False,
                    **kwargs):
 
     if sample_count > 8:
@@ -231,7 +232,8 @@ def render_graph_g(iters, feedback, alpha=0.05,
 
 def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
                  output_path=DEFAULT_OUTPUT_PATH, base_filename=DEFAULT_BASE_FILENAME,
-                 enable_profiler=True,
+                 enable_profiler=False,
+                 no_record=False,
                  skip_capture_for_frames = 0):
     '''
     Record images from start_time to end_time at fps.
@@ -259,7 +261,8 @@ def recordImages(start_time, end_time, fps:int=60, frames=AllFrames(),
         renderFrame()
         if frame in frames and frame >= skip_capture_for_frames:
             m.frameCapture.baseFilename = base_filename
-            m.frameCapture.capture()
+            if not no_record:
+                m.frameCapture.capture()
         t_range.set_postfix_str(f"frame={m.clock.frame} time={m.clock.time:.3f}")
     print()
     if enable_profiler:
@@ -329,7 +332,7 @@ def countImages(path, filename_pattern:str) -> int:
 scene_name: str = ''
 
 
-def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
+def getOutputFolderName(scene_name: str, graph_params: dict, debug=False) -> Path:
     '''
     Get the output path from graph_params and scene_name.
     '''
@@ -400,18 +403,20 @@ def getOutputFolderName(scene_name: str, graph_params: dict) -> Path:
                 fovea_params['foveaMoveRadius'].x,
                 fovea_params['foveaMoveRadius'].y))
         elif fovea_params['foveaMovePattern'] == FoveaMovePattern.MOVE_AND_STAY:
-            folder_name_parts.append('MoveAndStay([{:.6g},{:.6g}],{:.6g})'.format(
-                fovea_params['foveaMoveSpeed'].x,
-                fovea_params['foveaMoveSpeed'].y,
+            folder_name_parts.append('MoveAndStay({:.6g},{:.6g})'.format(
+                fovea_params['foveaMoveSpeed'],
                 fovea_params['foveaMoveStayDuration']))
     else:
         folder_name_parts.append(f'{graph_params["sample_count"]}')
+
+    if debug:
+        folder_name_parts.append('d')
 
     folder_name = '_'.join(folder_name_parts)
     return folder_name
 
 
-def run(graph_params:dict={}, record_params_override:dict={}, force_record=False):
+def run(graph_params:dict={}, record_params_override:dict={}, force_record=False, debug=False):
 
     graph_params = normalizeGraphParams(graph_params)
 
@@ -425,9 +430,9 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
     }
 
     output_path_base = Path(__file__).parents[4]/'Record'
-    folder_name = getOutputFolderName(scene_name, graph_params)
+    folder_name = getOutputFolderName(scene_name, graph_params, debug=debug)
     output_path = output_path_base / folder_name
-    if output_path.exists():
+    if output_path.exists() and not record_params['no_record']:
         if force_record:
             logW(f" Found existing record at \"{output_path}\".")
             print("Force continue recording.")
@@ -486,22 +491,28 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
         raise e
 
     recordImages(**record_params, output_path=output_path, base_filename=base_filename)
-    storeMetadata(output_path, normalizeGraphParams({**graph_params}))
+
+    if not record_params['no_record']:
+        storeMetadata(output_path, normalizeGraphParams({**graph_params}))
 
     m.removeGraph(g)
     gc.collect()
 
 scene_paths = [
-    Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
     Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated2.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Dusk.pyscene',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.fbx',
-    Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_SEVEN'/'MEASURE_SEVEN.fbx',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.fbx',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_SEVEN'/'MEASURE_SEVEN.fbx',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_1.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_7.pyscene',
+    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_7c.pyscene',
 ]
 
 
@@ -511,10 +522,13 @@ scene_paths = [
 argv = ' '.join([
     '-n STD',
     '--bg',
-    # '--fg',
-    # '--profile',
+    '--fg',
+    '--profile',
+    '--no_record',
+    '-s f1',
     # '--output_sample_count',
     # '--output_tone_mappped',
+    # '--debug',
 ]).split(' ')
 
 parser = argparse.ArgumentParser()
@@ -522,8 +536,11 @@ parser.add_argument('-n', '--norm_mode', type=str, default=NormalizationMode.STD
 parser.add_argument('--fg', action='store_true', help='filter gradient')
 parser.add_argument('--bg', action='store_true', help='best gamma')
 parser.add_argument('--profile', action='store_true', help='enable profiler')
+parser.add_argument('--no_record', action='store_true', help='do not record')
 parser.add_argument('--output_sample_count', action='store_true', help='output sample count')
 parser.add_argument('--output_tone_mappped', action='store_true', help='output tone mapped')
+parser.add_argument('-s', '--sampling', type=str, default='f1', help='sampling preset')
+parser.add_argument('-d', '--debug', action='store_true', help='debug mode')
 args = parser.parse_args(argv)
 
 
@@ -531,6 +548,7 @@ common_record_params = {
     'fps': 30,
     'start_time': 0,
     'end_time': 20,
+    'no_record': args.no_record,
 }
 
 common_graph_params = {
@@ -544,7 +562,7 @@ common_dynamic_weighting_params = {
     'GradientAlpha': 0.2,
 }
 
-foveated_params_override = {
+foveated_params_preset_1 = {
     'shape': FoveaShape.CIRCLE,
     'foveaRadius': 200.0,
     'foveaInputType': FoveaInputType.PROCEDURAL,
@@ -557,6 +575,28 @@ foveated_params_override = {
     'foveaMoveSpeed': 1000.0,
     'foveaMoveStayDuration': 0.5,
 }
+
+foveated_params_preset_2 = {
+    'shape': FoveaShape.CIRCLE,
+    'foveaRadius': 200.0,
+    'foveaInputType': FoveaInputType.PROCEDURAL,
+    'foveaSampleCount': 8.0,
+    'foveaMovePattern': FoveaMovePattern.MOVE_AND_STAY,
+    'foveaMoveRadius': float2(1280/2, 720/2),
+    # 'foveaMoveRadius': float2(640.0, 0.0),
+    'foveaMoveFreq': float2(0.4, 0.5),
+    'foveaMovePhase': float2(math.pi/2, 0),
+    'foveaMoveSpeed': 1000.0,
+    'foveaMoveStayDuration': 0.5,
+}
+
+
+
+if args.sampling == 'f1':
+    foveated_params_override = foveated_params_preset_1
+elif args.sampling == 'f2':
+    foveated_params_override = foveated_params_preset_2
+
 
 gt_sample_Count = 128
 
@@ -581,10 +621,12 @@ normalization_mode = NormalizationMode[args.norm_mode]
 best_gamma_enabled = args.bg
 optimal_weighting_enabled = False
 
-force_record_selections = True
+force_record_selections = False
 force_record_unweighted = False
 force_record_weighted = False
 force_record_ground_truth = False
+no_recrod = args.no_record
+debug_mode = args.debug
 
 profiler_enabled = args.profile
 output_sample_count = args.output_sample_count
@@ -608,35 +650,36 @@ for scene_idx, scene_path in enumerate(scene_paths):
     for iters, feedback in iter_params:
 
         # Try different parameters with dynamic weighting
-        for midpoint, steepness in blending_func_params:
-            logI(f"Run Dynamic Weighting: iters={iters}, feedback={feedback}, midpoint={midpoint}, steepness={steepness}")
-            run(graph_params = {
-                    'iters': iters,
-                    'feedback': feedback,
-                    'dynamic_weighting_enabled': True,
-                    'dynamic_weighting_params': {
-                        'GradientMidpoint': float(midpoint),
-                        'GammaSteepness': float(steepness),
-                        'SelectionMode': SelectionMode.LINEAR,
-                        'NormalizationMode': normalization_mode,
-                        'FilterGradientEnabled': filter_gradient,
-                        'BestGammaEnabled': best_gamma_enabled,
-                        'OptimalWeightingEnabled': optimal_weighting_enabled,
-                        **common_dynamic_weighting_params
-                    },
-                    'foveated_pass_enabled': True,
-                    'foveated_pass_params': foveated_params_override,
-                    'output_tone_mappped': output_tone_mappped,
-                    **common_graph_params
-                },
-                record_params_override={
-                    **common_record_params,
-                    'enable_profiler': profiler_enabled,
-                },
-                force_record=force_record_selections)
-            sleep(1)
+        # for midpoint, steepness in blending_func_params:
+        #     logI(f"Run Dynamic Weighting: iters={iters}, feedback={feedback}, midpoint={midpoint}, steepness={steepness}")
+        #     run(graph_params = {
+        #             'iters': iters,
+        #             'feedback': feedback,
+        #             'dynamic_weighting_enabled': True,
+        #             'dynamic_weighting_params': {
+        #                 'GradientMidpoint': float(midpoint),
+        #                 'GammaSteepness': float(steepness),
+        #                 'SelectionMode': SelectionMode.LINEAR,
+        #                 'NormalizationMode': normalization_mode,
+        #                 'FilterGradientEnabled': filter_gradient,
+        #                 'BestGammaEnabled': best_gamma_enabled,
+        #                 'OptimalWeightingEnabled': optimal_weighting_enabled,
+        #                 **common_dynamic_weighting_params
+        #             },
+        #             'foveated_pass_enabled': True,
+        #             'foveated_pass_params': foveated_params_override,
+        #             'output_tone_mappped': output_tone_mappped,
+        #             **common_graph_params
+        #         },
+        #         record_params_override={
+        #             **common_record_params,
+        #             'enable_profiler': profiler_enabled,
+        #         },
+        #         force_record=force_record_selections,
+        #         debug=debug_mode)
+        #     sleep(1)
 
-        # Unweighted
+        # # Unweighted
         logI("Run Unweighted")
         run(graph_params = {
                 'iters': iters,
@@ -656,95 +699,100 @@ for scene_idx, scene_path in enumerate(scene_paths):
                 **common_record_params,
                 'enable_profiler': profiler_enabled,
             },
-            force_record=force_record_unweighted
+            force_record=force_record_unweighted,
+            debug=debug_mode
         )
 
         sleep(1)
 
-        # Weighted
-        logI("Run Weighted")
-        run(graph_params = {
-                'iters': iters,
-                'feedback': feedback,
-                'dynamic_weighting_enabled': True,
-                'dynamic_weighting_params': {
-                    'SelectionMode': SelectionMode.WEIGHTED,
-                    'OptimalWeightingEnabled': optimal_weighting_enabled,
-                    **common_dynamic_weighting_params
-                },
-                'foveated_pass_enabled': True,
-                'foveated_pass_params': foveated_params_override,
-                'output_tone_mappped': output_tone_mappped,
-                **common_graph_params
-            },
-            record_params_override={
-                **common_record_params,
-                'enable_profiler': False,
-            },
-            force_record=force_record_weighted
-        )
+    #     # Weighted
+    #     logI("Run Weighted")
+    #     run(graph_params = {
+    #             'iters': iters,
+    #             'feedback': feedback,
+    #             'dynamic_weighting_enabled': True,
+    #             'dynamic_weighting_params': {
+    #                 'SelectionMode': SelectionMode.WEIGHTED,
+    #                 'OptimalWeightingEnabled': optimal_weighting_enabled,
+    #                 **common_dynamic_weighting_params
+    #             },
+    #             'foveated_pass_enabled': True,
+    #             'foveated_pass_params': foveated_params_override,
+    #             'output_tone_mappped': output_tone_mappped,
+    #             **common_graph_params
+    #         },
+    #         record_params_override={
+    #             **common_record_params,
+    #             'enable_profiler': False,
+    #         },
+    #         force_record=force_record_weighted,
+    #         debug=debug_mode
+    #     )
 
-        sleep(1)
+    #     sleep(1)
 
-        # Generate ground truth with spatial-temporal filter
-        if generate_spatial_temporal_filtered_gt:
-            logI("Run Ground Truth (Spatial-temporal filtered)")
-            run(graph_params = {
-                    'svgf_enabled': True,
-                    'iters': iters,
-                    'feedback': feedback,
-                    'dynamic_weighting_enabled': False,
-                    'foveated_pass_enabled': False,
-                    'sample_count': gt_sample_Count,
-                    **common_graph_params
-                },
-                record_params_override = {
-                    **common_record_params,
-                    'enable_profiler': False,
-                },
-                force_record=force_record_ground_truth
-            )
+    #     # Generate ground truth with spatial-temporal filter
+    #     if generate_spatial_temporal_filtered_gt:
+    #         logI("Run Ground Truth (Spatial-temporal filtered)")
+    #         run(graph_params = {
+    #                 'svgf_enabled': True,
+    #                 'iters': iters,
+    #                 'feedback': feedback,
+    #                 'dynamic_weighting_enabled': False,
+    #                 'foveated_pass_enabled': False,
+    #                 'sample_count': gt_sample_Count,
+    #                 **common_graph_params
+    #             },
+    #             record_params_override = {
+    #                 **common_record_params,
+    #                 'enable_profiler': False,
+    #             },
+    #             force_record=force_record_ground_truth,
+    #             debug=debug_mode
+    #         )
 
-    sleep(1)
+    # sleep(1)
 
-    # Generate ground truth without any filter
-    if generate_raw_gt:
-        logI("Run Ground Truth (No filter)")
-        run(graph_params = {
-                'svgf_enabled': False,
-                'iters': 0,
-                'feedback': -1,
-                'dynamic_weighting_enabled': False,
-                'foveated_pass_enabled': False,
-                'sample_count': gt_sample_Count,
-                **common_graph_params
-            },
-            record_params_override = {
-                **common_record_params,
-                'enable_profiler': False,
-            },
-            force_record=force_record_ground_truth
-        )
+    # # Generate ground truth without any filter
+    # if generate_raw_gt:
+    #     logI("Run Ground Truth (No filter)")
+    #     run(graph_params = {
+    #             'svgf_enabled': False,
+    #             'iters': 0,
+    #             'feedback': -1,
+    #             'dynamic_weighting_enabled': False,
+    #             'foveated_pass_enabled': False,
+    #             'sample_count': gt_sample_Count,
+    #             **common_graph_params
+    #         },
+    #         record_params_override = {
+    #             **common_record_params,
+    #             'enable_profiler': False,
+    #         },
+    #         force_record=force_record_ground_truth,
+    #         debug=debug_mode
+    #     )
 
-    # Generate ground truth with temporal filter
-    if generate_temporal_filtered_gt:
-        logI("Run Ground Truth (Temporal and moment filtered)")
-        run(graph_params = {
-                'svgf_enabled': True,
-                'spatial_filter_enabled': True,
-                'iters': 0,
-                'feedback': -1,
-                'dynamic_weighting_enabled': False,
-                'foveated_pass_enabled': False,
-                'sample_count': gt_sample_Count,
-                **common_graph_params
-            },
-            record_params_override = {
-                **common_record_params,
-                'enable_profiler': False,
-            },
-            force_record=force_record_ground_truth
-        )
+    # # Generate ground truth with temporal filter
+    # if generate_temporal_filtered_gt:
+    #     logI("Run Ground Truth (Temporal and moment filtered)")
+    #     run(graph_params = {
+    #             'svgf_enabled': True,
+    #             'spatial_filter_enabled': True,
+    #             'iters': 0,
+    #             'feedback': -1,
+    #             'dynamic_weighting_enabled': False,
+    #             'foveated_pass_enabled': False,
+    #             'sample_count': gt_sample_Count,
+    #             **common_graph_params
+    #         },
+    #         record_params_override = {
+    #             **common_record_params,
+    #             'enable_profiler': False,
+    #         },
+    #         force_record=force_record_ground_truth,
+    #         debug=debug_mode
+    #     )
 
     logI(f"Scene {scene_name} done.")
 

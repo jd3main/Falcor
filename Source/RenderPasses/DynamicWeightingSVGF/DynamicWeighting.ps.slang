@@ -9,6 +9,8 @@ import RenderPasses.ReprojectionPass.ReprojectionStruct;
 #define DEBUG_TAG_ENABLED _DEBUG_TAG_ENABLED
 #define BEST_GAMMA_ENABLED _BEST_GAMMA_ENABLED
 
+#define MIN_VARIANCE 1e-6f
+
 // Workaround for isnan() not working in slang.
 bool isNaN(float f)
 {
@@ -73,11 +75,11 @@ PS_OUT main(FullScreenPassVsOut vsOut)
 #if NORMALIZATION_MODE == NORMALIZATION_MODE_LUMINANCE
     gamma = gamma / luminance(unweightedIllumination);
 #elif NORMALIZATION_MODE == NORMALIZATION_MODE_VARIANCE
-    gamma = gamma / max(variance, 1e-6f);
+    gamma = gamma / max(variance, MIN_VARIANCE);
 #elif NORMALIZATION_MODE == NORMALIZATION_MODE_STANDARDDEVIATION
-    gamma = gamma / sqrt(max(variance, 1e-6f));
+    gamma = gamma / sqrt(max(variance, MIN_VARIANCE));
 #elif NORMALIZATION_MODE == NORMALIZATION_MODE_STANDARDDEVIATION2
-    gamma = gamma / sqrt(max(variance, 1e-6f));
+    gamma = gamma / sqrt(max(variance, MIN_VARIANCE));
     const float h = gHistoryLength[ipos].r;
     const float beta = 1 - gAlpha;
     const float var_y = (1 - beta) / beta * ((1 + pow(beta, h)) / (1 - pow(beta, h + 1)));
@@ -113,7 +115,7 @@ PS_OUT main(FullScreenPassVsOut vsOut)
     float best_gamma = X / (X - Y);
     if (isNaN(best_gamma))
     {
-        best_gamma = 0.0;
+        best_gamma = 1.0;
     }
     best_gamma = saturate(best_gamma);
     // gamma = max(best_gamma, gamma);
@@ -133,7 +135,6 @@ PS_OUT main(FullScreenPassVsOut vsOut)
         outIllumination = debugColor;
     }
 #endif
-
 
     PS_OUT psOut;
     psOut.color = float4(outIllumination, variance);
