@@ -132,8 +132,7 @@ if __name__ == '__main__':
         ax.set_yscale('log')
         ax.set_xlabel('Frame')
         ax.set_xlim(0, len(sequences[0]))
-        # ax.set_xlim(0, 250)
-        ax.set_ylim(np.mean(sequences[0])/2, np.mean(sequences[0])*2)
+        ax.set_xlim(0, 400)
         ax.legend(loc='upper right')
     plt.show()
 

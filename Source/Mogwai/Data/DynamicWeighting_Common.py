@@ -239,8 +239,8 @@ def gammaCorrection(img: np.ndarray, gamma: float) -> np.ndarray:
     return np.power(np.maximum(img,0), gamma)
 
 def toneMapping(img: np.ndarray, gamma=1/2.2) -> np.ndarray:
-    img = gammaCorrection(img, gamma)
     img = ACESFilm(img)
+    img = gammaCorrection(img, gamma)
     img = np.clip(img, 0, 1)
     img = (img*255).astype(np.uint8)
     return img
@@ -251,6 +251,8 @@ def getSamplingPreset(s: str):
         return 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[640,360])'
     elif s.startswith('f2'):
         return 'Foveated(CIRCLE,MOVE_AND_STAY,8.0)_Circle(200)_MoveAndStay(1000,0.5)'
+    elif s.startswith('f3'):
+        return 'Foveated(CIRCLE,LISSAJOUS,8.0)_Circle(200)_Lissajous([0.4,0.5],[0,0])'
     elif s.startswith('a'):
         return 'Adaptive(2.0,10.0,1,1)'
     else:

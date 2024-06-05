@@ -219,20 +219,18 @@ if __name__ == '__main__':
     g_alpha = 0.2
 
     scene_names = [
-        # 'VeachAjar',
-        # 'VeachAjarAnimated',
+        'VeachAjar',
+        'VeachAjarAnimated',
         # 'VeachAjarAnimated2',
-        # 'BistroExterior',
-        # 'BistroInterior',
-        # 'BistroInterior_Wine',
-        # 'SunTemple',
+        'BistroExterior',
+        'BistroInterior',
+        'BistroInterior_Wine',
+        'SunTemple',
         'EmeraldSquare_Day',
         'EmeraldSquare_Dusk',
-        'MEASURE_ONE',
-        'MEASURE_SEVEN',
-        # 'ZeroDay_1',
-        # 'ZeroDay_7',
-        # 'ZeroDay_7c',
+        'ZeroDay_1',
+        'ZeroDay_7',
+        'ZeroDay_7c',
     ]
 
     if args.scene_name != '':

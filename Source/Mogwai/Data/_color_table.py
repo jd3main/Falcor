@@ -18,7 +18,7 @@ def formatRelErr(s: str) -> str:
     if s[0] == '+' or s[0].isnumeric():
         s = f'{{\\color{{red}}{s}}}'
     elif s[0] == '-':
-        s = f'{{\\color{{Green}}{s}}}'
+        s = f'\\textbf{{\\color{{improved}}{s}}}'
     return s
 
 def formatRelSsim(s: str) -> str:
@@ -26,7 +26,7 @@ def formatRelSsim(s: str) -> str:
     if s[0] == '-':
         s = f'{{\\color{{red}}{s}}}'
     elif s[0] == '+' or s[0].isnumeric():
-        s = f'{{\\color{{Green}}{s}}}'
+        s = f'\\textbf{{\\color{{improved}}{s}}}'
     return s
 
 

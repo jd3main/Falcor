@@ -151,4 +151,8 @@ plt.setp(stemlines, color='orange')
 plt.xlabel('p')
 plt.ylabel('Variance')
 
+plt.ylim(bottom=0)
+
+plt.subplots_adjust(bottom=0.15)
+
 plt.show()

@@ -499,20 +499,20 @@ def run(graph_params:dict={}, record_params_override:dict={}, force_record=False
     gc.collect()
 
 scene_paths = [
-    # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjar.pyscene',
     Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'VeachAjar'/'VeachAjarAnimated2.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Dusk.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroExterior.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior.fbx',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'Bistro'/'BistroInterior_Wine.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'SunTemple'/'SunTemple.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Day.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'EmeraldSquare'/'EmeraldSquare_Dusk.pyscene',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_ONE'/'MEASURE_ONE.fbx',
     # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'MEASURE_SEVEN'/'MEASURE_SEVEN.fbx',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_1.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_7.pyscene',
-    # Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_7c.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_1.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_7.pyscene',
+    Path(__file__).parents[4]/'Scenes'/'ORCA'/'ZeroDay'/'ZeroDay_7c.pyscene',
 ]
 
 
@@ -523,9 +523,9 @@ argv = ' '.join([
     '-n STD',
     '--bg',
     '--fg',
-    '--profile',
-    '--no_record',
-    '-s f1',
+    # '--profile',
+    # '--no_record',
+    '-s f3',
     # '--output_sample_count',
     # '--output_tone_mappped',
     # '--debug',
@@ -590,12 +590,29 @@ foveated_params_preset_2 = {
     'foveaMoveStayDuration': 0.5,
 }
 
+foveated_params_preset_3 = {
+    'shape': FoveaShape.CIRCLE,
+    'foveaRadius': 200.0,
+    'foveaInputType': FoveaInputType.PROCEDURAL,
+    'foveaSampleCount': 8.0,
+    'foveaMovePattern': FoveaMovePattern.LISSAJOUS,
+    'foveaMoveRadius': float2(0, 0),
+    # 'foveaMoveRadius': float2(640.0, 0.0),
+    'foveaMoveFreq': float2(0.4, 0.5),
+    'foveaMovePhase': float2(math.pi/2, 0),
+    'foveaMoveSpeed': 1000.0,
+    'foveaMoveStayDuration': 0.5,
+}
+
+
 
 
 if args.sampling == 'f1':
     foveated_params_override = foveated_params_preset_1
 elif args.sampling == 'f2':
     foveated_params_override = foveated_params_preset_2
+elif args.sampling == 'f3':
+    foveated_params_override = foveated_params_preset_3
 
 
 gt_sample_Count = 128
@@ -650,34 +667,34 @@ for scene_idx, scene_path in enumerate(scene_paths):
     for iters, feedback in iter_params:
 
         # Try different parameters with dynamic weighting
-        # for midpoint, steepness in blending_func_params:
-        #     logI(f"Run Dynamic Weighting: iters={iters}, feedback={feedback}, midpoint={midpoint}, steepness={steepness}")
-        #     run(graph_params = {
-        #             'iters': iters,
-        #             'feedback': feedback,
-        #             'dynamic_weighting_enabled': True,
-        #             'dynamic_weighting_params': {
-        #                 'GradientMidpoint': float(midpoint),
-        #                 'GammaSteepness': float(steepness),
-        #                 'SelectionMode': SelectionMode.LINEAR,
-        #                 'NormalizationMode': normalization_mode,
-        #                 'FilterGradientEnabled': filter_gradient,
-        #                 'BestGammaEnabled': best_gamma_enabled,
-        #                 'OptimalWeightingEnabled': optimal_weighting_enabled,
-        #                 **common_dynamic_weighting_params
-        #             },
-        #             'foveated_pass_enabled': True,
-        #             'foveated_pass_params': foveated_params_override,
-        #             'output_tone_mappped': output_tone_mappped,
-        #             **common_graph_params
-        #         },
-        #         record_params_override={
-        #             **common_record_params,
-        #             'enable_profiler': profiler_enabled,
-        #         },
-        #         force_record=force_record_selections,
-        #         debug=debug_mode)
-        #     sleep(1)
+        for midpoint, steepness in blending_func_params:
+            logI(f"Run Dynamic Weighting: iters={iters}, feedback={feedback}, midpoint={midpoint}, steepness={steepness}")
+            run(graph_params = {
+                    'iters': iters,
+                    'feedback': feedback,
+                    'dynamic_weighting_enabled': True,
+                    'dynamic_weighting_params': {
+                        'GradientMidpoint': float(midpoint),
+                        'GammaSteepness': float(steepness),
+                        'SelectionMode': SelectionMode.LINEAR,
+                        'NormalizationMode': normalization_mode,
+                        'FilterGradientEnabled': filter_gradient,
+                        'BestGammaEnabled': best_gamma_enabled,
+                        'OptimalWeightingEnabled': optimal_weighting_enabled,
+                        **common_dynamic_weighting_params
+                    },
+                    'foveated_pass_enabled': True,
+                    'foveated_pass_params': foveated_params_override,
+                    'output_tone_mappped': output_tone_mappped,
+                    **common_graph_params
+                },
+                record_params_override={
+                    **common_record_params,
+                    'enable_profiler': profiler_enabled,
+                },
+                force_record=force_record_selections,
+                debug=debug_mode)
+            sleep(1)
 
         # # Unweighted
         logI("Run Unweighted")
@@ -705,53 +722,53 @@ for scene_idx, scene_path in enumerate(scene_paths):
 
         sleep(1)
 
-    #     # Weighted
-    #     logI("Run Weighted")
-    #     run(graph_params = {
-    #             'iters': iters,
-    #             'feedback': feedback,
-    #             'dynamic_weighting_enabled': True,
-    #             'dynamic_weighting_params': {
-    #                 'SelectionMode': SelectionMode.WEIGHTED,
-    #                 'OptimalWeightingEnabled': optimal_weighting_enabled,
-    #                 **common_dynamic_weighting_params
-    #             },
-    #             'foveated_pass_enabled': True,
-    #             'foveated_pass_params': foveated_params_override,
-    #             'output_tone_mappped': output_tone_mappped,
-    #             **common_graph_params
-    #         },
-    #         record_params_override={
-    #             **common_record_params,
-    #             'enable_profiler': False,
-    #         },
-    #         force_record=force_record_weighted,
-    #         debug=debug_mode
-    #     )
+        # Weighted
+        logI("Run Weighted")
+        run(graph_params = {
+                'iters': iters,
+                'feedback': feedback,
+                'dynamic_weighting_enabled': True,
+                'dynamic_weighting_params': {
+                    'SelectionMode': SelectionMode.WEIGHTED,
+                    'OptimalWeightingEnabled': optimal_weighting_enabled,
+                    **common_dynamic_weighting_params
+                },
+                'foveated_pass_enabled': True,
+                'foveated_pass_params': foveated_params_override,
+                'output_tone_mappped': output_tone_mappped,
+                **common_graph_params
+            },
+            record_params_override={
+                **common_record_params,
+                'enable_profiler': False,
+            },
+            force_record=force_record_weighted,
+            debug=debug_mode
+        )
 
-    #     sleep(1)
+        sleep(1)
 
-    #     # Generate ground truth with spatial-temporal filter
-    #     if generate_spatial_temporal_filtered_gt:
-    #         logI("Run Ground Truth (Spatial-temporal filtered)")
-    #         run(graph_params = {
-    #                 'svgf_enabled': True,
-    #                 'iters': iters,
-    #                 'feedback': feedback,
-    #                 'dynamic_weighting_enabled': False,
-    #                 'foveated_pass_enabled': False,
-    #                 'sample_count': gt_sample_Count,
-    #                 **common_graph_params
-    #             },
-    #             record_params_override = {
-    #                 **common_record_params,
-    #                 'enable_profiler': False,
-    #             },
-    #             force_record=force_record_ground_truth,
-    #             debug=debug_mode
-    #         )
+        # Generate ground truth with spatial-temporal filter
+        if generate_spatial_temporal_filtered_gt:
+            logI("Run Ground Truth (Spatial-temporal filtered)")
+            run(graph_params = {
+                    'svgf_enabled': True,
+                    'iters': iters,
+                    'feedback': feedback,
+                    'dynamic_weighting_enabled': False,
+                    'foveated_pass_enabled': False,
+                    'sample_count': gt_sample_Count,
+                    **common_graph_params
+                },
+                record_params_override = {
+                    **common_record_params,
+                    'enable_profiler': False,
+                },
+                force_record=force_record_ground_truth,
+                debug=debug_mode
+            )
 
-    # sleep(1)
+    sleep(1)
 
     # # Generate ground truth without any filter
     # if generate_raw_gt:

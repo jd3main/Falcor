@@ -20,13 +20,13 @@ DEFAULT_NORMALZATION_MODE = NormalizationMode.STD
 # DEFAULT_SCENE_NAME = 'BistroExterior'
 # DEFAULT_SCENE_NAME = 'BistroInterior'
 # DEFAULT_SCENE_NAME = 'BistroInterior_Wine'
-# DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
+DEFAULT_SCENE_NAME = 'EmeraldSquare_Day'
 # DEFAULT_SCENE_NAME = 'SunTemple'
 # DEFAULT_SCENE_NAME = 'MEASURE_ONE'
 # DEFAULT_SCENE_NAME = 'MEASURE_SEVEN'
-DEFAULT_SCENE_NAME = 'ZeroDay_1'
-DEFAULT_SCENE_NAME = 'ZeroDay_7'
-DEFAULT_SCENE_NAME = 'ZeroDay_7c'
+# DEFAULT_SCENE_NAME = 'ZeroDay_1'
+# DEFAULT_SCENE_NAME = 'ZeroDay_7'
+# DEFAULT_SCENE_NAME = 'ZeroDay_7c'
 
 
 ### Argument parsing
