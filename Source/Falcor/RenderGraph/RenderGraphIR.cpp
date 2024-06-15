@@ -53,7 +53,9 @@ namespace Falcor
     {
         if (newGraph)
         {
-            mIR += "from falcor import *\n\n";
+            mIR += "from falcor import *\n";
+            mIR += "from pathlib import *\n";
+            mIR += "\n";
             mIR += "def " + getFuncName(mName) + "():\n";
             mIndentation = "    ";
             mGraphPrefix += mIndentation;

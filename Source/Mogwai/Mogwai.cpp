@@ -781,8 +781,8 @@ int main(int argc, char** argv)
     args::ValueFlag<std::string> logfileFlag(parser, "path", "File to write log into.", {'l', "logfile"});
     args::ValueFlag<int32_t> verbosityFlag(parser, "verbosity", "Logging verbosity (0=disabled, 1=fatal errors, 2=errors, 3=warnings, 4=infos, 5=debugging)", { 'v', "verbosity" }, 4);
     args::Flag silentFlag(parser, "", "Starts Mogwai with a minimized window and disables mouse/keyboard input as well as error message dialogs.", {"silent"});
-    args::ValueFlag<uint32_t> widthFlag(parser, "pixels", "Initial window width.", {"width"});
-    args::ValueFlag<uint32_t> heightFlag(parser, "pixels", "Initial window height.", {"height"});
+    args::ValueFlag<uint32_t> widthFlag(parser, "pixels", "Initial window width.", {"width"}, 1280);
+    args::ValueFlag<uint32_t> heightFlag(parser, "pixels", "Initial window height.", {"height"}, 720);
     args::Flag useSceneCacheFlag(parser, "", "Use scene cache to improve scene load times.", {'c', "use-cache"});
     args::Flag rebuildSceneCacheFlag(parser, "", "Rebuild the scene cache.", {"rebuild-cache"});
     args::Flag generateShaderDebugInfo(parser, "", "Generate shader debug info.", {'d', "debug-shaders"});
@@ -864,8 +864,8 @@ int main(int argc, char** argv)
             setShowMessageBoxOnError(false);
         }
 
-        if (widthFlag) config.windowDesc.width = args::get(widthFlag);
-        if (heightFlag) config.windowDesc.height = args::get(heightFlag);
+        config.windowDesc.width = args::get(widthFlag);
+        config.windowDesc.height = args::get(heightFlag);
 
         Sample::run(config, pRenderer, 0, nullptr);
     }

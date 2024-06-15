@@ -321,6 +321,8 @@ void ErrorMeasurePass::renderUI(Gui::Widgets& widget)
         mRunningAvgError = -1.f;
     }
     widget.tooltip("Exponential moving average, sigma = " + std::to_string(mRunningErrorSigma));
+    widget.var("Running Error Sigma", mRunningErrorSigma, 0.f, 1.f, 0.01f, false);
+    widget.tooltip("Larger values mean slower response");
     if (mMeasurements.valid)
     {
         // Use stream so we can control formatting.
@@ -357,6 +359,7 @@ bool ErrorMeasurePass::onKeyEvent(const KeyboardEvent& keyEvent)
 void ErrorMeasurePass::loadReference()
 {
     if (mReferenceImagePath.empty()) return;
+    if (mReferenceImagePath == ".") return;
 
     // TODO: it would be nice to also be able to take the reference image as an input.
     mpReferenceTexture = Texture::createFromFile(mReferenceImagePath, false /* no MIPs */, false /* linear color */);
@@ -378,6 +381,7 @@ Texture::SharedPtr ErrorMeasurePass::getReference(const RenderData& renderData) 
 void ErrorMeasurePass::openMeasurementsFile()
 {
     if (mMeasurementsFilePath.empty()) return;
+    if (mMeasurementsFilePath == ".") return;
 
     mMeasurementsFile = std::ofstream(mMeasurementsFilePath, std::ios::trunc);
     if (!mMeasurementsFile)

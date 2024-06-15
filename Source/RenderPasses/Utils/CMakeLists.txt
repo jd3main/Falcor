@@ -8,9 +8,19 @@ target_sources(Utils PRIVATE
     Composite/Composite.h
     Composite/CompositeMode.slangh
 
+    CountToColor/CountToColor.cpp
+    CountToColor/CountToColor.h
+    CountToColor/CountToColor.cs.slang
+
     GaussianBlur/GaussianBlur.cpp
     GaussianBlur/GaussianBlur.h
     GaussianBlur/GaussianBlur.ps.slang
+
+    SharedBuffer/SharedBuffer.cpp
+    SharedBuffer/SharedBuffer.h
+
+    BlitToInputBuffer/BlitToInputBuffer.cpp
+    BlitToInputBuffer/BlitToInputBuffer.h
 )
 
 target_copy_shaders(Utils RenderPasses/Utils)
